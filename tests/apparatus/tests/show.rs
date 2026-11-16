@@ -67,17 +67,17 @@ fn check_document_has_its_fields() {
         "  A return on the due date or earlier records no fine.\n  Reuse: never, the desk reads today's date\n",
     );
     repo.run_json(&[], 0);
-    assert!(repo.check_show(ON_TIME_RETURN).get("reuse").is_some());
+    assert!(has(&repo.check_show(ON_TIME_RETURN), "reuse"));
     repo.append(PRODUCT_FILE, "renewals do not count\n");
     let document = repo.check_show(SIXTH_LOAN);
     for field in [
         "id", "requirement", "scenario", "suite", "claim", "state", "reason", "detail", "parts_changed", "files_changed",
         "failing_tests", "result",
     ] {
-        assert!(document.get(field).is_some(), "no `{field}`: {document:#}");
+        assert!(has(&document, field), "no `{field}`: {document:#}");
     }
     for field in ["where", "commit", "at"] {
-        assert!(document["result"].get(field).is_some(), "no `result.{field}`: {document:#}");
+        assert!(has(&document["result"], field), "no `result.{field}`: {document:#}");
     }
     assert_eq!(document["id"], SIXTH_LOAN);
     assert_eq!(document["requirement"], LOAN_LIMIT);

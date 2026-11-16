@@ -29,6 +29,8 @@
 //! - `adapter: build-fails` writes a report with `"build": "failed"` and no tests.
 //! - `adapter: lists <name> <check-id>` adds a listed test carrying a Check id that no marker in
 //!   source shows, as a trait built from a constant would.
+//! - `adapter: sleeps <ms>` waits that long before it writes its report, so a test knows a lower
+//!   bound for the wall time of the launch.
 //! - `adapter: edits <path>` appends a line to that file, a path from the repository root,
 //!   while the launch runs. The root is the nearest folder above that holds `.git`.
 //!
@@ -63,6 +65,7 @@ struct Directives {
     build_fails: bool,
     extra_listed: Vec<(String, String)>,
     edits: Vec<String>,
+    sleep_ms: u64,
 }
 
 fn main() {
@@ -134,6 +137,8 @@ fn run(request: &Value, adapter: Value, args: Vec<String>) {
             .expect("the file to edit during the launch is writable");
         writeln!(file, "edited while the launch ran").expect("the edit is written");
     }
+
+    std::thread::sleep(std::time::Duration::from_millis(directives.sleep_ms));
 
     if directives.garbage {
         log(json!({ "program": NAME, "args": args, "request": request, "ran": [] }));
@@ -231,6 +236,7 @@ fn read_directives(text: &str, directives: &mut Directives) {
             ["build-fails"] => directives.build_fails = true,
             ["lists", name, check] => directives.extra_listed.push((name.to_string(), check.to_string())),
             ["edits", path] => directives.edits.push(path.to_string()),
+            ["sleeps", ms] => directives.sleep_ms += ms.parse::<u64>().expect("sleeps names whole milliseconds"),
             _ => eprintln!("{NAME}: unknown directive {line:?}"),
         }
     }

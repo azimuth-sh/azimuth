@@ -15,8 +15,12 @@ use std::time::Duration;
 use azimuth_tests::*;
 use serde_json::Value;
 
-/// The package id and the command, which the design makes one name.
+/// The adapter's command, and the name it reports.
 const ADAPTER: &str = "azimuth-xunit";
+/// The adapter's package id as it is packed.
+const PACKAGE_ID: &str = "Azimuth.Xunit";
+/// The package id as `dotnet tool` writes it into a tool manifest and lists it.
+const MANIFEST_ID: &str = "azimuth.xunit";
 const DOTNET_SUITE: &str = "dotnet/LibraryDesk.Tests";
 const SIXTH_LOAN_CHECK: &str = "desk-refuses-a-sixth-loan";
 const ON_TIME_CHECK: &str = "desk-charges-nothing-on-time";
@@ -50,32 +54,57 @@ fn feed() -> &'static Feed {
         std::fs::create_dir_all(&folder).unwrap();
         let output = dotnet(&source, &["pack", "--configuration", "Release", "--output", folder.to_str().unwrap(), &format!("-p:Version={version}")]);
         output.expect_status(0);
-        let package = folder.join(format!("{ADAPTER}.{version}.nupkg"));
-        assert!(package.is_file(), "the pack wrote no package {}:\n{}", package.display(), output.text());
-        Feed { folder, package, version }
+        // The package is looked for by its extension and not by an expected name, so a wrong id
+        // shows in the test of the id instead of here.
+        let packages: Vec<PathBuf> = std::fs::read_dir(&folder)
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().is_some_and(|extension| extension == "nupkg"))
+            .collect();
+        assert_eq!(packages.len(), 1, "the pack did not write one package: {packages:?}\n{}", output.text());
+        let feed = Feed { folder, package: packages[0].clone(), version };
+        // Tests run in parallel, and restores of one new package from several of them collide in
+        // the machine's package cache. One restore here puts the package into the cache once, and
+        // the restore of each test then finds it there and writes nothing.
+        let warm_up = binaries_dir().join(format!("azimuth-xunit-restore-{stamp}"));
+        std::fs::create_dir_all(warm_up.join(".config")).unwrap();
+        std::fs::write(warm_up.join(".config/dotnet-tools.json"), manifest(&feed)).unwrap();
+        let config = local_feed_config(&feed, &warm_up.join("nuget.config"));
+        dotnet(&warm_up, &["tool", "restore", "--configfile", config.to_str().unwrap()]).expect_status(0);
+        feed
     })
 }
 
 /// Pins the packed adapter in the repository with a tool manifest, commits it as a team would,
 /// and restores it from the local feed only.
-fn pin_adapter(repo: &Repo) {
-    let feed = feed();
+fn manifest(feed: &Feed) -> String {
     let manifest = json!({
         "version": 1,
         "isRoot": true,
-        "tools": { ADAPTER: { "version": feed.version, "commands": [ADAPTER], "rollForward": false } }
+        "tools": { MANIFEST_ID: { "version": feed.version, "commands": [ADAPTER], "rollForward": false } }
     });
-    repo.write(".config/dotnet-tools.json", &format!("{manifest:#}\n"));
-    repo.commit_all("pin the test adapter");
-    let config = repo.beside("nuget.config");
+    format!("{manifest:#}\n")
+}
+
+/// Writes a NuGet configuration whose one source is the local feed, and returns its path.
+fn local_feed_config(feed: &Feed, path: &Path) -> PathBuf {
     std::fs::write(
-        &config,
+        path,
         format!(
             "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<configuration>\n  <packageSources>\n    <clear />\n    <add key=\"local\" value=\"{}\" />\n  </packageSources>\n</configuration>\n",
             feed.folder.display()
         ),
     )
     .unwrap();
+    path.to_path_buf()
+}
+
+fn pin_adapter(repo: &Repo) {
+    let feed = feed();
+    repo.write(".config/dotnet-tools.json", &manifest(feed));
+    repo.commit_all("pin the test adapter");
+    let config = local_feed_config(feed, &repo.beside("nuget.config"));
     dotnet(repo.root(), &["tool", "restore", "--configfile", config.to_str().unwrap()]).expect_status(0);
 }
 
@@ -127,23 +156,26 @@ fn the_adapter_is_a_local_dotnet_tool() {
     let repo = sample();
     let output = dotnet(repo.root(), &["tool", "list", "--local"]);
     output.expect_status(0);
-    assert!(output.stdout.contains(ADAPTER), "the sample pins no local tool {ADAPTER}:\n{}", output.stdout);
+    assert!(output.stdout.contains(MANIFEST_ID), "the sample pins no local tool {MANIFEST_ID}:\n{}", output.stdout);
 }
 
-// behavior: Its package id and its command are `azimuth-xunit`
+// behavior: Its package id is `Azimuth.Xunit` and its command is `azimuth-xunit`
 #[test]
-fn the_package_id_and_the_command_are_one_name() {
+fn the_package_is_azimuth_xunit_and_its_command_azimuth_xunit() {
+    // `dotnet pack` names the package file after the id as written, so the file name shows it.
     let feed = feed();
     let name = feed.package.file_name().unwrap().to_string_lossy().to_string();
-    assert_eq!(name, format!("{ADAPTER}.{}.nupkg", feed.version), "the package id is not {ADAPTER}");
+    assert_eq!(name, format!("{PACKAGE_ID}.{}.nupkg", feed.version), "the package id is not {PACKAGE_ID}");
     let repo = sample();
     let output = dotnet(repo.root(), &["tool", "list", "--local"]);
     output.expect_status(0);
-    let row = output.stdout.lines().find(|line| line.starts_with(ADAPTER)).unwrap_or_else(|| panic!("{}", output.stdout));
+    let row = output.stdout.lines().find(|line| line.starts_with(MANIFEST_ID)).unwrap_or_else(|| panic!("{}", output.stdout));
     // The columns are the package id, the version and the commands.
     let words: Vec<&str> = row.split_whitespace().collect();
-    assert_eq!(words.first(), Some(&ADAPTER), "package id: {row}");
     assert_eq!(words.get(2), Some(&ADAPTER), "command: {row}");
+    let started = start_adapter(&repo, &run_request(&[]));
+    started.expect_status(0);
+    assert_eq!(started.json()["adapter"]["name"], ADAPTER, "the command that ran is not the adapter");
 }
 
 // behavior: It lists the tests of a suite with the Check ids they carry
@@ -207,14 +239,32 @@ fn the_test_project_stays_free_of_azimuth() {
     let repo = sample();
     report(&repo, &run_request(&DOTNET_CHECKS));
     assert_eq!(repo.git(&["status", "--porcelain", "--untracked-files=no"]), "", "the adapter edited tracked files");
+    // A reference is what the build or the compiler follows. Prose that names Azimuth, such as a
+    // comment in the sample, is no reference.
+    let names_azimuth = |text: &str| text.to_lowercase().contains("azimuth");
+    let mut looked_at = 0;
     for file in files_under(&repo.path("dotnet")) {
         let relative = file.strip_prefix(repo.root()).unwrap().to_string_lossy().to_string();
         if relative.contains("/bin/") || relative.contains("/obj/") {
             continue;
         }
-        let text = std::fs::read_to_string(&file).unwrap_or_default().to_lowercase();
-        assert!(!text.contains("azimuth"), "{relative} references Azimuth");
+        let text = std::fs::read_to_string(&file).unwrap_or_default();
+        let extension = file.extension().and_then(|extension| extension.to_str()).unwrap_or_default();
+        for line in text.lines().map(str::trim) {
+            let reference = match extension {
+                "csproj" | "props" | "targets" => {
+                    ["<PackageReference", "<ProjectReference", "<Reference", "<Using", "<Import"].iter().any(|tag| line.starts_with(tag))
+                }
+                "cs" => {
+                    line.starts_with("using ") || line.starts_with("global using ") || (line.starts_with('[') && !line.starts_with("[]"))
+                }
+                _ => false,
+            };
+            assert!(!(reference && names_azimuth(line)), "{relative} references Azimuth: {line}");
+        }
+        looked_at += usize::from(matches!(extension, "csproj" | "cs"));
     }
+    assert!(looked_at >= 2, "no project file or code was looked at");
 }
 
 // behavior: The adapter writes one report document to standard output, and the runner's own output goes to standard error
@@ -315,7 +365,7 @@ fn the_discover_report_lists_projects_with_paths() {
     let repo = sample();
     let document = report(&repo, &discover_request());
     for field in ["format", "adapter", "projects"] {
-        assert!(document.get(field).is_some(), "no `{field}`: {document:#}");
+        assert!(has(&document, field), "no `{field}`: {document:#}");
     }
     assert!(!document["adapter"]["name"].as_str().unwrap_or_default().is_empty(), "{document:#}");
     assert!(discovered_paths(&document).contains(&DOTNET_SUITE.to_string()), "{document:#}");

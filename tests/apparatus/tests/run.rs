@@ -500,7 +500,7 @@ fn a_second_result_on_one_fingerprint_is_added() {
     assert_eq!(results[0].1["body"]["fingerprint"], results[1].1["body"]["fingerprint"]);
 }
 
-// behavior: The duration of each launch is stored
+// behavior: The duration of each test is stored in its result
 #[test]
 fn durations_are_reported_and_stored() {
     let repo = Repo::sample();
@@ -511,6 +511,60 @@ fn durations_are_reported_and_stored() {
     }
     let record = repo.result_of(LATE_RETURN);
     assert_eq!(record["body"]["tests"][0]["duration_ms"], 250, "{record:#}");
+}
+
+// behavior: Each entry of `suites` in `run-1` holds `duration_ms`, the wall time of its launch
+#[test]
+fn each_launched_suite_holds_the_wall_time_of_its_launch() {
+    // The adapter of the returns suite waits 1.5 seconds, and every test reports 1 ms or less, so
+    // only the wall time of the launch can reach 1500.
+    let repo = Repo::sample();
+    repo.split_returns_suite("");
+    repo.append("suites/returns-checks/late-fine.test", "adapter: sleeps 1500\n");
+    let document = repo.run_json(&[], 0);
+    let suites = document["suites"].as_array().unwrap_or_else(|| panic!("no `suites`: {document:#}"));
+    assert_eq!(suites.len(), 2, "{document:#}");
+    for suite in suites {
+        let duration = suite["duration_ms"].as_u64().unwrap_or_else(|| panic!("no whole `duration_ms`: {suite:#}"));
+        if suite["name"] == "returns-checks" {
+            assert!(duration >= 1500, "the launch took at least 1500 ms: {suite:#}");
+        }
+    }
+
+    // A launch is not stored: in a record only a test carries a duration.
+    for (path, record) in repo.records() {
+        let mut found = Vec::new();
+        durations_in(&record, String::new(), &mut found);
+        for at in found {
+            assert!(at.starts_with("body.tests."), "{} holds a duration at {at}: {record:#}", path.display());
+        }
+    }
+
+    let missing = Repo::sample();
+    missing.replace(PROJECT_FILE, "adapter = \"text-suite-adapter\"", "adapter = \"desk-adapter-that-is-not-installed\"");
+    let document = missing.run_json(&[], 1);
+    assert_eq!(document["suites"][0]["launch"], "not started", "{document:#}");
+    assert!(document["suites"][0].get("duration_ms").is_none(), "an adapter that did not start has no launch time: {document:#}");
+}
+
+fn durations_in(value: &serde_json::Value, at: String, found: &mut Vec<String>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, inner) in map {
+                let here = if at.is_empty() { key.clone() } else { format!("{at}.{key}") };
+                if key == "duration_ms" {
+                    found.push(here.clone());
+                }
+                durations_in(inner, here, found);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for (index, inner) in items.iter().enumerate() {
+                durations_in(inner, format!("{at}.{index}"), found);
+            }
+        }
+        _ => {}
+    }
 }
 
 // behavior: It writes results to the outbox of its own worktree and then runs the local step of sync
@@ -608,12 +662,12 @@ fn run_document_has_its_fields() {
     assert_eq!(checks.len(), 4);
     for (_, check) in checks {
         for field in ["id", "state"] {
-            assert!(check.get(field).is_some(), "{check:#}");
+            assert!(has(&check, field), "{check:#}");
         }
     }
     let known_fail = &checks_by_id(&document)[LATE_RETURN];
     assert_eq!(known_fail["reason"], "failed on these inputs", "{document:#}");
-    assert!(known_fail.get("detail").is_some(), "no `detail`: {document:#}");
+    assert!(has(known_fail, "detail"), "no `detail`: {document:#}");
 
     let fresh = Repo::sample();
     fresh.replace(LATE_FINE_TESTS, "outcome: passed", "outcome: failed");
@@ -625,6 +679,7 @@ fn run_document_has_its_fields() {
     assert_eq!(suites.len(), 1, "{document:#}");
     assert_eq!(suites[0]["name"], "desk-checks");
     assert_eq!(suites[0]["launch"], "ok");
+    assert!(suites[0]["duration_ms"].is_u64(), "a suite has no whole `duration_ms`: {document:#}");
 }
 
 fn suite_names(document: &serde_json::Value) -> Vec<String> {
@@ -638,7 +693,7 @@ fn suite_names(document: &serde_json::Value) -> Vec<String> {
 #[test]
 fn suites_lists_the_launched_suites_only() {
     let repo = Repo::sample();
-    repo.split_returns_suite("[]");
+    repo.split_returns_suite("");
     let first = repo.run_json(&[], 0);
     assert_eq!(suite_names(&first), vec!["desk-checks", "returns-checks"]);
 
@@ -661,7 +716,7 @@ fn suites_lists_the_launched_suites_only() {
 #[test]
 fn a_suite_without_its_facility_or_work_is_not_listed() {
     let repo = Repo::sample();
-    repo.split_returns_suite("[\"shelf-scanner\"]");
+    repo.split_returns_suite("\"shelf-scanner\"");
     repo.append(PROJECT_FILE, "\n[[facility]]\nname = \"shelf-scanner\"\nproof = \"facility-probe absent\"\n");
     let document = repo.run_json(&[], 0);
     assert_eq!(suite_names(&document), vec!["desk-checks"], "{document:#}");
@@ -939,7 +994,7 @@ fn the_local_lane_document_has_no_findings() {
     let document = repo.run_json(&[], 0);
     assert!(document.get("findings").is_none(), "{document:#}");
     let commit = repo.run_json(&["--lane", "commit"], 1);
-    assert!(commit.get("findings").is_some(), "{commit:#}");
+    assert!(has(&commit, "findings"), "{commit:#}");
 }
 
 // behavior: A proof and an adapter are started with no shell, from a command line split on spaces
@@ -974,7 +1029,7 @@ fn canonical_cwd(start: &serde_json::Value) -> std::path::PathBuf {
 #[test]
 fn each_adapter_starts_in_its_suites_folder() {
     let repo = Repo::sample();
-    repo.split_returns_suite("[]");
+    repo.split_returns_suite("");
     let document = repo.run_json(&[], 0);
     for check in ALL_CHECKS {
         assert_eq!(state_of(&document, check), "passed", "{document:#}");
@@ -1133,5 +1188,28 @@ fn a_skipped_marked_test_ends_with_one() {
         let document = repo.run_json(&[], 1);
         assert_eq!(document["outcome"], "failure", "{outcome}: {document:#}");
         assert_eq!(reason_of(&document, LATE_RETURN), "no result", "{outcome}: {document:#}");
+    }
+}
+
+// behavior: More marker lines for a Check id than listed tests that carry it leave the Check with no result
+#[test]
+fn more_marker_lines_than_listed_tests_give_no_result() {
+    // The second marker for the late fine sits in a helper file, which the text adapter lists no
+    // test from, as a runner lists no test for a marker on a helper method. So the id has two
+    // marker lines in source and one listed test.
+    let repo = Repo::sample();
+    repo.write("suites/desk-checks/fine-calendar.test", "kind: helper\n# Check: late-return-is-fined\n");
+    assert!(repo.lint_findings(0).is_empty(), "lint sees no fault in a marker on a helper");
+    let document = repo.run_json(&[], 1);
+    let late = &checks_by_id(&document)[LATE_RETURN];
+    assert_eq!(late["state"], "owed", "{document:#}");
+    assert_eq!(late["reason"], "no result", "{document:#}");
+    assert!(repo.results_of(LATE_RETURN).is_empty(), "a result was written for the Check with a stray marker");
+
+    // One marker line for each listed test, and one marker line that enrolls two tests: neither
+    // has more marker lines than tests, so both get their results.
+    for check in [SIXTH_LOAN, RETURNED_BOOK, ON_TIME_RETURN] {
+        assert_eq!(state_of(&document, check), "passed", "{document:#}");
+        assert_eq!(repo.results_of(check).len(), 1, "{check}");
     }
 }

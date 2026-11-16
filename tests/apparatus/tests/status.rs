@@ -344,23 +344,30 @@ fn reading_commands_answer_with_zero() {
 fn status_document_has_its_fields() {
     let repo = known_fail();
     let status = repo.status_json();
+    let mut states = BTreeSet::new();
     let requirements = status["requirements"].as_array().expect("requirements");
     assert_eq!(requirements.len(), 2);
     for requirement in requirements {
         for field in ["id", "module", "state", "verification", "realization", "approval", "scenarios"] {
-            assert!(requirement.get(field).is_some(), "no `{field}`: {requirement:#}");
+            assert!(has(requirement, field), "no `{field}`: {requirement:#}");
         }
         for scenario in requirement["scenarios"].as_array().unwrap() {
-            assert!(scenario.get("id").is_some() && scenario.get("checks").is_some(), "{scenario:#}");
+            assert!(has(scenario, "id") && has(scenario, "checks"), "{scenario:#}");
             for check in scenario["checks"].as_array().unwrap() {
-                for field in ["id", "state", "reason", "detail"] {
-                    assert!(check.get(field).is_some(), "no `{field}`: {check:#}");
+                assert!(has(check, "id") && has(check, "state"), "{check:#}");
+                // A field with nothing to say is absent: a kept Check has no reason and no detail.
+                match check["state"].as_str().unwrap_or_default() {
+                    "owed" => assert!(has(check, "reason"), "an owed Check has no reason: {check:#}"),
+                    "kept" => assert!(check.get("reason").is_none() && check.get("detail").is_none(), "a kept Check carries a reason or a detail: {check:#}"),
+                    other => panic!("status shows a Check as {other:?}: {check:#}"),
                 }
+                states.insert(check["state"].as_str().unwrap_or_default().to_string());
             }
         }
     }
+    assert_eq!(states, set_of(&["kept", "owed"]), "the sample shows both states: {status:#}");
     assert!(status["skipped_records"].is_u64(), "{status:#}");
-    assert!(status.get("process").is_some(), "{status:#}");
+    assert!(has(&status, "process"), "{status:#}");
 }
 
 // behavior: A Check with a stored fail on the current fingerprint is `owed` with the reason `failed on these inputs`, and no Check is `passed` or `failed`
@@ -526,4 +533,147 @@ fn an_owed_review_has_its_own_reason() {
     for field in ["verification", "realization"] {
         assert_eq!(shown[field], json!({ "state": "owed", "reason": "this version records no reviews" }), "{field}: {shown:#}");
     }
+}
+
+/// Prints one JSON document with the given command and adds it to the walk.
+fn printed(repo: &Repo, args: &[&str], documents: &mut Vec<(String, serde_json::Value)>) {
+    let output = repo.azimuth(args);
+    documents.push((format!("azimuth {}", args.join(" ")), output.json()));
+}
+
+// behavior: No document and no stored record holds `null`
+#[test]
+fn no_document_and_no_record_holds_null() {
+    let mut documents = Vec::new();
+
+    // Kept Checks, Checks that cannot run here, a stored fail and an input change, on a branch.
+    let repo = Repo::sample();
+    repo.split_returns_suite("\"shelf-scanner\"");
+    repo.append(PROJECT_FILE, "\n[[facility]]\nname = \"shelf-scanner\"\nproof = \"facility-probe absent\"\n");
+    repo.replace(LOAN_LIMIT_TESTS, "test: lends-after-a-return\n# Check: returned-book-frees-a-slot\noutcome: passed", "test: lends-after-a-return\n# Check: returned-book-frees-a-slot\noutcome: failed");
+    repo.commit_all("a suite that cannot run here and a failing test");
+    printed(&repo, &["run", "--json"], &mut documents);
+    printed(&repo, &["run", "--json"], &mut documents);
+    printed(&repo, &["check", "run", SIXTH_LOAN, "--json"], &mut documents);
+    repo.git(&["checkout", "--quiet", "-b", "change"]);
+    repo.append(PRODUCT_FILE, "renewals do not count\n");
+    for args in [
+        &["status", "--json"][..],
+        &["requirement", "show", LOAN_LIMIT, "--json"][..],
+        &["requirement", "show", LATE_FINE, "--json"][..],
+        &["change", "show", "--json"][..],
+        &["lint", "--json"][..],
+        &["run", "--lane", "commit", "--json"][..],
+    ] {
+        printed(&repo, args, &mut documents);
+    }
+    for check in ALL_CHECKS {
+        printed(&repo, &["check", "show", check, "--json"], &mut documents);
+    }
+    let mut records: Vec<(String, serde_json::Value)> =
+        repo.records().into_iter().map(|(path, record)| (path.display().to_string(), record)).collect();
+    for start in repo.adapter_starts() {
+        records.push(("an adapter request".to_string(), start["request"].clone()));
+    }
+
+    // Findings, among them one that belongs to no single line, and the commit lane on them.
+    let findings = Repo::sample();
+    findings.replace(LOAN_LIMIT_TESTS, "# Check: returned-book-frees-a-slot\n", "# Check: returned-book-frees-a-slot\n# Check: renewal-counts-as-one-loan\n");
+    findings.add_text_suite("returns-checks", "");
+    findings.write("suites/returns-checks/second-limit.test", "# Check: sixth-loan-is-refused\noutcome: passed\n");
+    printed(&findings, &["lint", "--json"], &mut documents);
+    printed(&findings, &["run", "--lane", "commit", "--json"], &mut documents);
+
+    // A reading error.
+    let broken = Repo::sample();
+    broken.replace(LENDING_SPEC, "### Requirement: loan-limit-holds", "### Requirement: Loan-limit-holds");
+    printed(&broken, &["status", "--json"], &mut documents);
+    printed(&broken, &["run", "--json"], &mut documents);
+
+    let formats: BTreeSet<String> = documents.iter().map(|(_, document)| document["format"].as_str().unwrap_or_default().to_string()).collect();
+    assert_eq!(
+        formats,
+        set_of(&["run-1", "status-1", "requirement-1", "check-1", "change-1", "lint-1", "error-1"]),
+        "the walk misses a document"
+    );
+    assert!(!records.is_empty(), "the walk found no record");
+    for (origin, value) in documents.iter().chain(records.iter()) {
+        assert_no_null(value, origin);
+    }
+}
+
+fn printed_json(repo: &Repo, args: &[&str]) -> serde_json::Value {
+    repo.azimuth(args).json()
+}
+
+fn empty_list(document: &serde_json::Value, path: &[&str]) {
+    let mut value = document;
+    for key in path {
+        value = value.get(*key).unwrap_or_else(|| panic!("`{}` is absent: {document:#}", path.join(".")));
+    }
+    assert_eq!(*value, json!([]), "`{}` is not an empty list: {document:#}", path.join("."));
+}
+
+// behavior: A list in a printed document is present when it is empty
+#[test]
+fn an_empty_list_is_printed() {
+    let repo = Repo::sample();
+    empty_list(&printed_json(&repo, &["lint", "--json"]), &["findings"]);
+    repo.run_json(&[], 0);
+    empty_list(&repo.run_json(&[], 0), &["suites"]);
+    let commit = printed_json(&repo, &["run", "--lane", "commit", "--json"]);
+    assert_eq!(commit["lane"], "commit", "{commit:#}");
+    empty_list(&commit, &["findings"]);
+    let kept = repo.check_show(SIXTH_LOAN);
+    assert_eq!(kept["state"], "kept", "{kept:#}");
+    for list in ["parts_changed", "files_changed", "failing_tests"] {
+        empty_list(&kept, &[list]);
+    }
+
+    repo.git(&["checkout", "--quiet", "-b", "change"]);
+    let change = printed_json(&repo, &["change", "show", "--json"]);
+    assert_eq!(change["format"], "change-1", "{change:#}");
+    for kind in ["requirements", "scenarios", "checks"] {
+        for which in ["added", "changed", "removed"] {
+            empty_list(&change, &[kind, which]);
+        }
+    }
+    empty_list(&change, &["not_compared"]);
+    empty_list(&change, &["rigor_lowered"]);
+
+    // A Scenario that no Check proves, and a Requirement with no Scenario, are gaps and no error.
+    let gaps = Repo::sample();
+    gaps.append(RETURNS_SPEC, "\n#### Scenario: lost-book-is-charged\nA book reported lost is charged at its price.\n");
+    gaps.append(LENDING_SPEC, "\n### Requirement: renewals-are-limited\nA loan is renewed at most twice.\n");
+    let status = gaps.status_json();
+    let returns = requirement_in(&status, LATE_FINE).unwrap();
+    let lost = returns["scenarios"].as_array().unwrap().iter().find(|scenario| scenario["id"] == "lost-book-is-charged").cloned();
+    empty_list(&lost.unwrap_or_else(|| panic!("the Scenario is not listed: {status:#}")), &["checks"]);
+    empty_list(requirement_in(&status, "renewals-are-limited").unwrap_or_else(|| panic!("{status:#}")), &["scenarios"]);
+}
+
+// behavior: A finding or a reading error about a whole file or a folder has no `line`
+#[test]
+fn a_finding_about_a_file_or_a_folder_has_no_line() {
+    let repo = Repo::sample();
+    repo.write(".azimuth/fake-pass.json", "{}\n");
+    repo.git(&["add", "-f", ".azimuth/fake-pass.json"]);
+    // A marker that names no Check points at its line, so it keeps one.
+    repo.replace(LOAN_LIMIT_TESTS, "# Check: returned-book-frees-a-slot\n", "# Check: returned-book-frees-a-slot\n# Check: renewal-counts-as-one-loan\n");
+    let findings = repo.lint_findings(1);
+    let whole_file: Vec<&serde_json::Value> = findings.iter().filter(|finding| finding["file"] == ".azimuth/fake-pass.json").collect();
+    assert_eq!(whole_file.len(), 1, "{findings:#?}");
+    assert!(whole_file[0].get("line").is_none(), "{:#}", whole_file[0]);
+    let marker_line = repo.line_of(LOAN_LIMIT_TESTS, "renewal-counts-as-one-loan");
+    assert_eq!(findings_at(&findings, LOAN_LIMIT_TESTS, Some(marker_line)).len(), 1, "{findings:#?}");
+
+    // A listed test whose Check id no Check declares is a finding of the launch about the suite
+    // folder, because no line of source shows the id.
+    let listed = Repo::sample();
+    listed.append(LATE_FINE_TESTS, "adapter: lists late-fine-from-constant renewal-counts-as-one-loan\n");
+    let commit = listed.run_json(&["--lane", "commit"], 1);
+    let findings = commit["findings"].as_array().cloned().unwrap_or_default();
+    let on_folder: Vec<&serde_json::Value> = findings.iter().filter(|finding| finding["file"] == "suites/desk-checks").collect();
+    assert_eq!(on_folder.len(), 1, "{commit:#}");
+    assert!(on_folder[0].get("line").is_none(), "{:#}", on_folder[0]);
 }

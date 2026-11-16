@@ -11,6 +11,7 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
@@ -78,19 +79,44 @@ pub fn docs_dir() -> PathBuf {
 }
 
 /// Folder that holds the binaries of the workspace. Integration tests run from `target/<profile>/deps`.
+///
+/// `cargo test` builds the binaries of this package for its integration tests, but not the
+/// `azimuth` binary of the core, which no test target of the core needs. A test would then run
+/// whatever `azimuth` an earlier build left behind. So before the first use in each test binary
+/// the harness asks cargo to build every binary the tests start, in the same target folder and
+/// profile. Cargo builds only what changed, so a fresh tree costs one check.
 pub fn binaries_dir() -> PathBuf {
+    static BUILT: OnceLock<PathBuf> = OnceLock::new();
+    BUILT.get_or_init(build_binaries).clone()
+}
+
+fn build_binaries() -> PathBuf {
     let exe = std::env::current_exe().expect("the test binary knows its path");
     let dir = exe
         .parent()
         .and_then(Path::parent)
         .expect("the test binary sits in target/<profile>/deps")
         .to_path_buf();
+    let profile_folder = dir.file_name().and_then(|name| name.to_str()).expect("a profile folder").to_string();
+    // Cargo calls the folder of the `dev` profile `debug`; every other profile has its own name.
+    let profile = if profile_folder == "debug" { "dev".to_string() } else { profile_folder };
+    let target_dir = dir.parent().expect("the profile folder sits in the target folder");
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut command = Command::new(cargo);
+    command
+        .current_dir(&workspace)
+        .args(["build", "--quiet", "--profile", &profile, "--package", "azimuth", "--bin", "azimuth"])
+        .args(["--package", "azimuth-tests", "--bin", "text-suite-adapter", "--bin", "facility-probe", "--bin", "stdin-recorder"])
+        .env("CARGO_TARGET_DIR", target_dir);
+    if cfg!(feature = "dotnet") {
+        // The same features as the running tests, so cargo does not rebuild this package twice.
+        command.args(["--features", "azimuth-tests/dotnet"]);
+    }
+    let status = command.status().expect("cargo starts");
+    assert!(status.success(), "cargo could not build the binaries the tests start ({status})");
     for name in ["azimuth", "text-suite-adapter", "facility-probe", "stdin-recorder"] {
-        assert!(
-            dir.join(name).exists(),
-            "{name} is not built in {}. Run `cargo test` from the workspace root, so every member is built.",
-            dir.display()
-        );
+        assert!(dir.join(name).exists(), "{name} is not in {} after the build", dir.display());
     }
     dir
 }
@@ -806,9 +832,7 @@ impl Repo {
         let errors = document["errors"].as_array().cloned().unwrap_or_default();
         assert!(!errors.is_empty(), "error-1 lists no error: {document:#}");
         for error in &errors {
-            for field in ["kind", "file", "line", "message"] {
-                assert!(error.get(field).is_some(), "an error has no `{field}`: {error:#}");
-            }
+            entry_has_kind_file_line_message(error);
         }
         if let Some(file) = file {
             let named: Vec<&Value> = errors.iter().filter(|error| error["file"] == file).collect();
@@ -822,6 +846,48 @@ impl Repo {
         }
         document
     }
+}
+
+/// A field is there when it is present with a value. A `null` never counts as a value, because
+/// the design writes a field with nothing to say by leaving it out.
+pub fn has(value: &Value, field: &str) -> bool {
+    value.get(field).is_some_and(|inner| !inner.is_null())
+}
+
+/// An entry of `lint-1` or `error-1`: `kind`, `file` and `message` are always there. `line` is a
+/// line number counted from 1, and is absent for a finding that belongs to no one line.
+pub fn entry_has_kind_file_line_message(entry: &Value) {
+    for field in ["kind", "file", "message"] {
+        assert!(has(entry, field), "no `{field}`: {entry:#}");
+    }
+    if let Some(line) = entry.get("line") {
+        assert!(line.as_u64().is_some_and(|number| number >= 1), "`line` is not a line number: {entry:#}");
+    }
+}
+
+/// Asserts that no `null` appears at any depth of a document or a record.
+pub fn assert_no_null(value: &Value, origin: &str) {
+    fn walk(value: &Value, path: &mut Vec<String>, origin: &str, whole: &Value) {
+        match value {
+            Value::Null => panic!("{origin} holds null at {}:\n{whole:#}", if path.is_empty() { "the top".to_string() } else { path.join(".") }),
+            Value::Array(items) => {
+                for (index, item) in items.iter().enumerate() {
+                    path.push(index.to_string());
+                    walk(item, path, origin, whole);
+                    path.pop();
+                }
+            }
+            Value::Object(map) => {
+                for (key, item) in map {
+                    path.push(key.clone());
+                    walk(item, path, origin, whole);
+                    path.pop();
+                }
+            }
+            _ => {}
+        }
+    }
+    walk(value, &mut Vec::new(), origin, value);
 }
 
 /// The `parts_changed` list of a `check-1` document: part names, in the order given.
@@ -865,9 +931,7 @@ impl Repo {
         assert_eq!(document["format"], "lint-1", "{document:#}");
         let findings = document["findings"].as_array().cloned().unwrap_or_else(|| panic!("no findings list: {document:#}"));
         for finding in &findings {
-            for field in ["kind", "file", "line", "message"] {
-                assert!(finding.get(field).is_some(), "a finding has no `{field}`: {finding:#}");
-            }
+            entry_has_kind_file_line_message(finding);
         }
         findings
     }

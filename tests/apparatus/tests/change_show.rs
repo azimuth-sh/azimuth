@@ -242,11 +242,11 @@ fn change_document_has_its_fields() {
     add_check(&repo, "renewal-keeps-the-count");
     let document = change_show(&repo, &[]);
     for field in ["target", "base", "class", "requirements", "scenarios", "checks", "markers_removed", "not_compared", "rigor_lowered"] {
-        assert!(document.get(field).is_some(), "no `{field}`: {document:#}");
+        assert!(has(&document, field), "no `{field}`: {document:#}");
     }
     for kind in ["requirements", "scenarios", "checks"] {
         for which in ["added", "changed", "removed"] {
-            assert!(document[kind].get(which).is_some(), "no `{kind}.{which}`: {document:#}");
+            assert!(has(&document[kind], which), "no `{kind}.{which}`: {document:#}");
         }
     }
 }
@@ -449,9 +449,111 @@ fn loosening_reuse_lowers_rigor() {
     repo.replace(RETURNS_VERIFICATION, "  Reuse: never, the desk reads today's date\n", "");
     let document = change_show(&repo, &[]);
     assert_eq!(class(&document), "D");
-    assert_eq!(document["rigor_lowered"], true, "{document:#}");
+    assert_eq!(document["rigor_lowered"], json!([{ "kind": "reuse", "check": ON_TIME_RETURN }]), "{document:#}");
     let text = repo.azimuth(&["change", "show"]).stdout;
-    assert!(text.contains("rigor lowered"), "{text}");
+    assert!(text.contains("rigor lowered") && text.contains(ON_TIME_RETURN), "{text}");
+}
+
+/// The sample with both reviews declared on the lending Requirement, on a branch.
+fn with_reviews_declared() -> Repo {
+    let repo = Repo::sample_with(|root| {
+        let path = root.join(LENDING_SPEC);
+        let text = std::fs::read_to_string(&path).unwrap().replace(
+            "A borrower holds at most five loans at a time.\n",
+            "A borrower holds at most five loans at a time.\nVerification: reviewed\nRealization: reviewed\n",
+        );
+        std::fs::write(&path, text).unwrap();
+    });
+    on_branch(&repo);
+    repo
+}
+
+// behavior: A change that removes a review declaration from a Requirement prints "rigor lowered"
+#[test]
+fn removing_a_review_declaration_lowers_rigor() {
+    for line in ["Verification: reviewed\n", "Realization: reviewed\n"] {
+        let repo = with_reviews_declared();
+        repo.replace(LENDING_SPEC, line, "");
+        let document = change_show(&repo, &[]);
+        assert_eq!(class(&document), "D", "{line:?}: {document:#}");
+        assert_eq!(count(&document["rigor_lowered"]), 1, "{line:?}: {document:#}");
+        let text = repo.azimuth(&["change", "show"]).stdout;
+        assert!(text.contains("rigor lowered") && text.contains(LOAN_LIMIT), "{line:?}:\n{text}");
+    }
+}
+
+// behavior: An entry of `rigor_lowered` holds the kind `reuse`, `verification` or `realization`, and the Check or the Requirement that lost the declaration
+#[test]
+fn each_lowered_declaration_is_an_entry_with_its_kind_and_owner() {
+    let repo = Repo::sample_with(|root| {
+        let spec = root.join(LENDING_SPEC);
+        let text = std::fs::read_to_string(&spec).unwrap().replace(
+            "A borrower holds at most five loans at a time.\n",
+            "A borrower holds at most five loans at a time.\nVerification: reviewed\nRealization: reviewed\n",
+        );
+        std::fs::write(&spec, text).unwrap();
+        let verification = root.join(RETURNS_VERIFICATION);
+        let text = std::fs::read_to_string(&verification).unwrap();
+        std::fs::write(&verification, format!("{text}  Reuse: never, the desk reads today's date\n")).unwrap();
+    });
+    on_branch(&repo);
+    repo.replace(LENDING_SPEC, "Verification: reviewed\nRealization: reviewed\n", "");
+    repo.replace(RETURNS_VERIFICATION, "  Reuse: never, the desk reads today's date\n", "");
+    let document = change_show(&repo, &[]);
+    let mut entries = document["rigor_lowered"].as_array().cloned().unwrap_or_else(|| panic!("not a list: {document:#}"));
+    entries.sort_by_key(|entry| entry["kind"].as_str().unwrap_or_default().to_string());
+    assert_eq!(
+        entries,
+        vec![
+            json!({ "kind": "realization", "requirement": LOAN_LIMIT }),
+            json!({ "kind": "reuse", "check": ON_TIME_RETURN }),
+            json!({ "kind": "verification", "requirement": LOAN_LIMIT }),
+        ],
+        "{document:#}"
+    );
+}
+
+// behavior: A Requirement or a Check that the change removes whole is not listed in `rigor_lowered`
+#[test]
+fn a_removed_requirement_or_check_is_not_listed_as_lowered() {
+    // The returns module goes whole, with its reviews and the Reuse line of one of its Checks.
+    let repo = Repo::sample_with(|root| {
+        let spec = root.join(RETURNS_SPEC);
+        let text = std::fs::read_to_string(&spec).unwrap().replace(
+            "A book returned after its due date owes a fine for each day it is late.\n",
+            "A book returned after its due date owes a fine for each day it is late.\nVerification: reviewed\n",
+        );
+        std::fs::write(&spec, text).unwrap();
+        let verification = root.join(RETURNS_VERIFICATION);
+        let text = std::fs::read_to_string(&verification).unwrap();
+        std::fs::write(&verification, format!("{text}  Reuse: never, the desk reads today's date\n")).unwrap();
+    });
+    on_branch(&repo);
+    repo.remove("azimuth/model/desk");
+    for file in [LATE_FINE_TESTS, FREE_RETURN_TESTS] {
+        repo.remove(file);
+    }
+    let document = change_show(&repo, &[]);
+    assert!(names(&document, "requirements", "removed", LATE_FINE), "{document:#}");
+    assert!(names(&document, "checks", "removed", ON_TIME_RETURN), "{document:#}");
+    assert_eq!(document["rigor_lowered"], json!([]), "{document:#}");
+
+    // A Check removed alone, with its Reuse line, is not lowered either.
+    let check = Repo::sample_with(|root| {
+        let verification = root.join(RETURNS_VERIFICATION);
+        let text = std::fs::read_to_string(&verification).unwrap();
+        std::fs::write(&verification, format!("{text}  Reuse: never, the desk reads today's date\n")).unwrap();
+    });
+    on_branch(&check);
+    check.replace(
+        RETURNS_VERIFICATION,
+        "- Check: on-time-return-is-free\n  A return on the due date or earlier records no fine.\n  Reuse: never, the desk reads today's date\n",
+        "",
+    );
+    check.remove(FREE_RETURN_TESTS);
+    let document = change_show(&check, &[]);
+    assert!(names(&document, "checks", "removed", ON_TIME_RETURN), "{document:#}");
+    assert_eq!(document["rigor_lowered"], json!([]), "{document:#}");
 }
 
 // behavior: A change that makes `Reuse:` stricter is not class D for that reason
@@ -461,7 +563,7 @@ fn tightening_reuse_is_not_class_d() {
         repo.append(RETURNS_VERIFICATION, "  Reuse: never, the desk reads today's date\n");
     });
     assert_eq!(class, "C", "{document:#}");
-    assert_eq!(document["rigor_lowered"], false, "{document:#}");
+    assert_eq!(document["rigor_lowered"], json!([]), "{document:#}");
     assert!(!text.stdout.contains("rigor lowered"));
 }
 
@@ -493,7 +595,7 @@ fn a_change_outside_model_and_tests_prints_nothing() {
     assert!(text.stdout.trim().is_empty(), "{}", text.stdout);
 }
 
-// behavior: In `change-1`, `class` is one letter, a Scenario is written `requirement/scenario`, `markers_removed` is a number and `rigor_lowered` is true or false
+// behavior: In `change-1`, `class` is one letter, a Scenario is written `requirement/scenario`, `markers_removed` is a number and `rigor_lowered` is a list
 #[test]
 fn change_document_values_have_their_fixed_forms() {
     let repo = Repo::sample();
@@ -512,7 +614,7 @@ fn change_document_values_have_their_fixed_forms() {
     assert_eq!(listed(&document, "scenarios", "added"), vec![format!("{LATE_FINE}/lost-book-is-charged")], "{document:#}");
     assert_eq!(listed(&document, "checks", "added"), vec!["lost-book-is-charged".to_string()], "{document:#}");
     assert_eq!(document["markers_removed"], 0, "{document:#}");
-    assert_eq!(document["rigor_lowered"], false, "{document:#}");
+    assert_eq!(document["rigor_lowered"], json!([]), "{document:#}");
 }
 
 // behavior: With a change that touches no model file and no test, the text is empty and the document says class `A` with empty lists
@@ -528,5 +630,5 @@ fn a_change_outside_model_and_tests_is_an_empty_class_a_document() {
         }
     }
     assert_eq!(document["markers_removed"], 0, "{document:#}");
-    assert_eq!(document["rigor_lowered"], false, "{document:#}");
+    assert_eq!(document["rigor_lowered"], json!([]), "{document:#}");
 }

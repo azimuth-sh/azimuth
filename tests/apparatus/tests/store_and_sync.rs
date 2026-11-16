@@ -200,8 +200,8 @@ fn a_run_on_a_commit_stores_its_tree_id_and_no_edits() {
     for check in ALL_CHECKS {
         let stored = &repo.result_of(check)["body"]["tree"];
         assert_eq!(stored["base"], tree.as_str(), "{check}: {stored:#}");
-        let edits = &stored["edits"];
-        assert!(edits.is_null() || edits.as_array().is_some_and(|items| items.is_empty()), "{check}: {stored:#}");
+        // No edit is nothing to say, so the field is absent, neither `null` nor an empty list.
+        assert!(stored.get("edits").is_none(), "{check}: {stored:#}");
     }
 }
 

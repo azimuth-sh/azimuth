@@ -78,7 +78,7 @@ fn the_commit_lane_names_lint_first() {
         output.text()
     );
     let document = commit_lane(&repo, 0);
-    assert!(document.get("findings").is_some(), "the commit lane document has no findings: {document:#}");
+    assert!(has(&document, "findings"), "the commit lane document has no findings: {document:#}");
 }
 
 fn with_a_finding() -> Repo {
@@ -99,9 +99,7 @@ fn the_commit_lane_fails_on_a_finding() {
     assert_eq!(document["outcome"], "failure");
     assert_eq!(count(&document["findings"]), 1, "{document:#}");
     for finding in document["findings"].as_array().unwrap() {
-        for field in ["kind", "file", "line", "message"] {
-            assert!(finding.get(field).is_some(), "{finding:#}");
-        }
+        entry_has_kind_file_line_message(finding);
     }
 }
 

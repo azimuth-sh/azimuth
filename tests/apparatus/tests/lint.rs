@@ -304,10 +304,10 @@ fn lint_reports_a_tracked_file_under_the_ignored_folder() {
     repo.write(".azimuth/fake-pass.json", "{}\n");
     repo.git(&["add", "-f", ".azimuth/fake-pass.json"]);
     let findings = repo.lint_findings(1);
-    assert!(
-        findings.iter().any(|finding| finding.to_string().contains(".azimuth/")),
-        "{findings:#?}"
-    );
+    let about_the_file: Vec<&serde_json::Value> = findings.iter().filter(|finding| finding["file"] == ".azimuth/fake-pass.json").collect();
+    assert_eq!(about_the_file.len(), 1, "{findings:#?}");
+    // The finding is about the whole file, so it has no line to name, and the field is absent.
+    assert!(about_the_file[0].get("line").is_none(), "{:#}", about_the_file[0]);
 }
 
 // behavior: Every finding says what is wrong and what to do

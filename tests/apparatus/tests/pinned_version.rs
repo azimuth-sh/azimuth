@@ -93,3 +93,22 @@ fn raising_the_pin_moves_only_the_files_part() {
         assert_eq!(files_changed(&document), vec![PROJECT_FILE.to_string()], "{document:#}");
     }
 }
+
+const INSTALL_LINE: &str = "curl -fsSL https://azimuth.sh/install | sh";
+
+// behavior: The command it prints is the one install line, which names no version
+#[test]
+fn run_prints_the_one_install_line() {
+    let repo = Repo::sample();
+    pin(&repo, OTHER_CLI);
+    let output = repo.azimuth(&["run"]);
+    output.expect_status(2);
+    let text = output.text();
+    let lines: Vec<&str> = text.lines().filter(|line| line.contains("azimuth.sh/install")).collect();
+    assert_eq!(lines.len(), 1, "the install line is not printed once:\n{text}");
+    // The words before the command may name the pinned version; the command itself is the
+    // install line with nothing after it, so no version rides on it.
+    let at = lines[0].find(INSTALL_LINE).unwrap_or_else(|| panic!("the printed command is not the install line: {:?}", lines[0]));
+    assert_eq!(lines[0][at + INSTALL_LINE.len()..].trim(), "", "something follows `| sh`: {:?}", lines[0]);
+    assert!(text.contains(OTHER_CLI), "the refusal does not name the pinned version:\n{text}");
+}

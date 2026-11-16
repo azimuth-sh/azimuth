@@ -478,9 +478,102 @@ fn a_requirement_heading_without_an_id_is_a_reading_error() {
 #[test]
 fn a_scenario_heading_without_an_id_is_a_reading_error() {
     let repo = Repo::sample();
+    // The emptied heading reads like the start of every other Scenario heading, so its line is
+    // taken while it still carries its id.
+    let line = repo.line_of(RETURNS_SPEC, "#### Scenario: on-time-return-is-free");
     repo.replace(RETURNS_SPEC, "#### Scenario: on-time-return-is-free", "#### Scenario:");
-    let line = repo.line_of(RETURNS_SPEC, "#### Scenario:");
     repo.expect_reading_error(Some(RETURNS_SPEC), Some(line));
+}
+
+/// Writes a declaration line after the given text and returns the one `error-1` entry that names
+/// the line, with its file and line number.
+fn misplaced(file: &str, after: &str, line: &str) -> serde_json::Value {
+    let repo = Repo::sample();
+    repo.replace(file, after, &format!("{after}{line}\n"));
+    let number = repo.line_of(file, line);
+    let document = repo.expect_reading_error(Some(file), Some(number));
+    let entries: Vec<serde_json::Value> = document["errors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|error| error["file"] == file && error["line"].as_u64() == Some(number))
+        .cloned()
+        .collect();
+    assert_eq!(entries.len(), 1, "{line:?} in {file}: {document:#}");
+    entries[0].clone()
+}
+
+// behavior: A `Reuse:` line in `specification.md`, or in `verification.md` under no Check, is a reading error
+#[test]
+fn a_reuse_line_outside_a_check_is_a_reading_error() {
+    misplaced(
+        RETURNS_SPEC,
+        "A book returned after its due date owes a fine for each day it is late.\n",
+        "Reuse: never, the fine table changes each year",
+    );
+    misplaced(RETURNS_SPEC, "The desk records a fine of three days.\n", "Reuse: never, the desk reads today's date");
+    misplaced(RETURNS_VERIFICATION, "#### Scenario: on-time-return-is-free\n", "Reuse: never, the calendar of the desk is read");
+    misplaced(RETURNS_VERIFICATION, "### Requirement: late-return-owes-a-fine\n", "Reuse: never, the fines are counted by the clock");
+}
+
+// behavior: A `Verification:` or `Realization:` line in `verification.md` is a reading error
+#[test]
+fn a_review_declaration_in_verification_md_is_a_reading_error() {
+    misplaced(RETURNS_VERIFICATION, "### Requirement: late-return-owes-a-fine\n", "Verification: reviewed");
+    misplaced(RETURNS_VERIFICATION, "  A return three days late records a fine of three days.\n", "  Realization: reviewed");
+    misplaced(RETURNS_VERIFICATION, "#### Scenario: on-time-return-is-free\n", "Verification: reviewed");
+}
+
+// behavior: A `Context:` line under a Requirement is a reading error in both files
+#[test]
+fn a_context_line_under_a_requirement_is_a_reading_error() {
+    misplaced(
+        RETURNS_SPEC,
+        "A book returned after its due date owes a fine for each day it is late.\n",
+        "Context: the desk is open on weekdays",
+    );
+    misplaced(RETURNS_SPEC, "The desk records no fine.\n", "Context: the due date is printed on the slip");
+    misplaced(RETURNS_VERIFICATION, "### Requirement: late-return-owes-a-fine\n", "Context: the desk is open on weekdays");
+    misplaced(RETURNS_VERIFICATION, "  A return on the due date or earlier records no fine.\n", "  Context: the due date is printed on the slip");
+}
+
+// behavior: The message of a misplaced declaration names the file and the place where the line belongs
+#[test]
+fn a_misplaced_declaration_names_where_it_belongs() {
+    // The wording is free. The message must name the file the line belongs in and the word for
+    // the place in that file.
+    for (file, after, line, belongs_in, place) in [
+        (RETURNS_SPEC, "The desk records a fine of three days.\n", "Reuse: never, the desk reads today's date", "verification.md", "Check"),
+        (RETURNS_VERIFICATION, "#### Scenario: on-time-return-is-free\n", "Reuse: never, the calendar of the desk is read", "verification.md", "Check"),
+        (RETURNS_VERIFICATION, "### Requirement: late-return-owes-a-fine\n", "Verification: reviewed", "specification.md", "Requirement"),
+        (RETURNS_VERIFICATION, "  A return three days late records a fine of three days.\n", "  Realization: reviewed", "specification.md", "Requirement"),
+    ] {
+        let error = misplaced(file, after, line);
+        let message = error["message"].as_str().unwrap_or_default();
+        assert!(message.contains(belongs_in), "{line:?} in {file}: the message does not name {belongs_in}: {message}");
+        assert!(message.contains(place), "{line:?} in {file}: the message does not name the {place}: {message}");
+    }
+}
+
+// behavior: A `Reuse:` line in `specification.md`, or in `verification.md` under no Check, is a reading error
+#[test]
+fn declarations_above_the_first_requirement_stay_prose() {
+    // Text above the first Requirement of a file is prose, whatever it looks like, so the same
+    // lines that are errors below a heading are read as nothing here.
+    let lines = "Reuse: never, the desk reads today's date\nVerification: reviewed\nRealization: reviewed\nContext: the desk is open on weekdays\n\n";
+    let repo = Repo::sample();
+    repo.replace(LENDING_SPEC, "### Requirement: loan-limit-holds\n", &format!("{lines}### Requirement: loan-limit-holds\n"));
+    repo.replace(RETURNS_VERIFICATION, "### Requirement: late-return-owes-a-fine\n", &format!("{lines}### Requirement: late-return-owes-a-fine\n"));
+    lint_is_clean(&repo);
+    let document = status(&repo);
+    for requirement in [LOAN_LIMIT, LATE_FINE] {
+        let entry = requirement_in(&document, requirement).unwrap();
+        assert_eq!(entry["verification"], json!({ "state": "not reviewed" }), "{entry:#}");
+        assert_eq!(entry["realization"], json!({ "state": "not reviewed" }), "{entry:#}");
+    }
+    for check in [LATE_RETURN, ON_TIME_RETURN] {
+        assert!(repo.check_show(check).get("reuse").is_none(), "{check} took a Reuse line from above the Requirement");
+    }
 }
 
 fn with_reading_error() -> Repo {
