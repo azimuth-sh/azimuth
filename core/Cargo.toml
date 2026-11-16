@@ -9,5 +9,10 @@ description = "Azimuth core CLI"
 name = "azimuth"
 path = "src/main.rs"
 
-# The shipped core carries no dependencies, because it must run in other people's CI.
+# The core runs in other people's CI, so it carries this fixed list of crates and nothing else.
+# Adding one is a change of the design.
 [dependencies]
+serde_json = "1"
+sha2 = "0.10"
+toml = "0.8"
+unicode-normalization = "0.1"
