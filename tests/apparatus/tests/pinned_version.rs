@@ -112,3 +112,27 @@ fn run_prints_the_one_install_line() {
     assert_eq!(lines[0][at + INSTALL_LINE.len()..].trim(), "", "something follows `| sh`: {:?}", lines[0]);
     assert!(text.contains(OTHER_CLI), "the refusal does not name the pinned version:\n{text}");
 }
+
+/// The version the workspace builds, read from the core's manifest.
+fn built_version() -> String {
+    let manifest = std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../core/Cargo.toml")).unwrap();
+    parse_toml(&manifest)["package"]["version"].as_str().expect("the core's manifest names its version").to_string()
+}
+
+// behavior: `azimuth --version` prints the version and nothing else, also with no project file and under another pinned version
+#[test]
+fn version_prints_the_version_and_nothing_else() {
+    let expected = format!("{}\n", built_version());
+    let repo = Repo::sample();
+    let elsewhere = repo.beside("no-repository");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    let in_sample = repo.azimuth(&["--version"]);
+    let in_a_plain_folder = repo.azimuth_in(&elsewhere, &["--version"], &[]);
+    pin(&repo, OTHER_CLI);
+    let under_another_pin = repo.azimuth(&["--version"]);
+    for (place, output) in [("the sample", in_sample), ("a folder that is no repository", in_a_plain_folder), ("another pinned version", under_another_pin)] {
+        assert_eq!(output.status, 0, "{place}:\n{}", output.text());
+        assert_eq!(output.stdout, expected, "{place}");
+        assert_eq!(output.stderr, "", "{place}");
+    }
+}

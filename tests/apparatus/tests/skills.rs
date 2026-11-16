@@ -198,3 +198,13 @@ fn the_skill_names_its_steps_and_stops() {
     }
     assert!(lower.matches("stop").count() >= 3, "the skill names fewer than three stops");
 }
+
+// behavior: The installed skill tells the agent to use `~/.azimuth/bin/azimuth` when `azimuth` is not found
+#[test]
+fn the_skill_names_the_installed_binary_for_when_azimuth_is_not_found() {
+    // The words around the path are for the agent to read and are not asserted.
+    let repo = Repo::sample();
+    install(&repo, "codex");
+    let text = digest_line_is_correct(&repo, SKILL_FILE);
+    assert!(text.contains("~/.azimuth/bin/azimuth"), "the skill does not name ~/.azimuth/bin/azimuth:\n{text}");
+}

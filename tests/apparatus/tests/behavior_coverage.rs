@@ -1,11 +1,12 @@
-//! Fails while a row of `docs/increments/1.md` has no test that names it. A test names its row
-//! with a line `// behavior: <the exact behavior text of the row>` beside it.
+//! Fails while a row of a behavior list under `docs/increments/` has no test that names it. A test
+//! names its row with a line `// behavior: <the exact behavior text of the row>` beside it. Rows
+//! in a section that a pushed tag or a later increment proves need no test.
 
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
-use azimuth_tests::increment_rows;
+use azimuth_tests::behavior_rows;
 
 #[test]
 fn every_behavior_of_the_increment_has_a_test() {
@@ -22,18 +23,18 @@ fn every_behavior_of_the_increment_has_a_test() {
         }
     }
 
-    let rows = increment_rows();
-    let known: BTreeSet<String> = rows.iter().map(|(_, behavior, _)| behavior.clone()).collect();
+    let rows: Vec<_> = behavior_rows().into_iter().filter(|row| row.needs_test).collect();
+    let known: BTreeSet<String> = rows.iter().map(|row| row.behavior.clone()).collect();
     let uncovered: Vec<String> = rows
         .iter()
-        .filter(|(_, behavior, _)| !named.contains(behavior))
-        .map(|(section, behavior, _)| format!("[{section}] {behavior}"))
+        .filter(|row| !named.contains(&row.behavior))
+        .map(|row| format!("[{} / {}] {}", row.list, row.section, row.behavior))
         .collect();
     let unknown: Vec<&String> = named.iter().filter(|behavior| !known.contains(*behavior)).collect();
 
     assert!(
         unknown.is_empty(),
-        "tests name behaviors that the increment does not list:\n{unknown:#?}"
+        "tests name behaviors that no list holds:\n{unknown:#?}"
     );
     assert!(
         uncovered.is_empty(),

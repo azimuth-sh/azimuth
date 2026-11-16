@@ -1,19 +1,22 @@
-//! Tests of the two documents the increment is built from. They pass before any product code
+//! Tests of the design and the behavior lists built from it. They pass before any product code
 //! exists, and they fail when an edit of the design removes a sentence that a behavior quotes.
 
 use std::fs;
 
-use azimuth_tests::{docs_dir, increment_rows};
+use azimuth_tests::{behavior_rows, docs_dir, BEHAVIOR_LISTS};
 
 #[test]
 fn every_quote_of_the_increment_is_a_sentence_of_the_design() {
     let design = fs::read_to_string(docs_dir().join("design.md")).expect("docs/design.md");
-    let rows = increment_rows();
-    assert!(rows.len() > 200, "the increment lists {} rows, fewer than expected", rows.len());
+    let rows = behavior_rows();
+    for (list, at_least) in [("increments/1.md", 300), ("increments/release.md", 20)] {
+        let count = rows.iter().filter(|row| row.list == list).count();
+        assert!(count >= at_least, "{list} lists {count} rows, fewer than expected");
+    }
     let missing: Vec<String> = rows
         .iter()
-        .filter(|(_, _, quote)| !design.contains(quote.as_str()))
-        .map(|(section, behavior, quote)| format!("[{section}] {behavior}\n    quote: {quote}"))
+        .filter(|row| !design.contains(row.quote.as_str()))
+        .map(|row| format!("[{} / {}] {}\n    quote: {}", row.list, row.section, row.behavior, row.quote))
         .collect();
     assert!(missing.is_empty(), "quotes that docs/design.md no longer holds:\n{}", missing.join("\n"));
 }
@@ -33,7 +36,7 @@ fn the_unanswered_section_of_the_increment_has_no_rows() {
 
 #[test]
 fn every_table_in_both_documents_starts_with_a_header_and_a_separator() {
-    for name in ["design.md", "increments/1.md"] {
+    for name in std::iter::once("design.md").chain(BEHAVIOR_LISTS) {
         let text = fs::read_to_string(docs_dir().join(name)).unwrap();
         let problems = table_problems(&text);
         assert!(problems.is_empty(), "{name}:\n{}", problems.join("\n"));

@@ -784,28 +784,51 @@ pub fn write_record(dir: &Path, value: &Value) -> PathBuf {
     path
 }
 
-/// Rows of `docs/increments/1.md`: (section heading, behavior, quote). The section "Left for
-/// increment 4" is not part of the increment and is left out.
-pub fn increment_rows() -> Vec<(String, String, String)> {
-    let text = fs::read_to_string(docs_dir().join("increments/1.md")).expect("docs/increments/1.md");
+/// The lists of behaviors the tests are written from, under `docs/increments/`.
+pub const BEHAVIOR_LISTS: [&str; 2] = ["increments/1.md", "increments/release.md"];
+
+/// One row of a behavior table in a list.
+#[derive(Debug, Clone)]
+pub struct BehaviorRow {
+    pub list: String,
+    pub section: String,
+    pub behavior: String,
+    pub quote: String,
+    /// False in the sections whose rows have no test in this repository: "Left for increment 4"
+    /// of list 1, and "Proven by the first tag" of the release list, which a pushed tag proves.
+    pub needs_test: bool,
+}
+
+/// The rows of every behavior table of every list. A table counts when its header starts with
+/// `Behavior`; other tables, such as the open questions, hold no behaviors.
+pub fn behavior_rows() -> Vec<BehaviorRow> {
     let mut rows = Vec::new();
-    let mut section = String::new();
-    for line in text.lines() {
-        if let Some(heading) = line.strip_prefix("## ") {
-            section = heading.trim().to_string();
-            continue;
+    for list in BEHAVIOR_LISTS {
+        let text = fs::read_to_string(docs_dir().join(list)).unwrap_or_else(|_| panic!("docs/{list}"));
+        let mut section = String::new();
+        let mut in_behavior_table = false;
+        let mut previous_was_table = false;
+        for line in text.lines() {
+            if let Some(heading) = line.strip_prefix("## ") {
+                section = heading.trim().to_string();
+            }
+            let is_table = line.starts_with('|');
+            if is_table && !previous_was_table {
+                in_behavior_table = line.starts_with("| Behavior |");
+                previous_was_table = true;
+                continue;
+            }
+            previous_was_table = is_table;
+            if !is_table || !in_behavior_table || line.starts_with("| ---") {
+                continue;
+            }
+            let body = &line[2..];
+            let split = body.find(" | ").unwrap_or_else(|| panic!("a row has two cells: {line}"));
+            let behavior = body[..split].trim().to_string();
+            let quote = body[split + 3..].trim_end().trim_end_matches('|').trim_end().to_string();
+            let needs_test = !(section.starts_with("Left for increment 4") || section.starts_with("Proven by the first tag"));
+            rows.push(BehaviorRow { list: list.to_string(), section: section.clone(), behavior, quote, needs_test });
         }
-        if section.starts_with("Left for increment 4") || !line.starts_with("| ") {
-            continue;
-        }
-        if line.starts_with("| ---") || line.starts_with("| Behavior |") {
-            continue;
-        }
-        let body = &line[2..];
-        let split = body.find(" | ").unwrap_or_else(|| panic!("a row has two cells: {line}"));
-        let behavior = body[..split].trim().to_string();
-        let quote = body[split + 3..].trim_end().trim_end_matches('|').trim_end().to_string();
-        rows.push((section.clone(), behavior, quote));
     }
     rows
 }
