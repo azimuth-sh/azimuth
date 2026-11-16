@@ -79,6 +79,23 @@ fn run_names_a_missing_adapter() {
     owed_everywhere(&document);
 }
 
+// behavior: The message about a missing adapter at a launch prints the same line, with the CLI's own version
+#[test]
+fn a_missing_dotnet_adapter_is_named_with_the_versioned_line() {
+    let mut repo = Repo::sample();
+    repo.replace(PROJECT_FILE, "adapter = \"text-suite-adapter\"", "adapter = \"dotnet azimuth-xunit\"");
+    repo.set_env("PATH", &repo.path_without("dotnet"));
+    let output = repo.azimuth(&["run"]);
+    output.expect_status(1);
+    let text = output.text();
+    let expected = format!("{XUNIT_INSTALL} --version {}", cli_version());
+    let lines = xunit_install_lines(&text);
+    assert!(!lines.is_empty(), "the launch prints no install line of the .NET adapter:\n{text}");
+    for line in lines {
+        assert_eq!(line, expected, "the launch prints another install line:\n{text}");
+    }
+}
+
 // behavior: It computes each Check's fingerprint before it starts anything
 #[test]
 fn an_input_changed_by_the_proof_gives_no_results() {
@@ -640,7 +657,7 @@ fn run_ends_with_two_when_it_cannot_do_its_job() {
     repo.azimuth(&["run", "sixth-loan-is-refused"]).expect_status(2);
 
     let other = Repo::sample();
-    other.replace(PROJECT_FILE, &format!("cli = \"{PINNED_CLI}\""), &format!("cli = \"{OTHER_CLI}\""));
+    other.replace(PROJECT_FILE, &format!("cli = \"{}\"", cli_version()), &format!("cli = \"{OTHER_CLI}\""));
     other.azimuth(&["run"]).expect_status(2);
     for repo in [&broken, &repo, &other] {
         assert!(repo.adapter_starts().is_empty());

@@ -1,5 +1,5 @@
-//! Group "The .NET test adapter" of docs/increments/1.md, and the rows of `azimuth init` that
-//! need an installed adapter. These tests start the real adapter against the sample's real xUnit
+//! Group "The .NET test adapter" of docs/increments/1.md, the rows of `azimuth init` that need
+//! an installed adapter, and section "The package" of docs/increments/release.md. These tests start the real adapter against the sample's real xUnit
 //! project, so they need the .NET SDK and run only with `cargo test --features dotnet`.
 //!
 //! The adapter's code is in `adapters/xunit/` of this repository. The tests pack it once into a
@@ -59,16 +59,17 @@ fn dotnet_for(repo: &Repo, dir: &Path, args: &[&str]) -> Output {
     run_with_time_limit(command, Duration::from_secs(600), None)
 }
 
-/// Packs `adapters/xunit/` once per test binary. The version gets a suffix of its own for each
-/// pack, because the machine's package cache keeps the first package of a version for good, and
-/// a repacked adapter under an old version would never reach the tests.
+/// Packs `adapters/xunit/` once per test binary, under the version of the CLI as the release
+/// workflow packs it, so the install line the CLI prints can be run against this feed. Every test
+/// restores into a package folder of its own, so no package of an earlier pack under the same
+/// version can stand in for this one.
 fn feed() -> &'static Feed {
     static FEED: OnceLock<Feed> = OnceLock::new();
     FEED.get_or_init(|| {
         let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../adapters/xunit");
         assert!(source.is_dir(), "the adapter's code is not in {} yet", source.display());
         let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-        let version = format!("0.0.0-local.{stamp}");
+        let version = cli_version();
         let folder = binaries_dir().join(format!("azimuth-xunit-feed-{stamp}"));
         std::fs::create_dir_all(&folder).unwrap();
         let output = dotnet(&source, &["pack", "--configuration", "Release", "--output", folder.to_str().unwrap(), &format!("-p:Version={version}")]);
@@ -535,4 +536,136 @@ fn init_lists_only_what_the_adapter_reported() {
         assert!(!suite["path"].as_str().unwrap_or_default().contains("Shelf"), "{project:?}");
         assert!(!suite["path"].as_str().unwrap_or_default().contains("suites/desk-checks"), "{project:?}");
     }
+}
+
+/// A file inside the packed package, read with `unzip`, which both runners have; the test crate
+/// needs no zip library for it.
+fn package_file(package: &Path, name: &str) -> String {
+    let output = Command::new("unzip").arg("-p").arg(package).arg(name).output().expect("unzip can be started");
+    assert!(output.status.success(), "{name} is not in {}: {}", package.display(), String::from_utf8_lossy(&output.stderr));
+    String::from_utf8(output.stdout).unwrap()
+}
+
+fn package_entries(package: &Path) -> Vec<String> {
+    let output = Command::new("unzip").arg("-Z1").arg(package).output().expect("unzip can be started");
+    assert!(output.status.success(), "{} cannot be listed", package.display());
+    String::from_utf8(output.stdout).unwrap().lines().map(str::to_string).collect()
+}
+
+/// The package's description, the one `.nuspec` at the top of the package.
+fn nuspec(package: &Path) -> String {
+    let specs: Vec<String> = package_entries(package).into_iter().filter(|entry| !entry.contains('/') && entry.ends_with(".nuspec")).collect();
+    assert_eq!(specs.len(), 1, "the package holds not one nuspec: {specs:?}");
+    package_file(package, &specs[0])
+}
+
+/// The text of the first element `<name …>…</name>`, or `None`.
+fn element(xml: &str, name: &str) -> Option<String> {
+    let start = xml.find(&format!("<{name}"))?;
+    let after_tag = start + xml[start..].find('>')? + 1;
+    let end = after_tag + xml[after_tag..].find(&format!("</{name}>"))?;
+    Some(xml[after_tag..end].trim().to_string())
+}
+
+/// The opening tag `<name …>` of the first such element, attributes included.
+fn opening_tag(xml: &str, name: &str) -> Option<String> {
+    let start = xml.find(&format!("<{name} ")).or_else(|| xml.find(&format!("<{name}>")))?;
+    let end = start + xml[start..].find('>')?;
+    Some(xml[start..=end].to_string())
+}
+
+// behavior: The package `Azimuth.Xunit` names the license `Apache-2.0`, the site `https://azimuth.sh`, the repository `https://github.com/azimuth-sh/azimuth` and the author `Azimuth`
+#[test]
+fn the_package_says_where_it_comes_from() {
+    // The packed package and not the project file, because a published package is what a person
+    // receives, and only `dotnet pack` decides what goes into it.
+    let spec = nuspec(&feed().package);
+    assert_eq!(element(&spec, "id").as_deref(), Some(PACKAGE_ID), "{spec}");
+    assert_eq!(element(&spec, "authors").as_deref(), Some("Azimuth"), "the author:\n{spec}");
+    let license = opening_tag(&spec, "license").unwrap_or_else(|| panic!("no license:\n{spec}"));
+    assert!(license.contains("type=\"expression\""), "the license is not an expression: {license}");
+    assert_eq!(element(&spec, "license").as_deref(), Some("Apache-2.0"), "the license:\n{spec}");
+    // NuGet writes the site with a trailing slash, and no project setting stops it.
+    let site = element(&spec, "projectUrl");
+    assert!(matches!(site.as_deref(), Some("https://azimuth.sh" | "https://azimuth.sh/")), "the site is {site:?}:\n{spec}");
+    let repository = opening_tag(&spec, "repository").unwrap_or_else(|| panic!("no repository:\n{spec}"));
+    assert!(repository.contains("url=\"https://github.com/azimuth-sh/azimuth\""), "the repository: {repository}");
+}
+
+/// The readme inside the packed package, through the file its nuspec names.
+fn packed_readme() -> String {
+    let package = &feed().package;
+    let spec = nuspec(package);
+    let name = element(&spec, "readme").unwrap_or_else(|| panic!("the package names no readme:\n{spec}"));
+    // NuGet writes the path with either slash.
+    let path = name.replace('\\', "/");
+    let entries = package_entries(package);
+    assert!(entries.contains(&path), "the readme {name} is not in the package: {entries:?}");
+    package_file(package, &path)
+}
+
+// behavior: The package carries a readme, and the readme holds the marker
+#[test]
+fn the_package_carries_a_readme_with_the_marker() {
+    let readme = packed_readme();
+    assert!(readme.contains("[Trait(\"Check\", \"<id>\")]"), "the readme does not show the marker:\n{readme}");
+    // Azimuth shows how far code meets its intent; it does not prove code, and a published readme
+    // cannot be corrected.
+    let words: Vec<String> =
+        readme.split_whitespace().map(|word| word.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase()).collect();
+    assert!(!words.windows(2).any(|pair| pair[0] == "azimuth" && pair[1] == "proves"), "the readme says Azimuth proves:\n{readme}");
+}
+
+/// The install line `azimuth init` prints for the .NET adapter, on a machine without `dotnet`.
+fn printed_install_line() -> String {
+    let mut repo = Repo::sample_before_init("main");
+    repo.set_env("PATH", &repo.path_without("dotnet"));
+    let output = repo.azimuth(&["init"]);
+    output.expect_status(0);
+    let lines = xunit_install_lines(&output.text());
+    assert_eq!(lines.len(), 1, "init prints not one install line:\n{}", output.text());
+    lines[0].clone()
+}
+
+// behavior: The readme shows the install line that the CLI prints, with `<version>` in place of the version
+#[test]
+fn the_readme_shows_the_printed_install_line() {
+    // Compared with what the CLI prints, so the two cannot drift apart.
+    let printed = printed_install_line();
+    let version = cli_version();
+    let before = printed.strip_suffix(&version).unwrap_or_else(|| panic!("the printed line does not end with {version}: {printed}"));
+    let readme = packed_readme();
+    assert!(readme.contains(&format!("{before}<version>")), "the readme does not show {before:?} followed by <version>:\n{readme}");
+}
+
+// behavior: The install line that init prints for xUnit names the CLI's own version
+#[test]
+fn the_printed_install_line_installs_the_adapter() {
+    // The line as init prints it, run in a fresh folder whose one source is a feed holding the
+    // package at the CLI's version, as a person's machine would see the release. The CLI's version
+    // is an alpha today, which `dotnet` skips when no version is named.
+    let line = printed_install_line();
+    // The repository is only the owner of the temporary folders; the line runs beside it.
+    let folder = Repo::sample_before_init("main");
+    let dir = folder.beside("person");
+    std::fs::create_dir_all(&dir).unwrap();
+    local_feed_config(feed(), &dir.join("nuget.config"));
+    let mut command = Command::new("/bin/sh");
+    command.args(["-c", &line]).current_dir(&dir).envs(own_folders(&folder));
+    let output = run_with_time_limit(command, Duration::from_secs(600), None);
+    assert_eq!(output.status, 0, "the printed line {line:?} does not install:\n{}", output.text());
+    // dotnet's own answer, because the SDK decides where it writes a new manifest.
+    let mut list = Command::new("dotnet");
+    list.args(["tool", "list", "--local"]).current_dir(&dir).envs(own_folders(&folder));
+    let listed = run_with_time_limit(list, Duration::from_secs(120), None);
+    listed.expect_status(0);
+    let version = cli_version();
+    assert!(
+        listed.stdout.lines().any(|row| {
+            let words: Vec<&str> = row.split_whitespace().collect();
+            words.first() == Some(&MANIFEST_ID) && words.get(1) == Some(&version.as_str())
+        }),
+        "the folder does not list {MANIFEST_ID} at {version}:\n{}",
+        listed.stdout
+    );
 }

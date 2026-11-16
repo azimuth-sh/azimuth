@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use azimuth_tests::{run_with_time_limit, sha256_hex, Output, Repo, OTHER_CLI, PINNED_CLI, PROJECT_FILE};
+use azimuth_tests::{run_with_time_limit, sha256_hex, Output, Repo, cli_version, OTHER_CLI, PROJECT_FILE};
 use tempfile::TempDir;
 
 const FIRST: &str = "0.2.0-alpha.7";
@@ -851,7 +851,7 @@ fn page_text_drops_tags_and_decodes_entities() {
 #[test]
 fn the_page_holds_the_install_line_the_cli_prints() {
     let repo = Repo::sample();
-    repo.replace(PROJECT_FILE, &format!("cli = \"{PINNED_CLI}\""), &format!("cli = \"{OTHER_CLI}\""));
+    repo.replace(PROJECT_FILE, &format!("cli = \"{}\"", cli_version()), &format!("cli = \"{OTHER_CLI}\""));
     let output = repo.azimuth(&["status"]);
     let marker = "Install the pinned version: ";
     let line = output

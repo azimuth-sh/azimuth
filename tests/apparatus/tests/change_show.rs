@@ -571,7 +571,7 @@ fn tightening_reuse_is_not_class_d() {
 #[test]
 fn raising_the_pin_is_class_d() {
     let (class, document, _) = class_of(|repo| {
-        repo.replace(PROJECT_FILE, &format!("cli = \"{PINNED_CLI}\""), &format!("cli = \"{OTHER_CLI}\""));
+        repo.replace(PROJECT_FILE, &format!("cli = \"{}\"", cli_version()), &format!("cli = \"{OTHER_CLI}\""));
     });
     assert_eq!(class, "D", "{document:#}");
 }

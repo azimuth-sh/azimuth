@@ -54,9 +54,10 @@ pub fn run() -> i32 {
                         suites.push(DiscoveredSuite { name, path, runner });
                     }
                 }
+                // The line stands alone, so it can be copied whole without a full stop.
                 Err(why) => println!(
-                    "{}: the adapter `{}` is not installed here ({why}). Install it: {}. The suites of this stack are not in the project file; add them by hand.",
-                    runner.stack, runner.adapter, runner.install_line
+                    "{}: the adapter `{}` is not installed here ({why}). Install it with this line:\n  {}\nThe suites of this stack are not in the project file; add them by hand.",
+                    runner.stack, runner.adapter, runner.install_line()
                 ),
             }
         }

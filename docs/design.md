@@ -332,6 +332,8 @@ The cost. The page shows output of an alpha, and that output changes. Nothing bu
 
 Open: a signature on the binaries.
 
+Open until a Rust adapter is built: how it reaches a team. Cargo has no tool manifest inside a repository, so the pin needs an answer there. The adapter is a crate of its own, and the rule that the CLI goes to no registry does not decide its channel.
+
 The pin is exact, not a range, while versions start with 0. Two developers on different versions would write records that the other cannot read.
 
 A range in `cli` is a reading error. The warning under another version is one line on standard error that names the pinned version.
@@ -2177,6 +2179,12 @@ The cost. Starting takes two installs for a stack, and Azimuth publishes to seve
 Example: drim-dev already pins one tool in `.config/dotnet-tools.json`. The .NET adapter is a second entry there, and CI runs `dotnet tool restore` before `azimuth run`.
 
 **The .NET adapter is the package `Azimuth.Xunit`, and its command is `azimuth-xunit`.** The tool manifest lists the package, and the project file says `dotnet azimuth-xunit`. The id follows the family of Azimuth's packages on nuget.org, so that a reserved prefix `Azimuth.` can cover it. Its code is in `adapters/xunit/` of the Azimuth repository. Azimuth's own tests pack it into a local folder feed and write the sample's tool manifest themselves, so they need no registry.
+
+**A package says where it comes from.** A published version cannot be changed, so each adapter package names its license, the project's site and the source repository, and carries a short readme. For `Azimuth.Xunit` that is the license `Apache-2.0`, the site `https://azimuth.sh`, the repository `https://github.com/azimuth-sh/azimuth` and the author `Azimuth`. The readme says what the adapter is, how a repository installs it and how a test is marked.
+
+**The line that installs an adapter names the version of the CLI that prints it.** The CLI and its adapters are released together under one version, so the CLI knows which adapter belongs to it. For xUnit the line is `dotnet tool install --local --create-manifest-if-needed Azimuth.Xunit --version <version>`. Without a version `dotnet` skips a pre-release, so the printed line could not install an alpha. The readme in the package shows the line with `<version>` and says that `azimuth init` prints it filled in. `azimuth init` prints the line on a line of its own, so that it can be copied whole.
+
+The cost. The printed line ties the adapter to the CLI's version. A team that wants another adapter version edits the tool manifest by hand, and the core compares the two versions with nothing.
 
 **The .NET adapter lists tests by reading the built assembly, and it runs nothing to do so.** A test is a method with `[Fact]`, `[Theory]` or an attribute that derives from them. It runs the asked tests through `dotnet test` with a filter on the marker, and it reads the outcomes from the runner's result file. It uses no package beyond the .NET runtime.
 

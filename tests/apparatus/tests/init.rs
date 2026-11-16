@@ -62,7 +62,7 @@ fn init_declares_this_repository_and_one_area_for_all_of_it() {
     assert_eq!(areas.len(), 1, "{areas:?}");
     let mounts = areas[0]["mounts"].as_array().expect("the area mounts folders");
     assert_eq!(mounts, &vec![toml::Value::String(".".into())]);
-    assert_eq!(project["cli"].as_str(), Some(PINNED_CLI));
+    assert_eq!(project["cli"].as_str(), Some(cli_version().as_str()));
 }
 
 // behavior: It creates `.azimuth/` holding a `.gitignore` that contains `*`
@@ -158,6 +158,34 @@ fn init_prints_the_install_line_of_a_missing_adapter() {
     // missing command and the word install.
     let text = output.text();
     assert!(text.contains("azimuth-xunit") && text.contains("install"), "init does not say how to install the .NET adapter:\n{text}");
+}
+
+// behavior: The install line that init prints for xUnit names the CLI's own version
+#[test]
+fn the_install_line_names_the_cli_version() {
+    // The version comes from the binary, so the test follows a raised version by itself. Without
+    // a version `dotnet` skips a pre-release, and the line could not install an alpha.
+    let repo = fresh("main");
+    let text = init(&repo).text();
+    let expected = format!("{XUNIT_INSTALL} --version {}", cli_version());
+    let lines = xunit_install_lines(&text);
+    assert!(!lines.is_empty(), "init prints no install line of the .NET adapter:\n{text}");
+    for line in lines {
+        assert_eq!(line, expected, "init prints another install line:\n{text}");
+    }
+}
+
+// behavior: Init prints the install line on a line of its own, with nothing before it but spaces and nothing after it
+#[test]
+fn the_install_line_stands_on_its_own_line() {
+    // A person copies the whole line; a full stop after the version makes it an invalid version.
+    let repo = fresh("main");
+    let text = init(&repo).text();
+    let expected = format!("{XUNIT_INSTALL} --version {}", cli_version());
+    assert!(
+        text.lines().any(|line| line.trim_start_matches(' ') == expected),
+        "no printed line is the install line alone, {expected:?}:\n{text}"
+    );
 }
 
 // behavior: It prints the line for the CI job with the lane flag

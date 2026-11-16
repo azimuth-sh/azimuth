@@ -63,9 +63,8 @@ pub const OWED_REASONS: [&str; 11] = [
 /// The parts of a fingerprint without an input provider.
 pub const PARTS: [&str; 4] = ["claim", "files", "environment", "method"];
 
-/// The version the stub and the sample both carry. A test that needs "another version" writes
-/// this one into the pin and changes it.
-pub const PINNED_CLI: &str = "0.2.0-alpha.1";
+/// A version that is not the CLI's, for the tests of a pin that differs on purpose. The sample's
+/// own pin is the version of the CLI under test (see `Repo::build`).
 pub const OTHER_CLI: &str = "0.2.0-alpha.99";
 
 const TIME_LIMIT: Duration = Duration::from_secs(120);
@@ -196,6 +195,7 @@ impl Repo {
             .expect("a temporary folder");
         let root = temp.path().join("library-desk");
         copy_tree(&sample_source(), &root);
+        pin_to_the_cli(&root);
         // `.azimuth/` ignores itself, so the sample cannot carry it in Azimuth's own repository.
         // It is written here as `azimuth init` would have left it.
         fs::create_dir_all(root.join(".azimuth")).unwrap();
@@ -967,6 +967,48 @@ impl Repo {
         let hidden = path_hiding(program, &std::env::var_os("PATH").unwrap_or_default(), &under);
         format!("{}:{hidden}", binaries_dir().display())
     }
+}
+
+/// Writes the version of the CLI under test into the pin of a copy of the sample, so raising the
+/// version touches only the code. The literal in `tests/sample/` is overwritten in every copy.
+pub fn pin_to_the_cli(root: &Path) {
+    let project = root.join("azimuth/project.toml");
+    let text = fs::read_to_string(&project).unwrap();
+    assert!(text.lines().any(|line| line.starts_with("cli = ")), "the sample has no pin");
+    let pinned: String = text
+        .lines()
+        .map(|line| if line.starts_with("cli = ") { format!("cli = \"{}\"\n", cli_version()) } else { format!("{line}\n") })
+        .collect();
+    fs::write(&project, pinned).unwrap();
+}
+
+/// The version the CLI under test prints for `--version`.
+pub fn cli_version() -> String {
+    static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    VERSION
+        .get_or_init(|| {
+            let output = Command::new(binaries_dir().join("azimuth")).arg("--version").output().unwrap();
+            assert!(output.status.success(), "azimuth --version failed");
+            String::from_utf8(output.stdout).unwrap().trim().to_string()
+        })
+        .clone()
+}
+
+/// The install line of the .NET adapter up to its version, as the design writes it.
+pub const XUNIT_INSTALL: &str = "dotnet tool install --local --create-manifest-if-needed Azimuth.Xunit";
+
+/// Each install line of the .NET adapter in a printed text, as a person would copy it. The words
+/// around it are free text: the line ends at the end of its printed line, at `)`, at `;`, or at a
+/// `.` that ends a sentence, so `… --version 1.2.0-alpha.3.` gives the line without the last
+/// dot. A `.` inside a version is followed by no space and stays.
+pub fn xunit_install_lines(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| {
+            let rest = &line[line.find(XUNIT_INSTALL)?..];
+            let end = [rest.find(')'), rest.find(';'), rest.find(". ")].into_iter().flatten().min().unwrap_or(rest.len());
+            Some(rest[..end].trim_end().trim_end_matches('.').to_string())
+        })
+        .collect()
 }
 
 pub fn parse_toml(text: &str) -> toml::Table {

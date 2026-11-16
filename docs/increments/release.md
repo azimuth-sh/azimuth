@@ -66,6 +66,16 @@ The workflows are the files in `.github/workflows/`, and the scripts they call a
 | The release workflow calls the tag check and the release script, and holds no copy of their steps | Tests run them, and the workflow only calls them. |
 | The crate of the CLI is marked as not for publishing, and no workflow publishes a crate | Its crate is marked as not for publishing, so `cargo publish` refuses it |
 
+## The package
+
+The package is what `dotnet pack` makes from `adapters/xunit/`. Its tests pack it into a local folder and read the description inside the package file.
+
+| Behavior | The design says |
+| --- | --- |
+| The package `Azimuth.Xunit` names the license `Apache-2.0`, the site `https://azimuth.sh`, the repository `https://github.com/azimuth-sh/azimuth` and the author `Azimuth` | For `Azimuth.Xunit` that is the license `Apache-2.0`, the site `https://azimuth.sh`, the repository `https://github.com/azimuth-sh/azimuth` and the author `Azimuth`. |
+| The package carries a readme, and the readme holds the marker | The readme says what the adapter is, how a repository installs it and how a test is marked. |
+| The readme shows the install line that the CLI prints, with `<version>` in place of the version | The readme in the package shows the line with `<version>` and says that `azimuth init` prints it filled in. |
+
 ## Proven by the first tag
 
 These rows have no test in the repository. A workflow runs only on GitHub, so the first version tag that a person pushes is their proof.

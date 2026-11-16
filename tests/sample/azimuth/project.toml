@@ -1,4 +1,4 @@
-cli = "0.2.0-alpha.1"
+cli = "0.2.0-alpha.2"
 
 [repository]
 name = "library-desk"
