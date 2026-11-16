@@ -13,6 +13,7 @@ pub enum Command {
     SkillsInstall { harness: String },
     Init,
     Sync,
+    Version,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -40,9 +41,13 @@ const USAGE: &str = "usage: azimuth <command>\n\
   change show [--target <ref>] [--json]  what did this change do to the model?\n\
   skills install <claude|codex>   write the default process for an agent harness\n\
   init                            write the project file and the ignored folder\n\
-  sync                            move records from the outbox into the store";
+  sync                            move records from the outbox into the store\n\
+  --version                       print the version";
 
 pub fn parse(args: &[String]) -> Result<Command, String> {
+    if args == ["--version"] {
+        return Ok(Command::Version);
+    }
     let mut words: Vec<&str> = Vec::new();
     let mut json = false;
     let mut lane: Option<&str> = None;

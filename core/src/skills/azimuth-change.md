@@ -21,6 +21,9 @@ Stop. The person reads the proposal.
 Write the Requirement and its Scenarios in `specification.md`, then the Checks in
 `verification.md`. Run `azimuth lint` until it reports nothing.
 
+When `azimuth` is not found, run `~/.azimuth/bin/azimuth` instead, and tell the person that
+their shell profile lacks the line `export PATH="$HOME/.azimuth/bin:$PATH"`.
+
 Stop. The person reads `azimuth change show` before any code exists.
 
 ## 3. Build

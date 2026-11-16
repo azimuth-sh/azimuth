@@ -1,0 +1,30 @@
+name: tests
+
+# Every pushed commit of a branch is tested. A tag's tests are the release's own: the release
+# workflow calls this file, so a tag runs them once.
+on:
+  push:
+    branches: ["**"]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Tests
+        run: cargo test --no-fail-fast
+      - name: Tests of the .NET adapter
+        run: cargo test --features azimuth-tests/dotnet --test dotnet_adapter
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings

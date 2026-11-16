@@ -55,5 +55,9 @@ fn dispatch(command: Command) -> i32 {
         Command::SkillsInstall { harness } => commands::skills::install(&harness),
         Command::Init => commands::init::run(),
         Command::Sync => commands::sync::run(),
+        Command::Version => {
+            println!("{VERSION}");
+            output::status::FINE
+        }
     }
 }

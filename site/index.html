@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Azimuth</title>
+<meta name="description" content="Azimuth lets people direct and review software work at the level of intent, and it shows with evidence how far the code matches that intent.">
+<style>
+  :root {
+    color-scheme: light dark;
+    --page: #fbfaf7;
+    --ink: #1c1b19;
+    --soft: #5f5b54;
+    --line: #dedad2;
+    --block: #f1eee8;
+    --mark: #8a4b12;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page: #141413;
+      --ink: #ecebe6;
+      --soft: #a39e94;
+      --line: #33312d;
+      --block: #1e1d1b;
+      --mark: #e0a868;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--ink);
+    font: 17px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 43rem; margin: 0 auto; padding: 4rem 1rem 5rem; }
+  h1 { font-size: 1.1rem; letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 3rem; }
+  h2 { font-size: 1.15rem; margin: 3.5rem 0 1rem; padding-top: 1.5rem; border-top: 1px solid var(--line); }
+  p { margin: 0 0 1rem; }
+  .lead { font-size: 1.55rem; line-height: 1.3; font-weight: 600; margin-bottom: 1.5rem; }
+  .soft { color: var(--soft); }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.86em; }
+  code { background: var(--block); padding: 0.1em 0.3em; border-radius: 3px; }
+  pre {
+    background: var(--block);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.9rem 1rem;
+    overflow-x: auto;
+    line-height: 1.5;
+    margin: 0 0 1rem;
+  }
+  pre code { background: none; padding: 0; font-size: 1em; }
+  .caption { font-size: 0.85rem; color: var(--soft); margin: 1.25rem 0 0.35rem; }
+  ul { margin: 0 0 1rem; padding-left: 1.2rem; }
+  li { margin-bottom: 0.35rem; }
+  dl { margin: 0; }
+  dt { margin-top: 1rem; }
+  dd { margin: 0.15rem 0 0; color: var(--soft); }
+  a { color: var(--mark); text-underline-offset: 0.15em; }
+  a:focus-visible { outline: 2px solid var(--mark); outline-offset: 2px; border-radius: 2px; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 2rem; }
+  @media (max-width: 34rem) { .cols { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Azimuth</h1>
+
+<p class="lead">Agents write the code. People stay responsible for it.</p>
+
+<p>Azimuth lets people direct and review software work at the level of intent, and it shows with evidence how far the code matches that intent.</p>
+
+<p>You write Requirements and their Scenarios as plain text. Tests are bound to them as Checks. After a change, Azimuth works out which Checks must run again, runs them, and tells you which Requirements are proven.</p>
+
+<p>&ldquo;Proven&rdquo; is a status: every Scenario has a Check that passed on exactly this code. It does not mean the code is correct. Intent nobody wrote is unprotected, and a Check can be weak.</p>
+
+<h2>What it looks like</h2>
+
+<p class="caption">A Requirement, in <code>azimuth/model/lending/specification.md</code></p>
+<pre><code>### Requirement: loan-limit-holds
+A borrower holds at most five loans at a time.
+
+#### Scenario: sixth-loan-is-refused
+A borrower who holds five loans asks for a sixth book.
+The desk refuses the loan and the borrower keeps five.</code></pre>
+
+<p class="caption">The Check that stands for the Scenario, in <code>verification.md</code> beside it</p>
+<pre><code>### Requirement: loan-limit-holds
+#### Scenario: sixth-loan-is-refused
+- Check: sixth-loan-is-refused
+  The desk refuses a sixth loan to a borrower who holds five.</code></pre>
+
+<p class="caption">The test that is the Check, marked in the code</p>
+<pre><code>[Fact]
+[Trait("Check", "sixth-loan-is-refused")]
+public void Refuses_a_sixth_loan() { ... }</code></pre>
+
+<p class="caption">Before the test has run on this code</p>
+<pre><code>$ azimuth status
+Requirement loan-limit-holds (lending): incomplete
+  Scenario sixth-loan-is-refused
+    sixth-loan-is-refused  owed: never run
+  verification: not reviewed
+  realization: not reviewed
+  approval: not recorded</code></pre>
+
+<p class="caption">After <code>azimuth run</code></p>
+<pre><code>$ azimuth status
+1 Requirement, proven on this machine</code></pre>
+
+<p>Change the code, and the Check is owed again until it has passed on the new code.</p>
+
+<h2>Status</h2>
+
+<p>Azimuth is an early alpha. Formats and commands still change between versions, so a repository pins one exact version.</p>
+
+<div class="cols">
+<div>
+<p><strong>What exists</strong></p>
+<ul>
+<li>The command line tool, for macOS on arm64 and Linux on x86-64.</li>
+<li>The adapter for xUnit, the package <code>Azimuth.Xunit</code>.</li>
+<li>A default process for an agent, installed as a skill for Claude Code or Codex.</li>
+</ul>
+</div>
+<div>
+<p><strong>What does not exist yet</strong></p>
+<ul>
+<li>Adapters for other test runners.</li>
+<li>Narrow change tracking. Today any change to a file of the repository makes every Check owed.</li>
+<li>Recorded reviews and approvals.</li>
+<li>The server with shared records and a merge gate.</li>
+</ul>
+</div>
+</div>
+
+<h2>Install</h2>
+
+<pre><code>curl -fsSL https://azimuth.sh/install | sh</code></pre>
+
+<p>This pipes a script from this site into your shell, and the file it installs is the tool that judges your code. Read the script first: <a href="https://github.com/azimuth-sh/azimuth/blob/main/site/install">site/install</a>. It is short.</p>
+
+<p>What the script does:</p>
+<ul>
+<li>It reads the version that your repository pins in <code>azimuth/project.toml</code>. With no project file it takes the latest release.</li>
+<li>It downloads the binary for your system from the releases on GitHub, over HTTPS only.</li>
+<li>It compares the SHA-256 of the download with the sums file of that release, and installs nothing on a mismatch.</li>
+<li>It writes only inside <code>~/.azimuth</code>: the binary at <code>~/.azimuth/versions/&lt;version&gt;/azimuth</code>, and a link at <code>~/.azimuth/bin/azimuth</code>.</li>
+<li>It never edits a shell profile.</li>
+</ul>
+
+<p>So one step is yours. Add this line to your shell profile, once per machine:</p>
+<pre><code>export PATH="$HOME/.azimuth/bin:$PATH"</code></pre>
+
+<p>In GitHub Actions the script adds the folder to the path of the job itself, so a job needs the install line and nothing more.</p>
+
+<p>Versions are kept side by side. In a repository that pins another version, run the same line again, and the link moves.</p>
+
+<p class="soft">The sums file catches a broken download. It does not protect against somebody who controls the release. The binaries are not signed yet.</p>
+
+<h2>First steps</h2>
+
+<dl>
+<dt><code>azimuth init</code></dt>
+<dd>writes the project file, which pins the version, and the folder for local results.</dd>
+<dt><code>azimuth skills install claude</code></dt>
+<dd>writes the default process for an agent. <code>codex</code> works the same way.</dd>
+<dt><code>azimuth lint</code></dt>
+<dd>tells you whether the description is consistent with itself and with the code.</dd>
+<dt><code>azimuth run</code></dt>
+<dd>plans and runs the Checks that are owed.</dd>
+<dt><code>azimuth status</code></dt>
+<dd>tells you where the tree stands: which Requirements are proven, and what is missing for the others.</dd>
+</dl>
+
+<h2>More</h2>
+
+<ul>
+<li><a href="https://github.com/azimuth-sh/azimuth">The source</a>, under the Apache License 2.0.</li>
+<li><a href="https://github.com/azimuth-sh/azimuth/blob/main/docs/design.md">The design</a>: one document that states every rule, with its cost.</li>
+</ul>
+
+</main>
+</body>
+</html>
