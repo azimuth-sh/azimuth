@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Azimuth.Xunit</RootNamespace>
+    <AssemblyName>azimuth-xunit</AssemblyName>
+    <PackAsTool>true</PackAsTool>
+    <PackageId>Azimuth.Xunit</PackageId>
+    <ToolCommandName>azimuth-xunit</ToolCommandName>
+    <Description>The Azimuth test adapter for xUnit: it builds a suite, lists its marked tests, runs them and reports what happened.</Description>
+    <!-- The adapter reports this version with every result, so it must be the package version alone. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+</Project>

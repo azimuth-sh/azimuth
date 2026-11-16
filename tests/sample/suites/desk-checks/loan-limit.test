@@ -1,0 +1,8 @@
+# Two tests of the loan limit, each marked for its own Check.
+test: refuses-sixth-loan
+# Check: sixth-loan-is-refused
+outcome: passed
+
+test: lends-after-a-return
+# Check: returned-book-frees-a-slot
+outcome: passed

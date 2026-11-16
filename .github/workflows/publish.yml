@@ -1,243 +1,155 @@
 name: release
 
+# A person publishes by pushing a version tag; nothing else starts a release.
 on:
   push:
-    tags:
-      - "v*"
+    tags: ["v*"]
 
 permissions:
   contents: read
-  id-token: write
-  attestations: write
 
 jobs:
-  build:
-    permissions:
-      contents: read
-      id-token: write
-      attestations: write
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The tag equals the version in the code
+        run: sh release/check-tag.sh "$GITHUB_REF_NAME"
+
+  tests:
+    needs: check
     uses: ./.github/workflows/ci.yml
 
-  publish:
-    needs: build
-    runs-on: ubuntu-latest
+  build:
+    needs: check
+    strategy:
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
-    environment: release
-    permissions:
-      actions: read
-      contents: write
-      packages: write
-      id-token: write
-    outputs:
-      image-matrix: ${{ steps.matrix.outputs.images }}
     env:
-      GH_TOKEN: ${{ github.token }}
+      TARGET: ${{ matrix.target }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.13"
-      - uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: 10.0.x
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "24"
-      - name: Install an npm that supports trusted publishing and dist-tag
-        run: npm install --global npm@11.21.2
-      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-      - run: |
-          sudo apt-get update
-          sudo apt-get install --yes skopeo
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: candidates-*
-          path: dist/candidates
-          merge-multiple: true
-      - id: matrix
-        shell: bash
+      - name: Build
+        run: cargo build --release --locked --target "$TARGET" -p azimuth
+      # The binary is proven here, on the machine that built it, before anything is handed on.
+      - name: Prove the binary
         run: |
-          echo "images=$(python3 release/orchestrate.py matrix image)" >> "$GITHUB_OUTPUT"
-      - name: Exchange NuGet trusted-publishing token
-        id: nuget
-        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
+          version="${GITHUB_REF_NAME#v}"
+          binary="target/$TARGET/release/azimuth"
+          printed="$("$binary" --version)"
+          if [ "$printed" != "$version" ]; then
+            echo "the binary prints the version '$printed', not $version" >&2
+            exit 1
+          fi
+          if [ "$TARGET" = "x86_64-unknown-linux-musl" ]; then
+            file "$binary"
+            if file "$binary" | grep -q "dynamically linked"; then
+              echo "file says the Linux binary is linked dynamically" >&2
+              exit 1
+            fi
+            linked="$(ldd "$binary" 2>&1 || true)"
+            case "$linked" in
+              *"not a dynamic executable"* | *"statically linked"*) ;;
+              *)
+                echo "ldd says the Linux binary is linked dynamically: $linked" >&2
+                exit 1
+                ;;
+            esac
+          fi
+          mkdir dist
+          cp "$binary" "dist/azimuth-$version-$TARGET"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          user: ${{ vars.NUGET_USER }}
-      - name: Exchange crates.io trusted-publishing token
-        id: crates
-        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
-      - name: Require every registry exchange before any publication
-        shell: bash
-        env:
-          NUGET_API_KEY: ${{ steps.nuget.outputs.NUGET_API_KEY }}
-          CARGO_REGISTRY_TOKEN: ${{ steps.crates.outputs.token }}
-        run: |
-          test -n "$NUGET_API_KEY" || { echo "NuGet exchange returned no API key" >&2; exit 1; }
-          test -n "$CARGO_REGISTRY_TOKEN" || { echo "crates.io exchange returned no token" >&2; exit 1; }
-      - name: Read public state and validate the release boundary
-        shell: bash
-        env:
-          NUGET_API_KEY: ${{ steps.nuget.outputs.NUGET_API_KEY }}
-          CARGO_REGISTRY_TOKEN: ${{ steps.crates.outputs.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
-          RELEASE_REVISION: ${{ github.sha }}
-        run: |
-          python3 release/publication.py preflight \
-            --candidates dist/candidates \
-            --tag "$RELEASE_TAG" \
-            --revision "$RELEASE_REVISION" \
-            --sums-out dist/publication/SHA256SUMS \
-            --state-out dist/publication/public-state.json \
-            --plan-out dist/publication/publication-plan.json \
-            --receipt-out dist/publication/preflight.json \
-            --require-credentials
-      - name: Publish planner-selected targets
-        shell: bash
-        env:
-          NPM_FIRST_PUBLISH_TESTING_PLAYWRIGHT: ${{ secrets.NPM_FIRST_PUBLISH_TESTING_PLAYWRIGHT }}
-          NUGET_API_KEY: ${{ steps.nuget.outputs.NUGET_API_KEY }}
-          CARGO_REGISTRY_TOKEN: ${{ steps.crates.outputs.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
-          RELEASE_REVISION: ${{ github.sha }}
-        run: |
-          python3 release/publication.py publish \
-            --candidates dist/candidates \
-            --tag "$RELEASE_TAG" \
-            --revision "$RELEASE_REVISION" \
-            --sums dist/publication/SHA256SUMS \
-            --state dist/publication/public-state.json \
-            --plan dist/publication/publication-plan.json \
-            --out dist/publication/publication-result.json
-      - uses: actions/upload-artifact@v7
-        if: ${{ always() }}
-        with:
-          name: publication-records
-          path: dist/publication/*
+          name: binary-${{ matrix.target }}
+          path: dist/
           if-no-files-found: error
 
-  image-provenance:
-    needs: publish
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.publish.outputs.image-matrix) }}
-    runs-on: ubuntu-latest
+  package:
+    needs: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Pack the .NET adapter
+        run: dotnet pack adapters/xunit --configuration Release -p:Version="${GITHUB_REF_NAME#v}" --output package
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: package
+          path: package/*.nupkg
+          if-no-files-found: error
+
+  release:
+    needs: [check, tests, build, package]
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: release
     permissions:
-      actions: read
-      contents: read
-      packages: write
-      id-token: write
-      attestations: write
+      contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          python-version: "3.13"
-      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-      - run: |
-          sudo apt-get update
-          sudo apt-get install --yes skopeo
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: candidates-*
-          path: dist/candidates
+          pattern: binary-*
           merge-multiple: true
-      - uses: actions/download-artifact@v8
-        with:
-          name: publication-records
-          path: dist/publication
-      - id: image
-        shell: bash
+          path: dist
+      - name: Assemble the release files
+        run: sh release/assemble.sh "${GITHUB_REF_NAME#v}" dist
+      # A normal release marked latest, also for an alpha, because the install script reads the
+      # "latest release" address and that address skips a pre-release.
+      - name: Publish the release
         env:
-          IMAGE_ID: ${{ matrix.id }}
-          RELEASE_TAG: ${{ github.ref_name }}
-          RELEASE_REVISION: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          python3 release/publication.py image-state \
-            --candidates dist/candidates \
-            --tag "$RELEASE_TAG" \
-            --revision "$RELEASE_REVISION" \
-            --sums dist/publication/SHA256SUMS \
-            --id "$IMAGE_ID" > dist/image-state.json
-          echo "name=$(jq -r .name dist/image-state.json)" >> "$GITHUB_OUTPUT"
-          echo "digest=$(jq -r .digest dist/image-state.json)" >> "$GITHUB_OUTPUT"
-      - uses: actions/attest-build-provenance@v4
-        with:
-          subject-name: ${{ steps.image.outputs.name }}
-          subject-digest: ${{ steps.image.outputs.digest }}
-          push-to-registry: true
+          version="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" --verify-tag --latest --title "azimuth $version" --notes "" \
+            "dist/azimuth-$version-aarch64-apple-darwin" \
+            "dist/azimuth-$version-x86_64-unknown-linux-musl" \
+            dist/SHA256SUMS dist/VERSION
 
-  complete:
-    needs: [publish, image-provenance]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  site:
+    needs: release
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/site.yml
+
+  # The package goes after the GitHub release, because a release can be removed and a pushed
+  # package cannot.
+  nuget:
+    needs: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     environment: release
     permissions:
-      actions: read
-      contents: read
-      packages: read
-      attestations: read
-    env:
-      GH_TOKEN: ${{ github.token }}
+      id-token: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-python@v7
+          name: package
+          path: package
+      - uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
+        id: login
         with:
-          python-version: "3.13"
-      - run: |
-          sudo apt-get update
-          sudo apt-get install --yes skopeo
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: candidates-*
-          path: dist/candidates
-          merge-multiple: true
-      - uses: actions/download-artifact@v8
-        with:
-          name: publication-records
-          path: dist/publication
-      - name: Retrieve every public target
-        shell: bash
+          user: ${{ vars.NUGET_USER }}
+      # --skip-duplicate makes a second run of this job harmless.
+      - name: Push the package
         env:
-          PUBLICATION_RUN: ${{ github.run_id }}
-          RELEASE_TAG: ${{ github.ref_name }}
-          RELEASE_REVISION: ${{ github.sha }}
-        run: |
-          for attempt in {1..20}; do
-            if python3 release/publication.py complete \
-              --candidates dist/candidates \
-              --tag "$RELEASE_TAG" \
-              --revision "$RELEASE_REVISION" \
-              --sums dist/publication/SHA256SUMS \
-              --publication-run "$PUBLICATION_RUN" \
-              --out dist/publication/completion.json; then
-              exit 0
-            fi
-            if [[ "$attempt" == 20 ]]; then
-              exit 1
-            fi
-            sleep 15
-          done
-      - uses: actions/upload-artifact@v7
-        with:
-          name: public-release-completion
-          path: dist/publication/completion.json
-          if-no-files-found: error
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: dotnet nuget push package/*.nupkg --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate

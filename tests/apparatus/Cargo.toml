@@ -1,0 +1,39 @@
+[package]
+name = "azimuth-tests"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "End-to-end tests of the azimuth binary on the sample repository, and the apparatus they need"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "text-suite-adapter"
+path = "src/bin/text-suite-adapter.rs"
+
+[[bin]]
+name = "facility-probe"
+path = "src/bin/facility-probe.rs"
+
+[[bin]]
+name = "stdin-recorder"
+path = "src/bin/stdin-recorder.rs"
+
+[features]
+# The .NET adapter tests need the .NET SDK and the real adapter, so they run only on request.
+dotnet = []
+
+[[test]]
+name = "dotnet_adapter"
+path = "tests/dotnet_adapter.rs"
+required-features = ["dotnet"]
+
+# The apparatus is test code only, so these never reach the shipped core. `sha2` and
+# `unicode-normalization` let a test compute a record's name and a `text-1` digest itself.
+[dependencies]
+serde_json = "1"
+sha2 = "0.10"
+tempfile = "3"
+toml = "0.8"
+unicode-normalization = "0.1"

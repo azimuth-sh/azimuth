@@ -1,0 +1,2 @@
+fine per day late = 1
+no fine when returned on or before the due date

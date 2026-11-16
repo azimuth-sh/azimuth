@@ -1,0 +1,157 @@
+#!/bin/sh
+# Installs the Azimuth CLI: curl -fsSL https://azimuth.sh/install | sh
+#
+# The version is the `cli` pin in azimuth/project.toml at the root of the git repository this
+# runs in, or the latest release when there is no project file. Versions are kept side by side
+# in ~/.azimuth/versions/<version>/azimuth, and ~/.azimuth/bin/azimuth links to the one asked
+# for. Nothing else on the machine changes, and a failed install changes nothing at all.
+#
+# The script runs as standard input of `sh`, so no command in it may read standard input. Every
+# step is inside functions, and only the last line calls `main`, so a download that was cut off
+# defines a function at most and runs nothing.
+
+fail() {
+  echo "azimuth install: $1" >&2
+  exit 1
+}
+
+# Removes the downloads of this run, whatever happens, so no partial file is left.
+cleanup() {
+  if [ -n "$work" ]; then rm -rf "$work"; fi
+}
+
+# curl stays silent on failure, so the one line on standard error is the script's own. With the
+# built-in address it may use HTTPS only, also where a redirect leads.
+fetch() {
+  if [ -n "$only_https" ]; then
+    curl -fsL --proto =https --proto-redir =https -o "$2" "$1" </dev/null
+  else
+    curl -fsL -o "$2" "$1" </dev/null
+  fi
+}
+
+# The root of the git repository is the nearest folder upward that holds `.git`, which is a
+# folder in a clone and a file in a worktree. This needs no git on the machine.
+find_root() {
+  dir="$(pwd)"
+  while :; do
+    if [ -e "$dir/.git" ]; then echo "$dir"; return; fi
+    [ "$dir" = "/" ] && return
+    dir="${dir%/*}"
+    [ -n "$dir" ] || dir="/"
+  done
+}
+
+# The pin is read from whatever repository a person stands in, so it is untrusted text, and a
+# version never chooses a path.
+check_version() {
+  case "$1" in
+    [0-9]*) ;;
+    *) fail "the version \"$1\" does not start with a digit, so it is not a version" ;;
+  esac
+  case "$1" in
+    *[!0-9A-Za-z.+-]*) fail "the version \"$1\" holds a character other than letters, digits, '.', '+' and '-'" ;;
+  esac
+}
+
+choose_version() {
+  root="$(find_root)"
+  project="$root/azimuth/project.toml"
+  if [ -n "$root" ] && [ -f "$project" ]; then
+    # The pin is the top-level key `cli`, so the search stops at the first table.
+    version="$(sed -n -e '/^[[:space:]]*\[/q' -e 's/^[[:space:]]*cli[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$project")"
+    [ -n "$version" ] || fail "$project pins no version: it has no line cli = \"<version>\""
+    echo "azimuth install: $project pins azimuth $version"
+  else
+    fetch "$releases/latest/download/VERSION" "$work/VERSION" || fail "could not read the latest version from $releases/latest/download/VERSION"
+    version="$(sed -e 's/[[:space:]]//g' "$work/VERSION")"
+    [ -n "$version" ] || fail "the latest release names no version in its VERSION file"
+    echo "azimuth install: no project file here, so the latest release, azimuth $version"
+  fi
+  check_version "$version"
+}
+
+download() {
+  file="azimuth-$version-$target"
+  fetch "$releases/download/v$version/$file" "$work/$file" || fail "azimuth $version has no release for $target at $releases/download/v$version"
+  fetch "$releases/download/v$version/SHA256SUMS" "$work/SHA256SUMS" || fail "the release of azimuth $version has no SHA256SUMS"
+
+  expected=""
+  # The last line counts also when the file does not end with a line end.
+  while read -r sum name || [ -n "$sum" ]; do
+    if [ "${name#\*}" = "$file" ]; then expected="$sum"; fi
+  done < "$work/SHA256SUMS"
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "$work/$file" </dev/null)"
+  elif command -v shasum >/dev/null 2>&1; then
+    actual="$(shasum -a 256 "$work/$file" </dev/null)"
+  else
+    fail "found no tool for SHA-256, neither sha256sum nor shasum, so the download cannot be checked and nothing was installed"
+  fi
+  actual="${actual%% *}"
+  if [ -z "$expected" ] || [ "$actual" != "$expected" ]; then
+    rm -f "$work/$file"
+    fail "the download of $file does not match SHA256SUMS of azimuth $version, so nothing was installed"
+  fi
+
+  chmod +x "$work/$file"
+  fresh=""
+  [ -d "$home/versions/$version" ] || fresh="yes"
+  mkdir -p "$home/versions/$version" || fail "could not create $home/versions/$version"
+  # The file arrives under another name and is renamed in one step, so no partial binary has
+  # the name that counts as installed.
+  mv "$work/$file" "$binary.download" && mv "$binary.download" "$binary" || {
+    rm -f "$binary.download"
+    if [ -n "$fresh" ]; then rmdir "$home/versions/$version"; fi
+    fail "could not place the binary at $binary"
+  }
+  echo "azimuth install: installed azimuth $version at $binary"
+}
+
+main() {
+  set -u
+  releases="https://github.com/azimuth-sh/azimuth/releases"
+  only_https="yes"
+  home="$HOME/.azimuth"
+  work=""
+  trap cleanup EXIT
+  trap 'exit 1' INT TERM HUP
+
+  if [ -n "${AZIMUTH_RELEASES:-}" ]; then
+    releases="$AZIMUTH_RELEASES"
+    only_https=""
+    echo "azimuth install: taking releases from $releases"
+  fi
+
+  case "$(uname -s) $(uname -m)" in
+    "Darwin arm64") target="aarch64-apple-darwin" ;;
+    "Linux x86_64") target="x86_64-unknown-linux-musl" ;;
+    *) fail "this system is $(uname -s) on $(uname -m); azimuth is built for macOS on arm64 and Linux on x86-64" ;;
+  esac
+
+  work="${TMPDIR:-/tmp}/azimuth-install.$$"
+  mkdir -m 700 "$work" || { work=""; fail "could not create the temporary folder ${TMPDIR:-/tmp}/azimuth-install.$$"; }
+
+  choose_version
+  binary="$home/versions/$version/azimuth"
+  if [ -x "$binary" ]; then
+    echo "azimuth install: azimuth $version is already installed"
+  else
+    download
+  fi
+
+  mkdir -p "$home/bin" || fail "could not create $home/bin"
+  ln -s "$binary" "$home/bin/azimuth.new" && mv -f "$home/bin/azimuth.new" "$home/bin/azimuth" || {
+    rm -f "$home/bin/azimuth.new"
+    fail "could not point $home/bin/azimuth at $binary"
+  }
+  # In GitHub Actions the job's own path file takes the folder, which is no shell profile.
+  if [ -n "${GITHUB_PATH:-}" ]; then
+    echo "$home/bin" >> "$GITHUB_PATH" || fail "could not add $home/bin to the job's path file $GITHUB_PATH"
+  fi
+  echo "azimuth install: $home/bin/azimuth now runs azimuth $version"
+  echo "azimuth install: to find it, add this line to your shell profile:"
+  echo "  export PATH=\"\$HOME/.azimuth/bin:\$PATH\""
+}
+
+main
