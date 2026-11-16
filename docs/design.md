@@ -280,9 +280,10 @@ Example: drim-dev's project file pins `0.2.0-alpha.2` and a developer still has 
 | Binaries | built for macOS on arm64 and Linux on x86-64, and attached to a GitHub release with a file of SHA-256 sums. Another target is added when somebody needs it |
 | The install script | a short shell script in the repository, served at `azimuth.sh/install`. It reads the pin, picks the target, downloads the binary and refuses it when the sum does not match |
 | The adapters | packed with the same version and pushed to the registry of their stack by the same workflow. The workflow stores no registry key: it trades its identity for a short-lived one, which the registry calls trusted publishing |
+| No registry for the CLI | the CLI is published to no package registry, only as binaries on the release. Its crate is marked as not for publishing, so `cargo publish` refuses it |
 | Tests | the same repository runs its own tests on every push |
 
-The cost. The sums file sits beside the binaries. It catches a broken download and not somebody who controls the release, because they replace both. GitHub and each registry now hold a part of the judge.
+The cost. The sums file sits beside the binaries. It catches a broken download and not somebody who controls the release, because they replace both. GitHub and each registry now hold a part of the judge. With no crate published, `cargo install` is not a way to get the CLI: somebody who wants to build it from source clones the repository. The name `azimuth` on crates.io stays held by the project, with the alphas of the earlier implementation and no new version.
 
 **The workflows run as little foreign code as they can, with as few rights as they can.**
 
@@ -1667,7 +1668,7 @@ Example: `azimuth status --json` for one Requirement whose Check is kept.
 | --- | --- | --- |
 | `status-1` | `azimuth status` | `requirements`, each with `id`, `module`, `state`, `verification`, `realization`, `approval` and `scenarios`. Each Scenario has `id` and `checks`. Each Check has `id`, `state`, `reason` and `detail`. Then `skipped_records` and `process` |
 | `requirement-1` | `azimuth requirement show` | `format`, and beside it the fields of one Requirement entry of `status-1` |
-| `check-1` | `azimuth check show` | `id`, `requirement`, `scenario`, `suite`, `claim`, `reuse`, `state`, `reason`, `detail`, `parts_changed`, `files_changed`, `failing_tests`, and `result` with `where`, `commit` and `at` |
+| `check-1` | `azimuth check show` | `id`, `requirement`, `scenario`, `suite`, `claim`, `reuse`, `state`, `reason`, `detail`, `parts_changed`, `files_changed`, `failing_tests`, and `result` with `where`, `commit`, `edited_paths` and `at` |
 | `change-1` | `azimuth change show` | `target`, `base`, `class`, then `requirements`, `scenarios` and `checks`, each with `added`, `changed` and `removed`. Then `markers_removed`, `not_compared` and `rigor_lowered` |
 | `lint-1` | `azimuth lint` | `findings`, each with `kind`, `file`, `line` and `message` |
 | `run-1` | `azimuth run` and `azimuth check run` | `lane`, `outcome`, `suites` with `name`, `launch` and `duration_ms`, `checks` with `id`, `state`, `reason`, `detail`, `failing_tests` and `duration_ms`, and `findings` in the commit lane |
@@ -2262,6 +2263,8 @@ Example: for the ingress suite the named measuring code is `Harnesses/Ingress*.c
 | Passed, kept | Who produced it, at which commit, how long ago |
 | Failed | The failing tests |
 | Owed | The reason |
+
+**A result names a commit only as far as that commit was the code.** A local run may see paths that are edited, new or deleted, and the record holds them as `edits`. The text then says `commit b8f6d2a with uncommitted edits`, and `edited_paths` in `check-1` is their number. For a run on exactly the commit the number is 0, and the text names the commit alone. The text does not list the paths. The record does.
 
 **Reasons for owed:** an input changed, never run, deferred by the lane, cannot run here, failed on these inputs, inconclusive, contradicted, the start-up guard is owed, expired, no result, runs in CI.
 

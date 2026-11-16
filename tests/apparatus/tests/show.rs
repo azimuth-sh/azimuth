@@ -76,7 +76,7 @@ fn check_document_has_its_fields() {
     ] {
         assert!(has(&document, field), "no `{field}`: {document:#}");
     }
-    for field in ["where", "commit", "at"] {
+    for field in ["where", "commit", "edited_paths", "at"] {
         assert!(has(&document["result"], field), "no `result.{field}`: {document:#}");
     }
     assert_eq!(document["id"], SIXTH_LOAN);
@@ -100,6 +100,52 @@ fn a_kept_pass_is_shown_with_its_origin() {
     let text = repo.azimuth(&["check", "show", SIXTH_LOAN]).stdout;
     assert!(text.contains(&head[..7]), "{text}");
     assert!(text.contains("ago"), "{text}");
+}
+
+/// The sample after a run that saw one edited, one new and one deleted path, with those edits
+/// then committed. The content is the same as at the run, so the results stay kept, and the tree
+/// at `check show` is a clean commit: what is shown about the edits can only come from the record.
+fn kept_from_an_edited_tree() -> (Repo, String) {
+    let repo = Repo::sample();
+    let commit_of_the_run = repo.head();
+    repo.append(PRODUCT_FILE, "renewals do not count\n");
+    repo.write("desk/shelves.txt", "north shelf holds novels\n");
+    repo.remove("desk/returns.txt");
+    repo.run_json(&[], 0);
+    repo.commit_all("the edits of the run");
+    assert_eq!(repo.git(&["status", "--porcelain"]), "", "the tree is not clean, so the test proves nothing");
+    assert_ne!(repo.head(), commit_of_the_run);
+    (repo, commit_of_the_run)
+}
+
+// behavior: For a result of a run that saw edited, new or deleted paths, the text of `azimuth check show` says `commit <7 characters> with uncommitted edits`
+#[test]
+fn a_result_from_an_edited_tree_says_so() {
+    let (repo, commit) = kept_from_an_edited_tree();
+    let output = repo.azimuth(&["check", "show", SIXTH_LOAN]);
+    output.expect_status(0);
+    let phrase = format!("commit {} with uncommitted edits", &commit[..7]);
+    assert!(output.stdout.contains(&phrase), "check show does not say {phrase:?}:\n{}", output.stdout);
+}
+
+// behavior: `result.edited_paths` is the number of edited, new and deleted paths the run saw, and 0 for a run on exactly the commit, where the text names the commit alone
+#[test]
+fn edited_paths_counts_what_the_run_saw() {
+    let (repo, commit) = kept_from_an_edited_tree();
+    let document = repo.check_show(SIXTH_LOAN);
+    assert_eq!(document["state"], "kept", "{document:#}");
+    assert_eq!(document["result"]["commit"], commit.as_str(), "{document:#}");
+    assert_eq!(document["result"]["edited_paths"], 3, "{document:#}");
+
+    let clean = Repo::sample();
+    clean.run_json(&[], 0);
+    let head = clean.head();
+    let document = clean.check_show(SIXTH_LOAN);
+    assert!(document["result"]["edited_paths"].is_u64(), "{document:#}");
+    assert_eq!(document["result"]["edited_paths"], 0, "{document:#}");
+    let text = clean.azimuth(&["check", "show", SIXTH_LOAN]).stdout;
+    assert!(text.contains(&format!("commit {}", &head[..7])), "the commit is not named:\n{text}");
+    assert!(!text.contains("uncommitted"), "a run on exactly the commit is shown with edits:\n{text}");
 }
 
 // behavior: A failed Check is shown with its failing tests
