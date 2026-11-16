@@ -33,22 +33,66 @@ fn the_core_sends_an_adapter_request_1() {
 
 // behavior: An upgrade of the adapter makes every Check owed
 #[test]
-fn a_new_adapter_version_makes_the_checks_owed() {
-    let mut repo = Repo::sample();
+fn raising_the_adapter_pin_makes_every_check_owed() {
+    // A stack pins its adapter in a tracked file. The text adapter has no package manager, so a
+    // plain file in the tree stands for the pin, and its version is what the adapter reports.
+    let mut repo = Repo::sample_with(|root| {
+        std::fs::write(root.join("adapter-pin.txt"), "text-suite-adapter 1.0.0\n").unwrap();
+    });
     repo.run_json(&[], 0);
+    repo.write("adapter-pin.txt", "text-suite-adapter 1.1.0\n");
     repo.set_env("TEXT_ADAPTER_VERSION", "1.1.0");
-    // The core learns an adapter's version from its report, so one launch must happen first.
-    repo.azimuth(&["check", "run", SIXTH_LOAN, "--json"]).expect_status(0);
-    let status = repo.status_json();
-    let checks = status_checks(&status);
-    for check in [RETURNED_BOOK, LATE_RETURN, ON_TIME_RETURN] {
-        assert_eq!(checks[check]["state"], "owed", "{status:#}");
+    for check in ALL_CHECKS {
+        let document = repo.check_show(check);
+        assert_eq!(document["state"], "owed", "{document:#}");
+        assert_eq!(parts_changed(&document), vec!["files"], "{document:#}");
+        assert_eq!(files_changed(&document), vec!["adapter-pin.txt".to_string()], "{document:#}");
     }
     repo.clear_log();
     let document = repo.run_json(&[], 0);
-    for check in [RETURNED_BOOK, LATE_RETURN, ON_TIME_RETURN] {
+    for check in ALL_CHECKS {
+        assert_eq!(state_of(&document, check), "passed", "{document:#}");
+        let versions: Vec<serde_json::Value> =
+            repo.results_of(check).iter().map(|(_, record)| record["body"]["method"]["adapter"]["version"].clone()).collect();
+        assert!(versions.contains(&json!("1.1.0")), "{check}: {versions:?}");
+    }
+}
+
+// behavior: A suite's `marker_key` is sent to the adapter in the request, and without the key the request says `Check`
+#[test]
+fn the_suite_marker_key_reaches_the_adapter() {
+    let repo = Repo::sample();
+    repo.replace(PROJECT_FILE, "marker = \"# Check: <id>\"", "marker = \"# Proof: <id>\"\nmarker_key = \"Proof\"");
+    for file in [LOAN_LIMIT_TESTS, LATE_FINE_TESTS, FREE_RETURN_TESTS] {
+        let text = repo.read(file).replace("# Check: ", "# Proof: ");
+        repo.write(file, &text);
+    }
+    let document = repo.run_json(&[], 0);
+    for check in ALL_CHECKS {
         assert_eq!(state_of(&document, check), "passed", "{document:#}");
     }
+    let runs = repo.adapter_runs();
+    assert_eq!(runs.len(), 1, "{runs:#?}");
+    assert_eq!(runs[0]["request"]["marker_key"], "Proof", "{:#}", runs[0]);
+
+    let plain = Repo::sample();
+    plain.run_json(&[], 0);
+    assert_eq!(plain.adapter_runs()[0]["request"]["marker_key"], "Check");
+}
+
+// behavior: A `marker_key` that the marker form does not use leaves the Checks of the suite with no result at the launch
+#[test]
+fn a_marker_key_the_form_does_not_use_gives_no_result() {
+    let repo = Repo::sample();
+    repo.replace(PROJECT_FILE, "marker = \"# Check: <id>\"", "marker = \"# Check: <id>\"\nmarker_key = \"Proof\"");
+    let findings = repo.lint_findings(0);
+    assert!(findings.is_empty(), "lint cannot see a wrong pair: {findings:#?}");
+    let document = repo.run_json(&[], 1);
+    for check in ALL_CHECKS {
+        assert_eq!(state_of(&document, check), "owed", "{document:#}");
+        assert_eq!(reason_of(&document, check), "no result", "{document:#}");
+    }
+    assert!(repo.records().is_empty(), "results were written: {:#?}", repo.records());
 }
 
 // behavior: The core treats any other status, or output that is not one report, as a crashed launch
@@ -57,11 +101,12 @@ fn a_bad_status_or_a_bad_report_is_a_crashed_launch() {
     for directive in ["adapter: crash", "adapter: garbage", "adapter: two-reports"] {
         let repo = Repo::sample();
         repo.append(LATE_FINE_TESTS, &format!("{directive}\n"));
-        let document = repo.azimuth(&["run", "--json"]).json();
-        assert_ne!(document["suites"][0]["launch"], "ok", "{directive}: {document:#}");
+        let document = repo.run_json(&[], 1);
+        assert_eq!(document["suites"][0]["launch"], "crashed", "{directive}: {document:#}");
         for check in ALL_CHECKS {
             assert_eq!(state_of(&document, check), "owed", "{directive}: {document:#}");
-            assert!(repo.records_naming(check).is_empty(), "{directive}: a result was written for {check}");
+            assert_eq!(reason_of(&document, check), "no result", "{directive}: {document:#}");
+            assert!(repo.results_of(check).is_empty(), "{directive}: a result was written for {check}");
         }
     }
 }

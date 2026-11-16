@@ -37,8 +37,8 @@ fn modules_are_read_at_any_depth() {
     let document = status(&repo);
     let lending = requirement_in(&document, LOAN_LIMIT).expect("the Requirement of azimuth/model/lending");
     let returns = requirement_in(&document, LATE_FINE).expect("the Requirement of azimuth/model/desk/returns");
-    assert!(lending["module"].as_str().unwrap_or_default().contains("lending"), "{lending:#}");
-    assert!(returns["module"].as_str().unwrap_or_default().contains("returns"), "{returns:#}");
+    assert_eq!(lending["module"], "lending", "{lending:#}");
+    assert_eq!(returns["module"], "desk/returns", "{returns:#}");
 }
 
 // behavior: A module folder may lack any of its files, and that is not a finding
@@ -88,17 +88,15 @@ fn a_declaration_is_read_in_the_middle_of_prose() {
     repo.replace(
         LENDING_VERIFICATION,
         "  The desk refuses a sixth loan to a borrower who holds five.\n",
-        "  The desk refuses a sixth loan\n  Reuse: never, because the desk reads today's date\n  to a borrower who holds five.\n",
+        "  The desk refuses a sixth loan\n  Reuse: never, the desk reads today's date\n  to a borrower who holds five.\n",
     );
     let document = status(&repo);
     let requirement = requirement_in(&document, LOAN_LIMIT).unwrap();
-    assert!(
-        requirement["verification"].as_str().unwrap_or_default().contains("this version records no reviews"),
+    assert_eq!(
+        requirement["verification"]["state"], "owed",
         "the declaration in the middle of the prose was not read: {requirement:#}"
     );
-    let check = repo.azimuth(&["check", "show", SIXTH_LOAN, "--json"]);
-    check.expect_status(0);
-    assert!(all_strings(&check.json()["reuse"]).iter().any(|value| value.contains("never")));
+    assert_eq!(repo.check_show(SIXTH_LOAN)["reuse"]["value"], "never");
 }
 
 // behavior: A blank line between a heading and a declaration changes nothing
@@ -118,7 +116,7 @@ fn a_blank_line_before_a_declaration_changes_nothing() {
     );
     let tight_requirement = requirement_in(&status(&tight), LOAN_LIMIT).cloned().unwrap();
     let loose_requirement = requirement_in(&status(&loose), LOAN_LIMIT).cloned().unwrap();
-    assert!(tight_requirement["verification"].as_str().unwrap_or_default().contains("this version records no reviews"));
+    assert_eq!(tight_requirement["verification"]["state"], "owed", "{tight_requirement:#}");
     assert_eq!(tight_requirement["verification"], loose_requirement["verification"]);
 }
 
@@ -133,7 +131,7 @@ fn another_word_with_a_colon_is_prose() {
     );
     lint_is_clean(&repo);
     let requirement = requirement_in(&status(&repo), LOAN_LIMIT).cloned().unwrap();
-    assert_eq!(requirement["verification"], "not reviewed", "{requirement:#}");
+    assert_eq!(requirement["verification"], json!({ "state": "not reviewed" }), "{requirement:#}");
 }
 
 // behavior: A key or a table in the project file that the CLI does not know is a reading error
@@ -208,18 +206,18 @@ fn a_check_is_read_with_its_claim_and_its_reuse() {
     assert_eq!(plain["requirement"], LOAN_LIMIT);
     assert_eq!(plain["scenario"], SIXTH_LOAN);
     assert!(plain["claim"].as_str().unwrap_or_default().contains("The desk refuses a sixth loan"), "{plain:#}");
-    assert!(!all_strings(&plain["reuse"]).iter().any(|value| value.contains("never")), "{plain:#}");
+    assert!(plain.get("reuse").is_none(), "{plain:#}");
 
     repo.replace(
         RETURNS_VERIFICATION,
         "  A return on the due date or earlier records no fine.\n",
-        "  A return on the due date or earlier records no fine.\n  Reuse: never, because the desk reads today's date\n",
+        "  A return on the due date or earlier records no fine.\n  Reuse: never, the desk reads today's date\n",
     );
     let strict = repo.azimuth(&["check", "show", ON_TIME_RETURN, "--json"]);
     strict.expect_status(0);
     let strict = strict.json();
     assert_eq!(strict["scenario"], ON_TIME_RETURN);
-    assert!(all_strings(&strict["reuse"]).iter().any(|value| value.contains("never")), "{strict:#}");
+    assert_eq!(strict["reuse"]["value"], "never", "{strict:#}");
 }
 
 // behavior: A `Reuse:` field without a reason is a reading error
@@ -233,6 +231,102 @@ fn reuse_without_a_reason_is_a_reading_error() {
     );
     let line = repo.line_of(RETURNS_VERIFICATION, "Reuse: never");
     repo.expect_reading_error(Some(RETURNS_VERIFICATION), Some(line));
+}
+
+fn reuse_line(line: &str) -> Repo {
+    let repo = Repo::sample();
+    repo.replace(
+        RETURNS_VERIFICATION,
+        "  A return on the due date or earlier records no fine.\n",
+        &format!("  A return on the due date or earlier records no fine.\n  {line}\n"),
+    );
+    repo
+}
+
+fn reuse_of(line: &str) -> serde_json::Value {
+    reuse_line(line).check_show(ON_TIME_RETURN)["reuse"].clone()
+}
+
+fn reuse_reason(reuse: &serde_json::Value) -> String {
+    reuse["reason"].as_str().unwrap_or_else(|| panic!("no reason: {reuse:#}")).to_string()
+}
+
+fn expect_reuse_reading_error(line: &str) {
+    let repo = reuse_line(line);
+    let number = repo.line_of(RETURNS_VERIFICATION, line);
+    repo.expect_reading_error(Some(RETURNS_VERIFICATION), Some(number));
+}
+
+// behavior: A review is declared as `Verification: reviewed` or `Realization: reviewed`
+#[test]
+fn reviews_are_declared_with_the_word_reviewed() {
+    let repo = Repo::sample();
+    repo.replace(LENDING_SPEC, "A borrower holds at most five loans at a time.\n", "A borrower holds at most five loans at a time.\nVerification: reviewed\n");
+    repo.replace(RETURNS_SPEC, "A book returned after its due date owes a fine for each day it is late.\n", "A book returned after its due date owes a fine for each day it is late.\nRealization: reviewed\n");
+    lint_is_clean(&repo);
+    let document = status(&repo);
+    let lending = requirement_in(&document, LOAN_LIMIT).unwrap();
+    let returns = requirement_in(&document, LATE_FINE).unwrap();
+    assert_eq!(lending["verification"]["state"], "owed", "{lending:#}");
+    assert_eq!(lending["realization"]["state"], "not reviewed", "{lending:#}");
+    assert_eq!(returns["realization"]["state"], "owed", "{returns:#}");
+    assert_eq!(returns["verification"]["state"], "not reviewed", "{returns:#}");
+}
+
+// behavior: `Reuse:` is written on one line as a value, a comma and a reason
+#[test]
+fn reuse_is_a_value_a_comma_and_a_reason_on_one_line() {
+    let reuse = reuse_of("Reuse: never, the desk reads today's date");
+    assert_eq!(reuse["value"], "never", "{reuse:#}");
+    assert_eq!(reuse_reason(&reuse), "the desk reads today's date");
+
+    // The next line is claim text again, so a reason never continues past its line.
+    let repo = reuse_line("Reuse: never, the desk reads today's date\n  and the clock of the machine");
+    let check = repo.check_show(ON_TIME_RETURN);
+    assert_eq!(reuse_reason(&check["reuse"]), "the desk reads today's date", "{check:#}");
+}
+
+// behavior: The reason is the text after the first comma, without the spaces and tabs around it, and may be in any language
+#[test]
+fn the_reason_is_the_text_after_the_first_comma_in_any_language() {
+    let reuse = reuse_of("Reuse: never, стойка читает сегодняшнюю дату, а не дату выдачи");
+    assert_eq!(reuse["value"], "never", "{reuse:#}");
+    assert_eq!(reuse_reason(&reuse), "стойка читает сегодняшнюю дату, а не дату выдачи");
+}
+
+// behavior: The reason is the text after the first comma, without the spaces and tabs around it, and may be in any language
+#[test]
+fn the_spaces_around_the_reason_are_not_part_of_it() {
+    for line in [
+        "Reuse: never,the desk reads today's date",
+        "Reuse: never,    the desk reads today's date",
+        "Reuse: never, the desk reads today's date   ",
+        "Reuse: never,\tthe desk reads today's date",
+        "Reuse: never, \t the desk reads today's date\t",
+    ] {
+        let reuse = reuse_of(line);
+        assert_eq!(reuse_reason(&reuse), "the desk reads today's date", "{line:?}: {reuse:#}");
+    }
+    // Spaces and tabs inside the reason are its own text.
+    assert_eq!(reuse_reason(&reuse_of("Reuse: never, the desk  reads today's date")), "the desk  reads today's date");
+    assert_eq!(reuse_reason(&reuse_of("Reuse: never, the desk\treads today's date")), "the desk\treads today's date");
+}
+
+// behavior: `never` is the one value this version knows
+#[test]
+fn never_is_the_one_known_value() {
+    assert_eq!(reuse_of("Reuse: never, the desk reads today's date")["value"], "never");
+    for line in ["Reuse: for 3 days, the shelf list changes weekly", "Reuse: always, nothing outside the tree is read"] {
+        expect_reuse_reading_error(line);
+    }
+}
+
+// behavior: A `Reuse:` line with no comma, with nothing but spaces and tabs after the comma, or with an unknown value is a reading error
+#[test]
+fn a_malformed_reuse_line_is_a_reading_error() {
+    for line in ["Reuse: never the desk reads today's date", "Reuse: never,", "Reuse: never,   ", "Reuse: never,\t", "Reuse: never, \t ", "Reuse: seldom, the desk reads today's date"] {
+        expect_reuse_reading_error(line);
+    }
 }
 
 // behavior: A Check declared without `Reuse:` is reused by equal fingerprint
@@ -330,9 +424,10 @@ fn one_requirement_id_in_two_modules_is_a_reading_error() {
         repo.replace(file, "Requirement: late-return-owes-a-fine", "Requirement: loan-limit-holds");
     }
     let document = repo.expect_reading_error(None, None);
+    let files: Vec<String> = document["errors"].as_array().unwrap().iter().map(|error| error["file"].as_str().unwrap_or_default().to_string()).collect();
     let text = document.to_string();
-    assert!(text.contains("lending"), "the error names the lending module: {document:#}");
-    assert!(text.contains("returns"), "the error names the returns module: {document:#}");
+    assert!(files.iter().any(|file| file == LENDING_SPEC || file == RETURNS_SPEC), "{document:#}");
+    assert!(text.contains(LENDING_SPEC) && text.contains(RETURNS_SPEC), "the error names both modules: {document:#}");
 }
 
 fn expect_bad_requirement_id(id: &str) {
@@ -490,9 +585,6 @@ fn moving_a_module_keeps_ids_and_claim_digests() {
     let moved = requirement_in(&document, LATE_FINE).expect("the moved Requirement keeps its id");
     assert!(!moved["module"].as_str().unwrap_or_default().contains("desk"), "{moved:#}");
 
-    let check = repo.azimuth(&["check", "show", LATE_RETURN, "--json"]);
-    check.expect_status(0);
-    let parts = parts_changed(&check.json());
-    assert!(mentions(&parts, "files"), "the move changed files: {parts:?}");
-    assert!(!mentions(&parts, "claim"), "the move changed the claim's digest: {parts:?}");
+    let check = repo.check_show(LATE_RETURN);
+    assert_eq!(parts_changed(&check), vec!["files"], "the move changed only files: {check:#}");
 }

@@ -59,6 +59,6 @@ fn a_result_of_check_run_counts_like_any_other() {
 
     let crashed = Repo::sample();
     crashed.append(FREE_RETURN_TESTS, "adapter: crash\n");
-    crashed.azimuth(&["check", "run", ON_TIME_RETURN, "--json"]);
-    assert!(crashed.records_naming(ON_TIME_RETURN).is_empty(), "a crashed launch of check run wrote a result");
+    crashed.azimuth(&["check", "run", ON_TIME_RETURN, "--json"]).expect_status(1);
+    assert!(crashed.results_of(ON_TIME_RETURN).is_empty(), "a crashed launch of check run wrote a result");
 }

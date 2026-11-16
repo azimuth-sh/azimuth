@@ -39,6 +39,29 @@ pub const LATE_FINE_TESTS: &str = "suites/desk-checks/late-fine.test";
 pub const FREE_RETURN_TESTS: &str = "suites/desk-checks/free-return.test";
 pub const PRODUCT_FILE: &str = "desk/lending.txt";
 
+/// Where `azimuth skills install` puts the one copy of the text, and the link it adds for `claude`.
+pub const SKILL_FILE: &str = ".agents/skills/azimuth-change/SKILL.md";
+pub const SKILL_FOLDER: &str = ".agents/skills/azimuth-change";
+pub const CLAUDE_SKILL_LINK: &str = ".claude/skills/azimuth-change";
+
+/// The reasons for owed, as the design writes them. A `reason` field holds exactly one of them.
+pub const OWED_REASONS: [&str; 11] = [
+    "an input changed",
+    "never run",
+    "deferred by the lane",
+    "cannot run here",
+    "failed on these inputs",
+    "inconclusive",
+    "contradicted",
+    "the start-up guard is owed",
+    "expired",
+    "no result",
+    "runs in CI",
+];
+
+/// The parts of a fingerprint without an input provider.
+pub const PARTS: [&str; 4] = ["claim", "files", "environment", "method"];
+
 /// The version the stub and the sample both carry. A test that needs "another version" writes
 /// this one into the pin and changes it.
 pub const PINNED_CLI: &str = "0.2.0-alpha.1";
@@ -62,7 +85,7 @@ pub fn binaries_dir() -> PathBuf {
         .and_then(Path::parent)
         .expect("the test binary sits in target/<profile>/deps")
         .to_path_buf();
-    for name in ["azimuth", "text-suite-adapter", "facility-probe"] {
+    for name in ["azimuth", "text-suite-adapter", "facility-probe", "stdin-recorder"] {
         assert!(
             dir.join(name).exists(),
             "{name} is not built in {}. Run `cargo test` from the workspace root, so every member is built.",
@@ -346,59 +369,61 @@ impl Repo {
         self.git_common_dir().join("azimuth")
     }
 
+    /// The root of the outbox. The design fixes only the two roots, the outbox in the worktree and
+    /// the store in the git directory, so nothing below either is assumed.
     pub fn outbox(&self) -> PathBuf {
-        self.path(".azimuth/outbox")
+        self.path(".azimuth")
     }
 
+    /// The record files of the store: every `.json` file at any depth below it.
     pub fn store_files(&self) -> Vec<PathBuf> {
-        files_under(&self.store())
+        json_files_under(&self.store())
     }
 
+    /// The record files of the outbox: every `.json` file at any depth below it.
     pub fn outbox_files(&self) -> Vec<PathBuf> {
-        files_under(&self.outbox())
+        json_files_under(&self.outbox())
     }
 
-    /// Every JSON record in the store and the outbox, parsed.
+    /// Every record in the store and the outbox, parsed. A file that is not JSON is left out.
     pub fn records(&self) -> Vec<(PathBuf, Value)> {
         let mut records = Vec::new();
         for file in self.store_files().into_iter().chain(self.outbox_files()) {
-            if file.extension().is_some_and(|ext| ext == "json") {
-                if let Ok(value) = serde_json::from_str::<Value>(&fs::read_to_string(&file).unwrap_or_default()) {
-                    records.push((file, value));
-                }
+            if let Ok(value) = serde_json::from_slice::<Value>(&fs::read(&file).unwrap_or_default()) {
+                records.push((file, value));
             }
         }
         records
     }
 
-    /// The records whose content names a Check id. The record format is not fixed by the design,
-    /// so a record is found by the id it holds and not by a field name.
-    pub fn records_naming(&self, check: &str) -> Vec<(PathBuf, Value)> {
+    /// The `result-1` records of one Check: the ones whose one subject names it.
+    pub fn results_of(&self, check: &str) -> Vec<(PathBuf, Value)> {
         self.records()
             .into_iter()
-            .filter(|(_, value)| all_strings(value).iter().any(|text| text == check))
+            .filter(|(_, value)| value["format"] == "result-1" && value["subjects"][0]["name"] == check)
             .collect()
     }
 
-    /// Rewrites every record in the store and the outbox, and keeps a file name that was the
-    /// SHA-256 of the old bytes equal to the SHA-256 of the new bytes, as the design names records.
-    pub fn rewrite_records(&self, rewrite: impl Fn(&str) -> String) {
+    /// The one `result-1` record of a Check. Fails when there is none or more than one.
+    pub fn result_of(&self, check: &str) -> Value {
+        let results = self.results_of(check);
+        assert_eq!(results.len(), 1, "{check} has {} results: {results:#?}", results.len());
+        results[0].1.clone()
+    }
+
+    /// Rewrites every record in the store and the outbox, as a person or a later CLI could. The new
+    /// record is written in the canonical form under the SHA-256 of its bytes, as `record-1` names
+    /// a record, so it is a well-formed record and only its content differs.
+    pub fn rewrite_records(&self, rewrite: impl Fn(&mut Value)) {
         for file in self.store_files().into_iter().chain(self.outbox_files()) {
-            if !file.extension().is_some_and(|ext| ext == "json") {
+            let mut value: Value = serde_json::from_slice(&fs::read(&file).unwrap()).unwrap();
+            let before = value.clone();
+            rewrite(&mut value);
+            if value == before {
                 continue;
             }
-            let old = fs::read_to_string(&file).unwrap();
-            let new = rewrite(&old);
-            if new == old {
-                continue;
-            }
-            let stem = file.file_stem().unwrap().to_string_lossy().to_string();
-            if stem == sha256_hex(old.as_bytes()) {
-                fs::remove_file(&file).unwrap();
-                fs::write(file.with_file_name(format!("{}.json", sha256_hex(new.as_bytes()))), new).unwrap();
-            } else {
-                fs::write(&file, new).unwrap();
-            }
+            fs::remove_file(&file).unwrap();
+            write_record(file.parent().unwrap(), &value);
         }
     }
 
@@ -608,23 +633,129 @@ pub fn count(value: &Value) -> u64 {
     }
 }
 
+pub fn json_files_under(dir: &Path) -> Vec<PathBuf> {
+    files_under(dir)
+        .into_iter()
+        .filter(|file| file.extension().is_some_and(|ext| ext == "json"))
+        .collect()
+}
+
+/// SHA-256 of the bytes, as lowercase hex.
 pub fn sha256_hex(bytes: &[u8]) -> String {
-    for (program, args) in [("sha256sum", vec![]), ("shasum", vec!["-a", "256"])] {
-        let child = Command::new(program)
-            .args(&args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn();
-        let Ok(mut child) = child else { continue };
-        use std::io::Write;
-        child.stdin.take().unwrap().write_all(bytes).unwrap();
-        let output = child.wait_with_output().unwrap();
-        if output.status.success() {
-            return String::from_utf8_lossy(&output.stdout).split_whitespace().next().unwrap().to_string();
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes).iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// Model text as `text-1` normalizes it before hashing: NFC, every line ending as LF, spaces and
+/// tabs at line ends removed, and nothing else folded.
+pub fn text_1_normalize(text: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    let composed: String = text.nfc().collect();
+    let unified = composed.replace("\r\n", "\n").replace('\r', "\n");
+    unified
+        .split('\n')
+        .map(|line| line.trim_end_matches([' ', '\t']))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The `text-1` digest of model text: the scheme name, a colon and the SHA-256 of the normalized
+/// text in lowercase hex.
+pub fn text_1_digest(text: &str) -> String {
+    format!("text-1:{}", sha256_hex(text_1_normalize(text).as_bytes()))
+}
+
+/// The digest line `azimuth skills install` writes as the last line of a file, for the given
+/// text of the file without that line.
+pub fn skill_digest_line(text: &str) -> String {
+    format!("<!-- azimuth {} -->", text_1_digest(text))
+}
+
+/// Splits an installed file into its text without the last line, and the last line. The text
+/// keeps the line ending of the line before the digest line, because that ending is part of it.
+pub fn split_last_line(file: &str) -> (String, String) {
+    let trimmed = file.strip_suffix('\n').unwrap_or(file);
+    match trimmed.rfind('\n') {
+        Some(index) => (file[..index + 1].to_string(), trimmed[index + 1..].to_string()),
+        None => (String::new(), trimmed.to_string()),
+    }
+}
+
+/// The canonical form of RFC 8785 for a JSON value: no whitespace, object members sorted by the
+/// UTF-16 code units of their names, strings escaped as ECMAScript does. A record holds only
+/// whole numbers, so a fractional number is refused rather than formatted.
+pub fn canonical_json(value: &Value) -> String {
+    let mut out = String::new();
+    write_canonical(value, &mut out);
+    out
+}
+
+fn write_canonical(value: &Value, out: &mut String) {
+    match value {
+        Value::Null => out.push_str("null"),
+        Value::Bool(flag) => out.push_str(if *flag { "true" } else { "false" }),
+        Value::Number(number) => {
+            if let Some(whole) = number.as_i64() {
+                out.push_str(&whole.to_string());
+            } else if let Some(whole) = number.as_u64() {
+                out.push_str(&whole.to_string());
+            } else {
+                panic!("a record holds the fractional number {number}");
+            }
+        }
+        Value::String(text) => write_canonical_string(text, out),
+        Value::Array(items) => {
+            out.push('[');
+            for (index, item) in items.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                write_canonical(item, out);
+            }
+            out.push(']');
+        }
+        Value::Object(map) => {
+            let mut keys: Vec<&String> = map.keys().collect();
+            keys.sort_by(|a, b| a.encode_utf16().cmp(b.encode_utf16()));
+            out.push('{');
+            for (index, key) in keys.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                write_canonical_string(key, out);
+                out.push(':');
+                write_canonical(&map[*key], out);
+            }
+            out.push('}');
         }
     }
-    panic!("neither sha256sum nor shasum is available");
+}
+
+fn write_canonical_string(text: &str, out: &mut String) {
+    out.push('"');
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\u{08}' => out.push_str("\\b"),
+            '\u{0c}' => out.push_str("\\f"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+}
+
+/// Writes a record as `record-1` names it: its canonical bytes, in a file named by their SHA-256.
+pub fn write_record(dir: &Path, value: &Value) -> PathBuf {
+    let bytes = canonical_json(value);
+    fs::create_dir_all(dir).unwrap();
+    let path = dir.join(format!("{}.json", sha256_hex(bytes.as_bytes())));
+    fs::write(&path, bytes).unwrap();
+    path
 }
 
 /// Rows of `docs/increments/1.md`: (section heading, behavior, quote). The section "Left for
@@ -665,7 +796,8 @@ impl Repo {
     }
 
     /// Asserts that `azimuth status --json` stops on a reading error and returns the `error-1`
-    /// document. When a file is given, one error must name it, and the line when one is given.
+    /// document. When a file is given, one error must name it as a path from the repository root,
+    /// and the line, counted from 1, when one is given.
     pub fn expect_reading_error(&self, file: Option<&str>, line: Option<u64>) -> Value {
         let output = self.azimuth(&["status", "--json"]);
         output.expect_status(2);
@@ -679,10 +811,7 @@ impl Repo {
             }
         }
         if let Some(file) = file {
-            let named: Vec<&Value> = errors
-                .iter()
-                .filter(|error| error["file"].as_str().is_some_and(|path| path.ends_with(file)))
-                .collect();
+            let named: Vec<&Value> = errors.iter().filter(|error| error["file"] == file).collect();
             assert!(!named.is_empty(), "no error names {file}: {document:#}");
             if let Some(line) = line {
                 assert!(
@@ -695,14 +824,23 @@ impl Repo {
     }
 }
 
-/// The names of the parts in a `check-1` document's `parts_changed`, lowercased. The design fixes
-/// the field and the part names, not its shape, so every string inside the field counts.
+/// The `parts_changed` list of a `check-1` document: part names, in the order given.
 pub fn parts_changed(check: &Value) -> Vec<String> {
-    all_strings(&check["parts_changed"]).iter().map(|part| part.to_lowercase()).collect()
+    let list = check["parts_changed"]
+        .as_array()
+        .unwrap_or_else(|| panic!("`parts_changed` is not a list: {check:#}"));
+    list.iter()
+        .map(|part| part.as_str().unwrap_or_else(|| panic!("a part name is not text: {check:#}")).to_string())
+        .collect()
 }
 
-pub fn mentions(parts: &[String], part: &str) -> bool {
-    parts.iter().any(|name| name.contains(part))
+/// The `parts_changed` list of a `check-1` document as a set, for comparing with an exact set.
+pub fn parts_changed_set(check: &Value) -> BTreeSet<String> {
+    parts_changed(check).into_iter().collect()
+}
+
+pub fn set_of(items: &[&str]) -> BTreeSet<String> {
+    items.iter().map(|item| item.to_string()).collect()
 }
 
 /// The PATH of the machine without the folders that hold a program, so a test can stand on a
@@ -793,7 +931,7 @@ impl Repo {
         document
     }
 
-    /// Every string in every record, so a test can look for a digest without a field name.
+    /// Every string in every record, so a test can look for a bare hash wherever it stands.
     pub fn record_strings(&self) -> Vec<String> {
         self.records().iter().flat_map(|(_, value)| all_strings(value)).collect()
     }
@@ -823,14 +961,18 @@ pub fn is_bare_hash(text: &str) -> bool {
     (text.len() == 40 || text.len() == 64) && text.chars().all(|c| c.is_ascii_hexdigit())
 }
 
+/// The `files_changed` list of a `check-1` document, sorted: paths from the repository root.
 pub fn files_changed(check: &Value) -> Vec<String> {
-    all_strings(&check["files_changed"])
+    let mut files = strings_of(&check["files_changed"]);
+    assert!(check["files_changed"].is_array(), "`files_changed` is not a list: {check:#}");
+    files.sort();
+    files
 }
 
 impl Repo {
-    /// Deletes every record that names a Check, as a person may delete anything in the store.
+    /// Deletes every result of a Check, as a person may delete anything in the store.
     pub fn forget(&self, check: &str) {
-        let records = self.records_naming(check);
+        let records = self.results_of(check);
         assert!(!records.is_empty(), "no record names {check}");
         for (file, _) in records {
             fs::remove_file(file).unwrap();
@@ -852,36 +994,53 @@ pub fn set_mode(path: &Path, mode: u32) {
     fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
 }
 
-/// Raises the number of every format name in a record, as a later CLI version would write it.
-pub fn bump_formats(text: &str) -> String {
-    let mut value: serde_json::Value = serde_json::from_str(text).unwrap();
-    fn walk(value: &mut serde_json::Value) {
-        match value {
-            serde_json::Value::String(text) => {
-                if let Some((word, number)) = text.rsplit_once('-') {
-                    let is_format = !word.is_empty()
-                        && word.chars().all(|c| c.is_ascii_lowercase() || c == '-')
-                        && !number.is_empty()
-                        && number.chars().all(|c| c.is_ascii_digit());
-                    if is_format {
-                        *text = format!("{word}-999");
-                    }
-                }
-            }
-            serde_json::Value::Array(items) => items.iter_mut().for_each(walk),
-            serde_json::Value::Object(map) => {
-                for (key, item) in map.iter_mut() {
-                    if (key.contains("schema") || key.contains("version")) && item.is_u64() {
-                        *item = serde_json::Value::from(999);
-                    } else {
-                        walk(item);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    walk(&mut value);
-    value.to_string()
+/// Gives a record the next number of its format, as a later CLI version would write it.
+pub fn next_format(record: &mut Value) {
+    assert_eq!(record["format"], "result-1", "{record:#}");
+    record["format"] = Value::String("result-2".to_string());
 }
 
+/// The `detail` of a Check entry as text, or an empty text when it has none.
+pub fn detail_of_entry(check: &Value) -> String {
+    check["detail"].as_str().unwrap_or_default().to_string()
+}
+
+
+#[cfg(test)]
+mod apparatus_checks {
+    use super::*;
+
+    // The sorting example of RFC 8785, section 3.2.3, where UTF-16 order differs from UTF-8 order.
+    #[test]
+    fn canonical_json_sorts_members_by_utf16_code_units() {
+        let value: Value = serde_json::from_str(
+            r#"{"€":"Euro Sign","\r":"Carriage Return","דּ":"Hebrew Letter Dalet With Dagesh","1":"One","😀":"Emoji: Grinning Face","\u0080":"Control","ö":"Latin Small Letter O With Diaeresis"}"#,
+        )
+        .unwrap();
+        let names: Vec<String> = canonical_json(&value)
+            .split("\",\"")
+            .map(|member| member.trim_start_matches("{\"").split("\":\"").next().unwrap().to_string())
+            .collect();
+        assert_eq!(names, vec!["\\r", "1", "\u{80}", "\u{f6}", "\u{20ac}", "\u{1f600}", "\u{fb33}"]);
+    }
+
+    #[test]
+    fn canonical_json_escapes_as_ecmascript_and_drops_whitespace() {
+        let value = json!({ "b": "line\nend \u{f} \"q\" \\ é", "a": [1, -2, true, null] });
+        assert_eq!(canonical_json(&value), "{\"a\":[1,-2,true,null],\"b\":\"line\\nend \\u000f \\\"q\\\" \\\\ é\"}");
+    }
+
+    #[test]
+    fn text_1_folds_only_form_line_endings_and_blanks_at_line_ends() {
+        assert_eq!(text_1_normalize("caf\u{65}\u{301}  \r\nnext\t \rlast "), "caf\u{e9}\nnext\nlast");
+        assert_eq!(text_1_normalize("\ta\tb\t\n"), "\ta\tb\n");
+        assert_eq!(text_1_normalize("a\u{a0}\n"), "a\u{a0}\n");
+        assert_eq!(text_1_digest("abc"), "text-1:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    }
+
+    #[test]
+    fn the_last_line_splits_off_with_the_text_before_it_intact() {
+        assert_eq!(split_last_line("a\nb\n<!-- x -->\n"), ("a\nb\n".to_string(), "<!-- x -->".to_string()));
+        assert_eq!(split_last_line("a\n<!-- x -->"), ("a\n".to_string(), "<!-- x -->".to_string()));
+    }
+}

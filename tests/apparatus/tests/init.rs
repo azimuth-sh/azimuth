@@ -154,11 +154,10 @@ fn init_guesses_no_suite_from_file_names() {
 fn init_prints_the_install_line_of_a_missing_adapter() {
     let repo = fresh("main");
     let output = init(&repo);
-    assert!(
-        output.text().contains("dotnet tool install"),
-        "init does not say how to install the .NET adapter:\n{}",
-        output.text()
-    );
+    // The wording of the install line is text for a person; the facts it must hold are the
+    // missing command and the word install.
+    let text = output.text();
+    assert!(text.contains("azimuth-xunit") && text.contains("install"), "init does not say how to install the .NET adapter:\n{text}");
 }
 
 // behavior: It prints the line for the CI job with the lane flag
@@ -177,29 +176,73 @@ fn init_writes_no_facility() {
     assert!(!project(&repo).contains_key("facility"));
 }
 
-// behavior: It writes the target branch into the project file from what git holds locally
-#[test]
-fn init_writes_the_local_branch_as_the_target() {
-    for branch in ["main", "trunk"] {
-        let repo = fresh(branch);
-        init(&repo);
-        let project = project(&repo);
-        assert_eq!(project["repository"]["target"].as_str(), Some(branch), "{project:?}");
-    }
+fn target_in(dir: &std::path::Path) -> Option<String> {
+    let project = parse_toml(&std::fs::read_to_string(dir.join(PROJECT_FILE)).unwrap());
+    project["repository"]["target"].as_str().map(str::to_string)
+}
+
+/// A clone of a remote whose default branch is `trunk`, checked out on a feature branch.
+fn clone_on_a_feature_branch() -> (Repo, std::path::PathBuf) {
+    let origin = Repo::sample_before_init("trunk");
+    let clone = origin.beside("clone");
+    origin.git_in(origin.beside("").as_path(), &["clone", "--quiet", origin.root().to_str().unwrap(), clone.to_str().unwrap()]);
+    origin.git_in(&clone, &["checkout", "--quiet", "-b", "feature/shelves"]);
+    (origin, clone)
+}
+
+fn init_in(origin: &Repo, clone: &std::path::Path) {
+    let closed = "http://127.0.0.1:9";
+    let output = origin.azimuth_in(
+        clone,
+        &["init"],
+        &[("PATH", &path_without("dotnet")), ("https_proxy", closed), ("HTTPS_PROXY", closed), ("ALL_PROXY", closed)],
+    );
+    output.expect_status(0);
 }
 
 // behavior: It writes the target branch into the project file from what git holds locally
 #[test]
 fn init_on_a_feature_branch_writes_the_branch_it_came_from() {
-    // A clone of a remote whose default branch is `trunk`, checked out on a feature branch.
-    let origin = Repo::sample_before_init("trunk");
-    let clone = origin.beside("clone");
-    origin.git_in(origin.beside("").as_path(), &["clone", "--quiet", origin.root().to_str().unwrap(), clone.to_str().unwrap()]);
-    origin.git_in(&clone, &["checkout", "--quiet", "-b", "feature/shelves"]);
-    let output = origin.azimuth_in(&clone, &["init"], &[("PATH", &path_without("dotnet"))]);
-    output.expect_status(0);
-    let project = parse_toml(&std::fs::read_to_string(clone.join(PROJECT_FILE)).unwrap());
-    assert_eq!(project["repository"]["target"].as_str(), Some("trunk"), "{project:?}");
+    let (origin, clone) = clone_on_a_feature_branch();
+    init_in(&origin, &clone);
+    assert_eq!(target_in(&clone).as_deref(), Some("trunk"));
+}
+
+// behavior: The target it writes is the remote's default branch as the clone already knows it
+#[test]
+fn init_writes_the_default_branch_the_clone_last_saw() {
+    // The remote's default branch moves after the clone was made, and nothing is fetched, so the
+    // clone still knows the old one.
+    let (origin, clone) = clone_on_a_feature_branch();
+    origin.git(&["branch", "--quiet", "release"]);
+    origin.git(&["symbolic-ref", "HEAD", "refs/heads/release"]);
+    init_in(&origin, &clone);
+    assert_eq!(target_in(&clone).as_deref(), Some("trunk"));
+    assert!(origin.git_in(&clone, &["branch", "-r"]).lines().all(|line| !line.contains("release")), "init fetched");
+}
+
+// behavior: With no remote, the target it writes is the current branch
+#[test]
+fn init_without_a_remote_writes_the_current_branch() {
+    for branch in ["main", "trunk"] {
+        let repo = fresh(branch);
+        init(&repo);
+        assert_eq!(target_in(repo.root()).as_deref(), Some(branch));
+    }
+    let repo = fresh("main");
+    repo.git(&["checkout", "--quiet", "-b", "feature/shelves"]);
+    init(&repo);
+    assert_eq!(target_in(repo.root()).as_deref(), Some("feature/shelves"));
+}
+
+// behavior: `azimuth init` writes no `marker_key`
+#[test]
+fn init_writes_no_marker_key() {
+    // Without the .NET adapter init lists no suite. The test with the adapter is in
+    // `dotnet_adapter.rs`; this one keeps the key out of everything init writes here.
+    let repo = fresh("main");
+    init(&repo);
+    assert!(!repo.read(PROJECT_FILE).contains("marker_key"), "{}", repo.read(PROJECT_FILE));
 }
 
 // behavior: It needs no account and no network

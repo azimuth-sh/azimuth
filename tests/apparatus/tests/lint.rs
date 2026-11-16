@@ -118,12 +118,16 @@ fn lint_ignores_marker_text_outside_every_suite() {
 #[test]
 fn a_project_may_use_another_marker_key() {
     let repo = Repo::sample();
-    repo.replace(PROJECT_FILE, "marker = \"# Check: <id>\"", "marker = \"# Proof: <id>\"");
+    repo.replace(PROJECT_FILE, "marker = \"# Check: <id>\"", "marker = \"# Proof: <id>\"\nmarker_key = \"Proof\"");
     for file in [LOAN_LIMIT_TESTS, LATE_FINE_TESTS, FREE_RETURN_TESTS] {
         let text = repo.read(file).replace("# Check: ", "# Proof: ");
         repo.write(file, &text);
     }
     assert!(repo.lint_findings(0).is_empty());
+    repo.replace(LATE_FINE_TESTS, "# Proof: late-return-is-fined", "# Check: late-return-is-fined");
+    let findings = repo.lint_findings(1);
+    let line = repo.line_of(RETURNS_VERIFICATION, "- Check: late-return-is-fined");
+    assert_eq!(findings_at(&findings, RETURNS_VERIFICATION, Some(line)).len(), 1, "{findings:#?}");
 }
 
 fn expect_near_miss(file: &str, after: &str, line: &str) {
@@ -158,7 +162,7 @@ fn lint_reports_a_near_miss_of_reuse() {
     expect_near_miss(
         RETURNS_VERIFICATION,
         "  A return on the due date or earlier records no fine.\n",
-        "  Reuze: never, because the desk reads today's date",
+        "  Reuze: never, the desk reads today's date",
     );
 }
 

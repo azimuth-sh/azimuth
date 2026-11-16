@@ -2,6 +2,11 @@
 //! one `adapter-request-1` document on standard input, one `adapter-report-1` document on
 //! standard output, and the status 0 whenever a report was written.
 //!
+//! The core starts an adapter in its suite's folder, so the adapter reads its tests from its
+//! working directory, as a real runner finds its project there. The request's `suite`, the path
+//! from the repository root, is only logged. Started anywhere else, the adapter reads the wrong
+//! files, and the tests of the core notice.
+//!
 //! The syntax of a text test file is test apparatus, not product. A file in the suite folder is
 //! read line by line:
 //!
@@ -24,14 +29,15 @@
 //! - `adapter: build-fails` writes a report with `"build": "failed"` and no tests.
 //! - `adapter: lists <name> <check-id>` adds a listed test carrying a Check id that no marker in
 //!   source shows, as a trait built from a constant would.
-//! - `adapter: edits <path>` appends a line to that file, relative to the working directory,
-//!   while the launch runs.
+//! - `adapter: edits <path>` appends a line to that file, a path from the repository root,
+//!   while the launch runs. The root is the nearest folder above that holds `.git`.
 //!
 //! Three environment variables reach what the files cannot hold without moving the fingerprint:
 //! `TEXT_ADAPTER_VERSION` overrides the version the adapter reports, `TEXT_ADAPTER_FAIL` names
 //! tests, separated by commas, that fail whatever their file says, as an unstable test or a fault
 //! of the machine would, and `APPARATUS_LOG` names a file outside the repository where each start
-//! is recorded for the tests to inspect.
+//! is recorded for the tests to inspect, with the value of `APPARATUS_MARK`, so a test can see
+//! that the core passed its environment on.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -82,7 +88,7 @@ fn main() {
     match verb.as_str() {
         "discover" => {
             log(json!({ "program": NAME, "args": args, "request": request, "ran": [] }));
-            emit(&json!({ "format": "adapter-report-1", "adapter": adapter, "suites": [] }));
+            emit(&json!({ "format": "adapter-report-1", "adapter": adapter, "projects": [] }));
         }
         "run" => run(&request, adapter, args),
         other => {
@@ -94,14 +100,13 @@ fn main() {
 }
 
 fn run(request: &Value, adapter: Value, args: Vec<String>) {
-    let suite = request["suite"].as_str().unwrap_or(".");
     let key = request["marker_key"].as_str().unwrap_or("Check");
     let asked: BTreeSet<String> = request["checks"]
         .as_array()
         .map(|ids| ids.iter().filter_map(|id| id.as_str().map(str::to_string)).collect())
         .unwrap_or_default();
 
-    let suite_dir = PathBuf::from(suite);
+    let suite_dir = PathBuf::from(".");
     let mut files = Vec::new();
     collect_files(&suite_dir, &mut files);
     files.sort();
@@ -125,7 +130,7 @@ fn run(request: &Value, adapter: Value, args: Vec<String>) {
         let mut file = fs::OpenOptions::new()
             .append(true)
             .create(true)
-            .open(path)
+            .open(repository_root().join(path))
             .expect("the file to edit during the launch is writable");
         writeln!(file, "edited while the launch ran").expect("the edit is written");
     }
@@ -189,6 +194,14 @@ fn run(request: &Value, adapter: Value, args: Vec<String>) {
     if directives.two_reports {
         emit(&report);
     }
+}
+
+fn repository_root() -> PathBuf {
+    let here = std::env::current_dir().expect("the working directory is readable");
+    here.ancestors()
+        .find(|dir| dir.join(".git").exists())
+        .map(Path::to_path_buf)
+        .expect("the adapter runs inside a git repository")
 }
 
 fn collect_files(dir: &Path, files: &mut Vec<PathBuf>) {
@@ -293,6 +306,7 @@ fn log(entry: Value) {
     let mut entry = entry;
     entry["argv0"] = Value::String(std::env::args().next().unwrap_or_default());
     entry["cwd"] = Value::String(std::env::current_dir().map(|dir| dir.display().to_string()).unwrap_or_default());
+    entry["mark"] = std::env::var("APPARATUS_MARK").map(Value::String).unwrap_or(Value::Null);
     let mut file = fs::OpenOptions::new()
         .append(true)
         .create(true)

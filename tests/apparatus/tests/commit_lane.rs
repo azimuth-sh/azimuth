@@ -34,8 +34,16 @@ fn a_planted_pass_has_no_effect() {
     let repo = Repo::sample();
     repo.replace(LATE_FINE_TESTS, "outcome: passed", "outcome: failed");
     repo.run_json(&[], 1);
-    // Forge the stored fail into a pass, as code under test could in a CI job.
-    repo.rewrite_records(|text| text.replace("\"failed\"", "\"passed\"").replace("late-fine\"", "late-fine-forged\""));
+    // Forge the stored fail into a pass, as code under test could in a CI job. The forged record
+    // is well formed, which the local lane shows by keeping it.
+    repo.rewrite_records(|record| {
+        if record["body"]["outcome"] == "failed" {
+            record["body"]["outcome"] = json!("passed");
+            record["body"]["tests"][0]["outcome"] = json!("passed");
+        }
+    });
+    let status = repo.status_json();
+    assert_eq!(status_checks(&status)[LATE_RETURN]["state"], "kept", "the forged pass is not a readable record: {status:#}");
     repo.clear_log();
     let document = commit_lane(&repo, 1);
     all_requested(&repo);
@@ -49,7 +57,7 @@ fn the_commit_lane_runs_a_never_reused_check() {
     repo.replace(
         RETURNS_VERIFICATION,
         "  A return on the due date or earlier records no fine.\n",
-        "  A return on the due date or earlier records no fine.\n  Reuse: never, because the desk reads today's date\n",
+        "  A return on the due date or earlier records no fine.\n  Reuse: never, the desk reads today's date\n",
     );
     let document = commit_lane(&repo, 0);
     assert_eq!(state_of(&document, ON_TIME_RETURN), "passed", "{document:#}");

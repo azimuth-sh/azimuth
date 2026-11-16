@@ -26,18 +26,20 @@ fn the_exact_pinned_version_works_without_a_warning() {
     assert!(!output.stderr.contains(PINNED_CLI), "a warning about the version on the pinned version:\n{}", output.stderr);
 }
 
+const READING_COMMANDS: [&[&str]; 5] = [
+    &["lint", "--json"],
+    &["status", "--json"],
+    &["requirement", "show", LOAN_LIMIT, "--json"],
+    &["check", "show", SIXTH_LOAN, "--json"],
+    &["change", "show", "--json"],
+];
+
 // behavior: With another version, lint and the reading commands work and print a warning
 #[test]
 fn lint_and_reading_commands_warn_under_another_version() {
     let repo = Repo::sample();
     pin(&repo, OTHER_CLI);
-    for args in [
-        &["lint", "--json"][..],
-        &["status", "--json"][..],
-        &["requirement", "show", LOAN_LIMIT, "--json"][..],
-        &["check", "show", SIXTH_LOAN, "--json"][..],
-        &["change", "show", "--json"][..],
-    ] {
+    for args in READING_COMMANDS {
         let output = repo.azimuth(args);
         output.expect_status(0);
         output.json();
@@ -46,6 +48,22 @@ fn lint_and_reading_commands_warn_under_another_version() {
             "azimuth {args:?} gives no warning that names the pinned version:\n{}",
             output.stderr
         );
+    }
+}
+
+// behavior: Under another version, lint and the reading commands print one warning line on standard error that names the pinned version
+#[test]
+fn the_warning_is_one_line_on_standard_error() {
+    let repo = Repo::sample();
+    pin(&repo, OTHER_CLI);
+    let without_json: Vec<Vec<&str>> =
+        READING_COMMANDS.iter().map(|args| args.iter().copied().filter(|arg| *arg != "--json").collect()).collect();
+    for args in READING_COMMANDS.iter().map(|args| args.to_vec()).chain(without_json) {
+        let output = repo.azimuth(&args);
+        output.expect_status(0);
+        let warnings: Vec<&str> = output.stderr.lines().filter(|line| line.contains(OTHER_CLI)).collect();
+        assert_eq!(warnings.len(), 1, "azimuth {args:?} warns on {} lines:\n{}", warnings.len(), output.stderr);
+        assert!(!output.stdout.contains(OTHER_CLI), "azimuth {args:?} warns on standard output:\n{}", output.stdout);
     }
 }
 
@@ -61,18 +79,17 @@ fn run_refuses_under_another_version() {
     assert!(repo.store_files().is_empty() && repo.outbox_files().is_empty(), "run wrote results");
 }
 
-// behavior: Changing only the CLI version changes no fingerprint
+// behavior: Changing only the pinned version in the project file moves the files part and no other part
 #[test]
-fn the_cli_version_is_not_a_part_of_the_fingerprint() {
-    // The pin is a line of a tracked file, so moving it changes the files part. What must not
-    // move is the method part, where the version would sit if it were an input.
+fn raising_the_pin_moves_only_the_files_part() {
     let repo = Repo::sample();
-    repo.azimuth(&["run", "--json"]).expect_status(0);
+    repo.run_json(&[], 0);
     pin(&repo, OTHER_CLI);
-    let output = repo.azimuth(&["check", "show", SIXTH_LOAN, "--json"]);
-    output.expect_status(0);
-    let parts = parts_changed(&output.json());
-    assert!(mentions(&parts, "files"), "{parts:?}");
-    assert!(!mentions(&parts, "method"), "the CLI version moved the method part: {parts:?}");
-    assert!(!mentions(&parts, "environment"), "the CLI version moved the environment part: {parts:?}");
+    for check in ALL_CHECKS {
+        let document = repo.check_show(check);
+        assert_eq!(document["state"], "owed", "{document:#}");
+        assert_eq!(document["reason"], "an input changed", "{document:#}");
+        assert_eq!(parts_changed(&document), vec!["files"], "{document:#}");
+        assert_eq!(files_changed(&document), vec![PROJECT_FILE.to_string()], "{document:#}");
+    }
 }

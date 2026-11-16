@@ -4,7 +4,11 @@ use std::collections::BTreeSet;
 
 use azimuth_tests::*;
 
-const QUIET_SUBJECT: &str = "2 Requirements";
+/// The quiet line names the number of Requirements. The design gives its wording only by an
+/// example, so the test asks for the number and the word.
+fn is_quiet_line_for_two(line: &str) -> bool {
+    line.contains('2') && line.contains("Requirement") && line.contains("proven on this machine")
+}
 
 fn non_empty_lines(text: &str) -> Vec<String> {
     text.lines().map(str::trim).filter(|line| !line.is_empty()).map(str::to_string).collect()
@@ -68,7 +72,7 @@ fn a_proven_tree_prints_one_line() {
     output.expect_status(0);
     let lines = non_empty_lines(&output.stdout);
     assert_eq!(lines.len(), 1, "{}", output.stdout);
-    assert!(lines[0].contains(QUIET_SUBJECT), "{}", lines[0]);
+    assert!(is_quiet_line_for_two(&lines[0]), "{}", lines[0]);
 }
 
 // behavior: With no server named in the project file, the quiet line says "proven on this machine" and no pass is marked "local result only"
@@ -142,7 +146,7 @@ fn an_unmarked_failing_test_leaves_status_quiet() {
     let output = repo.azimuth(&["status"]);
     let lines = non_empty_lines(&output.stdout);
     assert_eq!(lines.len(), 1, "{}", output.stdout);
-    assert!(lines[0].contains(QUIET_SUBJECT));
+    assert!(is_quiet_line_for_two(&lines[0]), "{}", lines[0]);
 }
 
 // behavior: For a Requirement that declares no Verification Review it says "verification: not reviewed"
@@ -150,7 +154,7 @@ fn an_unmarked_failing_test_leaves_status_quiet() {
 fn no_declared_verification_review_reads_not_reviewed() {
     let repo = Repo::sample();
     let status = repo.status_json();
-    assert_eq!(requirement_in(&status, LOAN_LIMIT).unwrap()["verification"], "not reviewed");
+    assert_eq!(requirement_in(&status, LOAN_LIMIT).unwrap()["verification"], json!({ "state": "not reviewed" }));
     let text = repo.azimuth(&["requirement", "show", LOAN_LIMIT]).stdout;
     assert!(text.contains("verification: not reviewed"), "{text}");
 }
@@ -160,7 +164,7 @@ fn no_declared_verification_review_reads_not_reviewed() {
 fn no_declared_realization_review_reads_not_reviewed() {
     let repo = Repo::sample();
     let status = repo.status_json();
-    assert_eq!(requirement_in(&status, LATE_FINE).unwrap()["realization"], "not reviewed");
+    assert_eq!(requirement_in(&status, LATE_FINE).unwrap()["realization"], json!({ "state": "not reviewed" }));
     let text = repo.azimuth(&["requirement", "show", LATE_FINE]).stdout;
     assert!(text.contains("realization: not reviewed"), "{text}");
 }
@@ -173,8 +177,7 @@ fn a_declared_review_is_owed() {
     let status = repo.status_json();
     let requirement = requirement_in(&status, LOAN_LIMIT).unwrap();
     for field in ["verification", "realization"] {
-        let value = requirement[field].as_str().unwrap_or_default();
-        assert!(value.contains("owed") && value.contains("this version records no reviews"), "{field}: {requirement:#}");
+        assert_eq!(requirement[field], json!({ "state": "owed", "reason": "this version records no reviews" }), "{field}: {requirement:#}");
     }
     let text = repo.azimuth(&["status"]).stdout;
     assert!(text.contains("this version records no reviews"), "{text}");
@@ -189,7 +192,7 @@ fn an_owed_review_keeps_status_from_being_quiet() {
     let output = repo.azimuth(&["status"]);
     output.expect_status(0);
     assert!(output.stdout.contains(LOAN_LIMIT), "{}", output.stdout);
-    assert!(!output.stdout.contains(QUIET_SUBJECT), "{}", output.stdout);
+    assert!(!output.stdout.contains("proven on this machine"), "{}", output.stdout);
     let status = repo.status_json();
     assert_ne!(requirement_in(&status, LOAN_LIMIT).unwrap()["state"], "proven");
     assert_eq!(requirement_in(&status, LATE_FINE).unwrap()["state"], "proven");
@@ -201,14 +204,17 @@ fn status_counts_skipped_records() {
     let repo = proven();
     let before = repo.status_json();
     assert_eq!(before["skipped_records"], 0, "{before:#}");
-    repo.rewrite_records(bump_formats);
+    repo.rewrite_records(next_format);
     let status = repo.status_json();
     let skipped = status["skipped_records"].as_u64().expect("a number of skipped records");
-    assert!(skipped >= 4, "{status:#}");
+    assert_eq!(skipped, 4, "{status:#}");
+    // The wording of that line is text for a person, so the test looks only for the number.
     let text = repo.azimuth(&["status"]).stdout;
-    let lines: Vec<&str> = text.lines().filter(|line| line.contains("skipped")).collect();
-    assert_eq!(lines.len(), 1, "{text}");
-    assert!(lines[0].contains(&skipped.to_string()), "{text}");
+    let number = skipped.to_string();
+    assert!(
+        text.lines().any(|line| line.split(|c: char| !c.is_ascii_digit()).any(|word| word == number)),
+        "no line names the {skipped} skipped records:\n{text}"
+    );
 }
 
 // behavior: It says "approval: not recorded"
@@ -229,12 +235,10 @@ fn an_edited_skill_shows_a_process_of_its_own() {
     let repo = Repo::sample();
     repo.azimuth(&["skills", "install", "claude"]).expect_status(0);
     let untouched = repo.status_json();
-    assert!(!untouched["process"].to_string().contains("differs"), "{untouched:#}");
-    let installed = repo.untracked();
-    assert!(!installed.is_empty(), "skills install wrote nothing");
-    repo.append(&installed[0], "\nStop after the build as well.\n");
+    assert_eq!(untouched["process"], "default", "{untouched:#}");
+    repo.replace(SKILL_FILE, "\n", "\nStop after the build as well.\n");
     let status = repo.status_json();
-    assert!(status["process"].to_string().contains("differs"), "{status:#}");
+    assert_eq!(status["process"], "differs", "{status:#}");
     let text = repo.azimuth(&["status"]).stdout;
     assert!(text.contains("the process here differs from the default"), "{text}");
 }
@@ -349,7 +353,7 @@ fn status_document_has_its_fields() {
         for scenario in requirement["scenarios"].as_array().unwrap() {
             assert!(scenario.get("id").is_some() && scenario.get("checks").is_some(), "{scenario:#}");
             for check in scenario["checks"].as_array().unwrap() {
-                for field in ["id", "state", "reason"] {
+                for field in ["id", "state", "reason", "detail"] {
                     assert!(check.get(field).is_some(), "no `{field}`: {check:#}");
                 }
             }
@@ -388,5 +392,138 @@ fn the_text_and_the_document_say_the_same() {
                 assert!(text.contains(check["state"].as_str().unwrap()), "{text}");
             }
         }
+    }
+}
+
+// behavior: In every document `reason` is exactly one of the design's reasons for owed, and anything more is in `detail`
+#[test]
+fn every_reason_is_one_of_the_named_reasons() {
+    let repo = Repo::sample();
+    repo.split_returns_suite("\"shelf-scanner\"");
+    repo.append(PROJECT_FILE, "\n[[facility]]\nname = \"shelf-scanner\"\nproof = \"facility-probe absent\"\n");
+    repo.replace(
+        LENDING_VERIFICATION,
+        "  After one return the desk lends again to a borrower who held five loans.\n",
+        "  After one return the desk lends again to a borrower who held five loans.\n  Reuse: never, the desk reads today's date\n",
+    );
+    let fresh = repo.status_json();
+    let run = repo.run_json(&[], 0);
+    repo.append(PRODUCT_FILE, "renewals do not count\n");
+    let changed = repo.status_json();
+    let mut documents: Vec<serde_json::Value> = vec![run];
+    for status in [&fresh, &changed] {
+        documents.push(json!({ "checks": status_checks(status).into_values().collect::<Vec<_>>() }));
+    }
+    for check in ALL_CHECKS {
+        documents.push(json!({ "checks": [repo.check_show(check)] }));
+    }
+    let mut seen = BTreeSet::new();
+    for document in &documents {
+        for entry in document["checks"].as_array().unwrap() {
+            if entry["state"] == "owed" {
+                let reason = entry["reason"].as_str().unwrap_or_default();
+                assert!(OWED_REASONS.contains(&reason), "{reason:?} is not a named reason: {entry:#}");
+                seen.insert(reason.to_string());
+            }
+        }
+    }
+    assert_eq!(seen, set_of(&["never run", "cannot run here", "runs in CI", "an input changed"]), "{documents:#?}");
+    let check = repo.check_show(SIXTH_LOAN);
+    assert_eq!(check["reason"], "an input changed", "the part goes into the detail and the lists: {check:#}");
+}
+
+// behavior: The `status-1` document lists every Requirement, also the proven ones, and the text lists only the incomplete ones
+#[test]
+fn the_document_lists_proven_requirements_and_the_text_does_not() {
+    let repo = known_fail();
+    let status = repo.status_json();
+    let ids: Vec<&str> = status["requirements"].as_array().unwrap().iter().map(|r| r["id"].as_str().unwrap()).collect();
+    assert_eq!(ids.len(), 2, "{status:#}");
+    assert!(ids.contains(&LOAN_LIMIT) && ids.contains(&LATE_FINE), "{status:#}");
+    assert_eq!(requirement_in(&status, LOAN_LIMIT).unwrap()["state"], "proven");
+    let text = repo.azimuth(&["status"]).stdout;
+    assert!(text.contains(LATE_FINE) && !text.contains(LOAN_LIMIT), "{text}");
+
+    let proven = proven();
+    assert_eq!(count(&proven.status_json()["requirements"]), 2);
+}
+
+// behavior: `module` is the folder path under `azimuth/model`
+#[test]
+fn module_is_the_folder_path_under_the_model() {
+    let repo = Repo::sample();
+    let status = repo.status_json();
+    assert_eq!(requirement_in(&status, LOAN_LIMIT).unwrap()["module"], "lending");
+    assert_eq!(requirement_in(&status, LATE_FINE).unwrap()["module"], "desk/returns");
+}
+
+// behavior: `verification` and `realization` hold a `state` of `not reviewed` or `owed`, with a `reason` when owed
+#[test]
+fn reviews_hold_a_state_and_a_reason_when_owed() {
+    let repo = Repo::sample();
+    repo.replace(LENDING_SPEC, "A borrower holds at most five loans at a time.\n", "A borrower holds at most five loans at a time.\nVerification: reviewed\n");
+    let status = repo.status_json();
+    let lending = requirement_in(&status, LOAN_LIMIT).unwrap();
+    assert_eq!(lending["verification"], json!({ "state": "owed", "reason": "this version records no reviews" }));
+    assert_eq!(lending["realization"], json!({ "state": "not reviewed" }));
+    let returns = requirement_in(&status, LATE_FINE).unwrap();
+    assert_eq!(returns["verification"], json!({ "state": "not reviewed" }));
+}
+
+// behavior: `approval` is `not recorded`, and `process` is `default` or `differs`
+#[test]
+fn approval_and_process_are_fixed_words() {
+    let repo = proven();
+    let status = repo.status_json();
+    for requirement in status["requirements"].as_array().unwrap() {
+        assert_eq!(requirement["approval"], "not recorded", "{requirement:#}");
+    }
+    assert_eq!(status["process"], "default", "{status:#}");
+    repo.azimuth(&["skills", "install", "codex"]).expect_status(0);
+    assert_eq!(repo.status_json()["process"], "default");
+    repo.replace(SKILL_FILE, "\n", "\nOur team stops after the build too.\n");
+    assert_eq!(repo.status_json()["process"], "differs");
+}
+
+// behavior: In `error-1`, `file` is a path from the repository root and `line` counts from 1, and for the project file it is the line of the key
+#[test]
+fn an_error_names_the_file_from_the_root_and_the_line_from_one() {
+    let model = Repo::sample();
+    model.replace(RETURNS_VERIFICATION, "- Check: late-return-is-fined", "- Check: Late-return-is-fined");
+    let document = model.expect_reading_error(None, None);
+    assert_eq!(document["errors"][0]["file"], RETURNS_VERIFICATION, "{document:#}");
+    assert_eq!(document["errors"][0]["line"], 3, "{document:#}");
+
+    let first_line = Repo::sample();
+    first_line.replace(LENDING_SPEC, "# Lending\n", "### Requirement: Lending\n");
+    let document = first_line.expect_reading_error(None, None);
+    assert_eq!(document["errors"][0]["file"], LENDING_SPEC, "{document:#}");
+    assert_eq!(document["errors"][0]["line"], 1, "{document:#}");
+
+    let project = Repo::sample();
+    project.replace(PROJECT_FILE, "needs = []", "needs = []\nretries = 2");
+    let document = project.expect_reading_error(None, None);
+    assert_eq!(document["errors"][0]["file"], PROJECT_FILE, "{document:#}");
+    assert_eq!(document["errors"][0]["line"], project.line_of(PROJECT_FILE, "retries = 2"), "{document:#}");
+}
+
+// behavior: The `reason` of an owed review is exactly `this version records no reviews`
+#[test]
+fn an_owed_review_has_its_own_reason() {
+    assert!(!OWED_REASONS.contains(&"this version records no reviews"), "a review's reason is not a Check's");
+    let repo = Repo::sample();
+    repo.replace(LENDING_SPEC, "A borrower holds at most five loans at a time.\n", "A borrower holds at most five loans at a time.\nVerification: reviewed\nRealization: reviewed\n");
+    let status = repo.status_json();
+    let requirement = requirement_in(&status, LOAN_LIMIT).unwrap();
+    for field in ["verification", "realization"] {
+        assert_eq!(requirement[field]["state"], "owed", "{field}: {requirement:#}");
+        assert_eq!(requirement[field]["reason"], "this version records no reviews", "{field}: {requirement:#}");
+    }
+    let output = repo.azimuth(&["requirement", "show", LOAN_LIMIT, "--json"]);
+    output.expect_status(0);
+    let shown = output.json();
+    assert_eq!(shown["format"], "requirement-1", "{shown:#}");
+    for field in ["verification", "realization"] {
+        assert_eq!(shown[field], json!({ "state": "owed", "reason": "this version records no reviews" }), "{field}: {shown:#}");
     }
 }

@@ -12,12 +12,15 @@ fn change_show(repo: &Repo, args: &[&str]) -> serde_json::Value {
     document
 }
 
+/// One list of a `change-1` document. Lists hold ids, and a Scenario as `requirement/scenario`.
 fn listed(document: &serde_json::Value, kind: &str, which: &str) -> Vec<String> {
-    all_strings(&document[kind][which])
+    let list = &document[kind][which];
+    assert!(list.is_array(), "`{kind}.{which}` is not a list: {document:#}");
+    strings_of(list)
 }
 
 fn names(document: &serde_json::Value, kind: &str, which: &str, id: &str) -> bool {
-    listed(document, kind, which).iter().any(|entry| entry.contains(id))
+    listed(document, kind, which).iter().any(|entry| entry == id)
 }
 
 fn class(document: &serde_json::Value) -> String {
@@ -80,8 +83,8 @@ fn change_show_lists_what_the_change_did_to_the_model() {
     let document = change_show(&repo, &[]);
     assert!(names(&document, "requirements", "added", "renewals-are-limited"), "{document:#}");
     assert!(names(&document, "requirements", "changed", LOAN_LIMIT), "{document:#}");
-    assert!(names(&document, "scenarios", "removed", RETURNED_BOOK), "{document:#}");
-    assert!(names(&document, "scenarios", "changed", LATE_RETURN), "{document:#}");
+    assert!(names(&document, "scenarios", "removed", &format!("{LOAN_LIMIT}/{RETURNED_BOOK}")), "{document:#}");
+    assert!(names(&document, "scenarios", "changed", &format!("{LATE_FINE}/{LATE_RETURN}")), "{document:#}");
     assert!(names(&document, "checks", "removed", RETURNED_BOOK), "{document:#}");
     assert!(names(&document, "checks", "changed", LATE_RETURN), "{document:#}");
     assert!(names(&document, "checks", "added", "renewal-keeps-the-count"), "{document:#}");
@@ -278,6 +281,18 @@ fn the_class_is_printed() {
 
 // behavior: A change to `specification.md`, a rigor declaration, the project file or an installed skill file makes the class D
 #[test]
+fn an_installed_skill_change_is_class_d() {
+    let repo = Repo::sample();
+    repo.azimuth(&["skills", "install", "codex"]).expect_status(0);
+    repo.commit_all("install the default process");
+    on_branch(&repo);
+    repo.replace(SKILL_FILE, "\n", "\nThe person also reads the build log.\n");
+    let document = change_show(&repo, &[]);
+    assert_eq!(class(&document), "D", "{document:#}");
+}
+
+// behavior: A change to `specification.md`, a rigor declaration, the project file or an installed skill file makes the class D
+#[test]
 fn a_specification_change_is_class_d() {
     let (class, document, _) = class_of(|repo| repo.replace(LENDING_SPEC, "at most five loans", "at most six loans"));
     assert_eq!(class, "D", "{document:#}");
@@ -303,10 +318,10 @@ fn a_rigor_declaration_change_is_class_d() {
     let repo = Repo::sample_with(|root| {
         let path = root.join(RETURNS_VERIFICATION);
         let text = std::fs::read_to_string(&path).unwrap();
-        std::fs::write(&path, format!("{text}  Reuse: never, because the desk reads today's date\n")).unwrap();
+        std::fs::write(&path, format!("{text}  Reuse: never, the desk reads today's date\n")).unwrap();
     });
     on_branch(&repo);
-    repo.replace(RETURNS_VERIFICATION, "  Reuse: never, because the desk reads today's date\n", "");
+    repo.replace(RETURNS_VERIFICATION, "  Reuse: never, the desk reads today's date\n", "");
     assert_eq!(class(&change_show(&repo, &[])), "D");
 }
 
@@ -377,7 +392,7 @@ fn removing_a_marker_line_is_class_d() {
     repo.remove("suites/desk-checks/free-return-weekend.test");
     let document = change_show(&repo, &[]);
     assert_eq!(class(&document), "D", "{document:#}");
-    assert_eq!(count(&document["markers_removed"]), 1, "{document:#}");
+    assert_eq!(document["markers_removed"], 1, "{document:#}");
     let text = repo.azimuth(&["change", "show"]).stdout;
     assert!(text.contains("1 marker removed"), "{text}");
 }
@@ -428,13 +443,13 @@ fn loosening_reuse_lowers_rigor() {
     let repo = Repo::sample_with(|root| {
         let path = root.join(RETURNS_VERIFICATION);
         let text = std::fs::read_to_string(&path).unwrap();
-        std::fs::write(&path, format!("{text}  Reuse: never, because the desk reads today's date\n")).unwrap();
+        std::fs::write(&path, format!("{text}  Reuse: never, the desk reads today's date\n")).unwrap();
     });
     on_branch(&repo);
-    repo.replace(RETURNS_VERIFICATION, "  Reuse: never, because the desk reads today's date\n", "");
+    repo.replace(RETURNS_VERIFICATION, "  Reuse: never, the desk reads today's date\n", "");
     let document = change_show(&repo, &[]);
     assert_eq!(class(&document), "D");
-    assert!(count(&document["rigor_lowered"]) > 0, "{document:#}");
+    assert_eq!(document["rigor_lowered"], true, "{document:#}");
     let text = repo.azimuth(&["change", "show"]).stdout;
     assert!(text.contains("rigor lowered"), "{text}");
 }
@@ -443,10 +458,10 @@ fn loosening_reuse_lowers_rigor() {
 #[test]
 fn tightening_reuse_is_not_class_d() {
     let (class, document, text) = class_of(|repo| {
-        repo.append(RETURNS_VERIFICATION, "  Reuse: never, because the desk reads today's date\n");
+        repo.append(RETURNS_VERIFICATION, "  Reuse: never, the desk reads today's date\n");
     });
     assert_eq!(class, "C", "{document:#}");
-    assert_eq!(count(&document["rigor_lowered"]), 0, "{document:#}");
+    assert_eq!(document["rigor_lowered"], false, "{document:#}");
     assert!(!text.stdout.contains("rigor lowered"));
 }
 
@@ -464,11 +479,9 @@ fn raising_the_pin_is_class_d() {
 fn editing_an_installed_skill_is_class_d() {
     let repo = Repo::sample();
     repo.azimuth(&["skills", "install", "claude"]).expect_status(0);
-    let installed = repo.untracked();
-    assert!(!installed.is_empty(), "skills install wrote nothing");
     repo.commit_all("install the default process");
     on_branch(&repo);
-    repo.append(&installed[0], "\nNo stop after the intent.\n");
+    repo.replace(SKILL_FILE, "\n", "\nNo stop after the intent.\n");
     assert_eq!(class(&change_show(&repo, &[])), "D");
 }
 
@@ -478,4 +491,42 @@ fn a_change_outside_model_and_tests_prints_nothing() {
     let (_, _, text) = class_of(|repo| repo.append(PRODUCT_FILE, "renewals do not count\n"));
     text.expect_status(0);
     assert!(text.stdout.trim().is_empty(), "{}", text.stdout);
+}
+
+// behavior: In `change-1`, `class` is one letter, a Scenario is written `requirement/scenario`, `markers_removed` is a number and `rigor_lowered` is true or false
+#[test]
+fn change_document_values_have_their_fixed_forms() {
+    let repo = Repo::sample();
+    on_branch(&repo);
+    repo.append(
+        RETURNS_SPEC,
+        "\n#### Scenario: lost-book-is-charged\nA book reported lost is charged at its price.\n",
+    );
+    repo.append(
+        RETURNS_VERIFICATION,
+        "\n#### Scenario: lost-book-is-charged\n- Check: lost-book-is-charged\n  A lost book is charged at its price.\n",
+    );
+    repo.write("suites/desk-checks/lost-book.test", "# Check: lost-book-is-charged\noutcome: passed\n");
+    let document = change_show(&repo, &[]);
+    assert_eq!(document["class"], "D", "{document:#}");
+    assert_eq!(listed(&document, "scenarios", "added"), vec![format!("{LATE_FINE}/lost-book-is-charged")], "{document:#}");
+    assert_eq!(listed(&document, "checks", "added"), vec!["lost-book-is-charged".to_string()], "{document:#}");
+    assert_eq!(document["markers_removed"], 0, "{document:#}");
+    assert_eq!(document["rigor_lowered"], false, "{document:#}");
+}
+
+// behavior: With a change that touches no model file and no test, the text is empty and the document says class `A` with empty lists
+#[test]
+fn a_change_outside_model_and_tests_is_an_empty_class_a_document() {
+    let (class, document, text) = class_of(|repo| repo.append(PRODUCT_FILE, "renewals do not count\n"));
+    text.expect_status(0);
+    assert_eq!(text.stdout, "", "the text is not empty");
+    assert_eq!(class, "A", "{document:#}");
+    for kind in ["requirements", "scenarios", "checks"] {
+        for which in ["added", "changed", "removed"] {
+            assert_eq!(document[kind][which], json!([]), "`{kind}.{which}`: {document:#}");
+        }
+    }
+    assert_eq!(document["markers_removed"], 0, "{document:#}");
+    assert_eq!(document["rigor_lowered"], false, "{document:#}");
 }

@@ -62,7 +62,7 @@ fn an_unstaged_edit_moves_the_fingerprint() {
     all_owed_in_status(&repo);
     let check = repo.check_show(SIXTH_LOAN);
     assert_eq!(check["state"], "owed");
-    assert!(mentions(&parts_changed(&check), "files"), "{check:#}");
+    assert_eq!(parts_changed(&check), vec!["files"], "{check:#}");
     assert_eq!(files_changed(&check), vec![PRODUCT_FILE.to_string()], "{check:#}");
 }
 
@@ -74,7 +74,7 @@ fn a_new_file_is_an_input_before_it_is_added() {
     repo.write("desk/shelves.txt", "north shelf holds novels\n");
     all_owed_in_status(&repo);
     let check = repo.check_show(LATE_RETURN);
-    assert!(files_changed(&check).contains(&"desk/shelves.txt".to_string()), "{check:#}");
+    assert_eq!(files_changed(&check), vec!["desk/shelves.txt".to_string()], "{check:#}");
 }
 
 // behavior: Staging a change does not move the fingerprint
@@ -151,17 +151,17 @@ fn a_checkout_with_windows_line_endings_has_an_equal_fingerprint() {
     kept_in(&repo, &clone);
 }
 
-fn claim_parts_after(prepare: &str, edit: &str) -> Vec<String> {
+fn claim_parts_after(prepare: &str, edit: &str) -> BTreeSet<String> {
     let repo = Repo::sample();
     repo.replace(LENDING_VERIFICATION, "  The desk refuses a sixth loan to a borrower who holds five.\n", prepare);
     repo.commit_all("claim");
     repo.run_json(&[], 0);
     let text = repo.read(LENDING_VERIFICATION).replace(prepare, edit);
     repo.write(LENDING_VERIFICATION, &text);
-    parts_changed(&repo.check_show(SIXTH_LOAN))
+    parts_changed_set(&repo.check_show(SIXTH_LOAN))
 }
 
-// behavior: A claim that differs only in Unicode form, line endings or trailing spaces has an equal digest
+// behavior: A claim that differs only in Unicode form, in line endings, or in spaces and tabs at line ends has an equal digest
 #[test]
 fn a_claim_in_another_unicode_form_has_an_equal_digest() {
     // "é" composed in the first claim, "e" with a combining accent in the second.
@@ -169,19 +169,27 @@ fn a_claim_in_another_unicode_form_has_an_equal_digest() {
         "  The desk refuses a sixth loan at the caf\u{e9} counter.\n",
         "  The desk refuses a sixth loan at the cafe\u{301} counter.\n",
     );
-    assert!(mentions(&parts, "files"), "{parts:?}");
-    assert!(!mentions(&parts, "claim"), "{parts:?}");
+    assert_eq!(parts, set_of(&["files"]));
 }
 
-// behavior: A claim that differs only in Unicode form, line endings or trailing spaces has an equal digest
+// behavior: A claim that differs only in Unicode form, in line endings, or in spaces and tabs at line ends has an equal digest
 #[test]
 fn a_claim_with_trailing_spaces_and_windows_line_endings_has_an_equal_digest() {
     let parts = claim_parts_after(
         "  The desk refuses a sixth loan\n  to a borrower who holds five.\n",
-        "  The desk refuses a sixth loan   \r\n  to a borrower who holds five.\t\r\n",
+        "  The desk refuses a sixth loan   \r\n  to a borrower who holds five.  \r\n",
     );
-    assert!(mentions(&parts, "files"), "{parts:?}");
-    assert!(!mentions(&parts, "claim"), "{parts:?}");
+    assert_eq!(parts, set_of(&["files"]));
+}
+
+// behavior: A claim that differs only in Unicode form, in line endings, or in spaces and tabs at line ends has an equal digest
+#[test]
+fn a_claim_with_tabs_at_line_ends_has_an_equal_digest() {
+    let parts = claim_parts_after(
+        "  The desk refuses a sixth loan\n  to a borrower who holds five.\n",
+        "  The desk refuses a sixth loan\t\n  to a borrower who holds five. \t \n",
+    );
+    assert_eq!(parts, set_of(&["files"]));
 }
 
 // behavior: A claim that is re-wrapped or restyled has a different digest
@@ -191,7 +199,7 @@ fn a_rewrapped_claim_has_a_different_digest() {
         "  The desk refuses a sixth loan\n  to a borrower who holds five.\n",
         "  The desk refuses a sixth loan to a borrower\n  who holds five.\n",
     );
-    assert!(mentions(&parts, "claim"), "{parts:?}");
+    assert_eq!(parts, set_of(&["claim", "files"]));
 }
 
 // behavior: A claim that is re-wrapped or restyled has a different digest
@@ -201,27 +209,23 @@ fn a_restyled_claim_has_a_different_digest() {
         "  The desk refuses a sixth loan to a borrower who holds five.\n",
         "  The desk refuses a **sixth** loan to a borrower who holds five.\n",
     );
-    assert!(mentions(&parts, "claim"), "{parts:?}");
+    assert_eq!(parts, set_of(&["claim", "files"]));
 }
 
 // behavior: Without a provider the fingerprint has the parts claim, files, environment and method
 #[test]
 fn the_fingerprint_has_four_parts() {
-    let mut repo = Repo::sample();
+    let repo = Repo::sample();
     repo.run_json(&[], 0);
-    repo.replace(LENDING_VERIFICATION, "The desk refuses a sixth loan", "The desk turns down a sixth loan");
-    repo.set_env("TEXT_ADAPTER_VERSION", "2.0.0");
-    repo.run_json(&[], 0);
-    repo.set_env("TEXT_ADAPTER_VERSION", "1.0.0");
-    repo.replace(LENDING_VERIFICATION, "The desk turns down a sixth loan", "The desk refuses a sixth loan");
-    // The current tree now differs from the last result in its claim, its files and the adapter
-    // that measured it.
-    let parts = parts_changed(&repo.check_show(SIXTH_LOAN));
-    let known = ["claim", "files", "environment", "method"];
-    for part in &parts {
-        assert!(known.iter().any(|name| part.contains(name)), "an unknown part {part:?} in {parts:?}");
+    for check in ALL_CHECKS {
+        let parts = repo.result_of(check)["body"]["parts"].clone();
+        let names: BTreeSet<String> = parts.as_object().unwrap_or_else(|| panic!("no parts: {parts:#}")).keys().cloned().collect();
+        assert_eq!(names, set_of(&PARTS), "{check}");
     }
-    assert!(mentions(&parts, "claim") && mentions(&parts, "files"), "{parts:?}");
+    repo.replace(LENDING_VERIFICATION, "The desk refuses a sixth loan", "The desk turns down a sixth loan");
+    let changed = parts_changed_set(&repo.check_show(SIXTH_LOAN));
+    assert!(changed.is_subset(&set_of(&PARTS)), "{changed:?}");
+    assert_eq!(changed, set_of(&["claim", "files"]));
 }
 
 // behavior: For a tree that is exactly a commit, the store keeps the id of that commit's tree and no list
@@ -230,8 +234,10 @@ fn a_clean_tree_is_stored_as_its_tree_id() {
     let repo = Repo::sample();
     repo.run_json(&[], 0);
     let tree = repo.git(&["rev-parse", "HEAD^{tree}"]).trim().to_string();
+    for check in ALL_CHECKS {
+        assert_eq!(repo.result_of(check)["body"]["tree"]["base"], tree.as_str(), "{check}");
+    }
     let strings = repo.record_strings();
-    assert!(strings.iter().any(|text| text.contains(&tree)), "no record holds the tree id {tree}");
     let tracked: BTreeSet<String> = repo.tracked_paths().into_iter().collect();
     let listed: Vec<&String> = strings.iter().filter(|text| tracked.contains(*text)).collect();
     assert!(listed.is_empty(), "the store keeps a list of files for a clean tree: {listed:?}");
@@ -246,13 +252,16 @@ fn a_tree_with_local_edits_is_stored_as_the_tree_id_and_its_differences() {
     repo.remove("desk/returns.txt");
     repo.run_json(&[], 0);
     let tree = repo.git(&["rev-parse", "HEAD^{tree}"]).trim().to_string();
-    let strings: BTreeSet<String> = repo.record_strings().into_iter().collect();
-    assert!(strings.iter().any(|text| text.contains(&tree)), "no record holds the tree id");
-    for path in [PRODUCT_FILE, "desk/shelves.txt", "desk/returns.txt"] {
-        assert!(strings.contains(path), "no entry for {path}");
-    }
-    for unchanged in ["README.md", LENDING_SPEC, LATE_FINE_TESTS] {
-        assert!(!strings.contains(unchanged), "an entry for the unchanged {unchanged}");
+    for check in ALL_CHECKS {
+        let stored = repo.result_of(check)["body"]["tree"].clone();
+        assert_eq!(stored["base"], tree.as_str(), "{check}: {stored:#}");
+        let paths: BTreeSet<String> = stored["edits"]
+            .as_array()
+            .unwrap_or_else(|| panic!("no edits: {stored:#}"))
+            .iter()
+            .map(|edit| edit["path"].as_str().unwrap_or_default().to_string())
+            .collect();
+        assert_eq!(paths, set_of(&[PRODUCT_FILE, "desk/shelves.txt", "desk/returns.txt"]), "{check}: {stored:#}");
     }
 }
 
@@ -294,8 +303,10 @@ fn a_forgotten_tree_shrinks_the_explanation_only() {
     repo.append("desk/returns.txt", "fines are rounded up\n");
     let check = repo.check_show(LATE_RETURN);
     assert_eq!(check["state"], "owed", "{check:#}");
-    assert!(check["reason"].as_str().unwrap_or_default().contains("files changed"), "{check:#}");
-    assert!(files_changed(&check).is_empty(), "{check:#}");
+    assert_eq!(check["reason"], "an input changed", "{check:#}");
+    assert_eq!(check["detail"], "files changed", "{check:#}");
+    assert_eq!(check["files_changed"], json!([]), "{check:#}");
+    assert_eq!(parts_changed(&check), vec!["files"], "{check:#}");
     let status = repo.status_json();
     assert_eq!(status_checks(&status)[LATE_RETURN]["state"], "owed");
 }
@@ -315,14 +326,53 @@ fn the_environment_of_the_machine_is_not_measured() {
     assert!(repo.adapter_runs().is_empty());
 }
 
-// behavior: The method part holds the scheme names, the object format of the repository, and the adapter with its version
+// behavior: A `text-1` digest is the SHA-256 of the normalized text, written as lowercase hex
 #[test]
-fn the_method_part_names_schemes_object_format_and_adapter() {
+fn a_text_1_digest_is_lowercase_sha_256() {
+    // A claim's exact text is the reader's business, so the full computation is checked on the
+    // digest line of an installed skill, whose text is the whole file without that line.
     let repo = Repo::sample();
     repo.run_json(&[], 0);
-    let text = repo.records().iter().map(|(_, value)| value.to_string()).collect::<Vec<_>>().join("\n");
-    for expected in ["text-1", "parts-1", "sha1", "text-suite-adapter", "1.0.0"] {
-        assert!(text.contains(expected), "no record names {expected}");
+    for check in ALL_CHECKS {
+        let claim = repo.result_of(check)["body"]["parts"]["claim"].as_str().unwrap_or_default().to_string();
+        let hex = claim.strip_prefix("text-1:").unwrap_or_else(|| panic!("{check}: {claim}"));
+        assert!(hex.len() == 64 && hex.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)), "{check}: {claim}");
+    }
+    repo.azimuth(&["skills", "install", "codex"]).expect_status(0);
+    let (text, last) = split_last_line(&repo.read(SKILL_FILE));
+    assert_eq!(last, skill_digest_line(&text));
+}
+
+// behavior: The method part holds the scheme names and the object format of the repository
+#[test]
+fn the_method_names_the_schemes_and_the_object_format() {
+    let repo = Repo::sample();
+    repo.run_json(&[], 0);
+    for check in ALL_CHECKS {
+        let method = repo.result_of(check)["body"]["method"].clone();
+        assert_eq!(method["schemes"], json!(["file-1", "parts-1", "text-1"]), "{check}: {method:#}");
+        assert_eq!(method["object_format"], "sha1", "{check}: {method:#}");
+    }
+}
+
+// behavior: The method part holds the scheme names and the object format of the repository
+#[test]
+fn the_object_format_of_a_sha_256_repository_is_recorded() {
+    let repo = Repo::sample();
+    let other = repo.beside("sha256-desk");
+    copy_tree(&sample_source(), &other);
+    std::fs::create_dir_all(other.join(".azimuth")).unwrap();
+    std::fs::write(other.join(".azimuth/.gitignore"), "*\n").unwrap();
+    let init = repo.git_output_in(&other, &["init", "--quiet", "--object-format=sha256", "-b", "main"]);
+    assert_eq!(init.status, 0, "this git cannot make a SHA-256 repository: {}", init.stderr);
+    repo.git_in(&other, &["add", "-A"]);
+    repo.git_in(&other, &["commit", "--quiet", "-m", "sample"]);
+    repo.azimuth_in(&other, &["run", "--json"], &[]).expect_status(0);
+    let records = json_files_under(&other.join(".git/azimuth"));
+    assert_eq!(records.len(), 4, "{records:?}");
+    for file in records {
+        let record: serde_json::Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+        assert_eq!(record["body"]["method"]["object_format"], "sha256", "{record:#}");
     }
 }
 
@@ -333,8 +383,8 @@ fn a_file_digest_is_the_git_object_id() {
     repo.append(PRODUCT_FILE, "renewals do not count\n");
     repo.run_json(&[], 0);
     let id = repo.git(&["hash-object", PRODUCT_FILE]).trim().to_string();
-    let strings = repo.record_strings();
-    assert!(strings.iter().any(|text| text == &format!("file-1:{id}")), "no record holds file-1:{id}");
+    let edits = repo.result_of(SIXTH_LOAN)["body"]["tree"]["edits"].clone();
+    assert_eq!(edits, json!([{ "path": PRODUCT_FILE, "mode": "100644", "id": format!("file-1:{id}") }]));
 }
 
 // behavior: For an edited or a new file the id is that of the content in the working tree, and nothing is written into git's object store
@@ -349,9 +399,16 @@ fn hashing_the_working_tree_writes_no_git_object() {
     repo.run_json(&[], 0);
     repo.azimuth(&["status", "--json"]).expect_status(0);
     assert_eq!(repo.git(&["count-objects", "-v"]), objects_before, "a command wrote into git's object store");
+    let ids: BTreeSet<String> = repo.result_of(SIXTH_LOAN)["body"]["tree"]["edits"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .map(|edit| edit["id"].as_str().unwrap_or_default().to_string())
+        .collect();
     for id in [&edited, &new] {
         assert_ne!(repo.git_output_in(repo.root(), &["cat-file", "-e", id]).status, 0, "git stores {id}");
-        assert!(repo.record_strings().iter().any(|text| text.contains(id.as_str())), "no record holds {id}");
+        assert!(ids.contains(&format!("file-1:{id}")), "no edit holds {id}: {ids:?}");
     }
 }
 
@@ -364,7 +421,7 @@ fn a_mode_change_moves_the_files_part() {
     fs::set_permissions(repo.path(PRODUCT_FILE), fs::Permissions::from_mode(0o755)).unwrap();
     let check = repo.check_show(SIXTH_LOAN);
     assert_eq!(check["state"], "owed", "{check:#}");
-    assert!(mentions(&parts_changed(&check), "files"), "{check:#}");
+    assert_eq!(parts_changed(&check), vec!["files"], "{check:#}");
     assert_eq!(files_changed(&check), vec![PRODUCT_FILE.to_string()], "{check:#}");
 }
 
@@ -374,8 +431,13 @@ fn digests_are_written_with_their_scheme() {
     let repo = Repo::sample();
     repo.append(PRODUCT_FILE, "renewals do not count\n");
     repo.run_json(&[], 0);
-    let digests: Vec<String> = repo.record_strings().into_iter().filter(|text| is_digest(text)).collect();
-    assert!(!digests.is_empty(), "no record holds a digest in the form scheme:value");
+    let record = repo.result_of(SIXTH_LOAN);
+    let body = &record["body"];
+    let mut digests = vec![record["subjects"][0]["digest"].clone(), body["fingerprint"].clone(), body["tree"]["edits"][0]["id"].clone()];
+    digests.extend(PARTS.iter().map(|part| body["parts"][*part].clone()));
+    for digest in digests {
+        assert!(digest.as_str().is_some_and(is_digest), "{digest} is not a scheme, a colon and a value: {record:#}");
+    }
 }
 
 // behavior: The digest of model text names `text-1`, of a file `file-1`, and a fingerprint `parts-1`
@@ -384,20 +446,33 @@ fn the_three_schemes_name_their_digests() {
     let repo = Repo::sample();
     repo.append(PRODUCT_FILE, "renewals do not count\n");
     repo.run_json(&[], 0);
-    let strings = repo.record_strings();
-    for scheme in ["text-1:", "file-1:", "parts-1:"] {
-        assert!(
-            strings.iter().any(|text| text.starts_with(scheme) && is_digest(text)),
-            "no digest of the scheme {scheme}"
-        );
+    let body = repo.result_of(SIXTH_LOAN)["body"].clone();
+    for (digest, scheme) in [
+        (&body["parts"]["claim"], "text-1:"),
+        (&body["tree"]["edits"][0]["id"], "file-1:"),
+        (&body["fingerprint"], "parts-1:"),
+    ] {
+        assert!(digest.as_str().is_some_and(|text| text.starts_with(scheme) && is_digest(text)), "{digest} is not {scheme}: {body:#}");
     }
 }
 
+/// The sample after one run, with every result rewritten as a CLI of the scheme `parts-2` would
+/// have written it.
 fn result_under_parts_2() -> Repo {
+    fn walk(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::String(text) if text.starts_with("parts-1:") || text == "parts-1" => {
+                *text = text.replacen("parts-1", "parts-2", 1);
+            }
+            serde_json::Value::Array(items) => items.iter_mut().for_each(walk),
+            serde_json::Value::Object(map) => map.values_mut().for_each(walk),
+            _ => {}
+        }
+    }
     let repo = Repo::sample();
     repo.run_json(&[], 0);
-    repo.rewrite_records(|text| text.replace("parts-1:", "parts-2:"));
-    assert!(repo.record_strings().iter().any(|text| text.starts_with("parts-2:")), "no record was rewritten");
+    repo.rewrite_records(|record| walk(&mut record["body"]));
+    assert!(repo.result_of(SIXTH_LOAN)["body"]["fingerprint"].as_str().unwrap().starts_with("parts-2:"));
     repo
 }
 
@@ -413,8 +488,10 @@ fn a_result_under_another_scheme_number_is_owed() {
 fn the_owed_reason_names_the_changed_scheme() {
     let repo = result_under_parts_2();
     let check = repo.check_show(SIXTH_LOAN);
-    let reason = check["reason"].as_str().unwrap_or_default();
-    assert!(reason.contains("parts-1") && reason.contains("parts-2"), "{check:#}");
+    assert_eq!(check["state"], "owed", "{check:#}");
+    assert_eq!(check["reason"], "an input changed", "{check:#}");
+    let detail = detail_of_entry(&check);
+    assert!(detail.contains("parts-1") && detail.contains("parts-2"), "{check:#}");
 }
 
 // behavior: No setting and no flag chooses a scheme
@@ -457,28 +534,36 @@ fn no_record_holds_a_bare_hash() {
 fn a_result_stores_a_digest_per_part() {
     let repo = Repo::sample();
     repo.run_json(&[], 0);
-    let records = repo.records_naming(SIXTH_LOAN);
-    assert!(!records.is_empty(), "no record names {SIXTH_LOAN}");
-    let digests: BTreeSet<String> = records
-        .iter()
-        .flat_map(|(_, value)| all_strings(value))
-        .filter(|text| is_digest(text))
-        .collect();
-    assert!(digests.len() >= 5, "a result needs a digest per part and one for the fingerprint: {digests:?}");
-    assert!(digests.iter().any(|digest| digest.starts_with("text-1:")), "{digests:?}");
+    let parts = repo.result_of(SIXTH_LOAN)["body"]["parts"].clone();
+    for part in PARTS {
+        assert!(parts[part].as_str().is_some_and(is_digest), "no digest of {part}: {parts:#}");
+    }
 }
 
-// behavior: The adapter's reported version is part of the fingerprint
+// behavior: The adapter's reported version is stored with the result and moves no fingerprint
 #[test]
-fn a_new_adapter_version_moves_the_method_part() {
+fn a_new_adapter_version_is_recorded_and_moves_no_fingerprint() {
     let mut repo = Repo::sample();
     repo.run_json(&[], 0);
+    let before = repo.result_of(RETURNED_BOOK);
+    assert_eq!(before["body"]["method"]["adapter"]["version"], "1.0.0", "{before:#}");
+
     repo.set_env("TEXT_ADAPTER_VERSION", "2.0.0");
-    // The core learns the version from a report, so one Check is run on request first.
+    kept_without_a_launch(&repo);
     repo.azimuth(&["check", "run", SIXTH_LOAN, "--json"]).expect_status(0);
-    let check = repo.check_show(RETURNED_BOOK);
-    assert_eq!(check["state"], "owed", "{check:#}");
-    assert!(mentions(&parts_changed(&check), "method"), "{check:#}");
+    let versions: BTreeSet<String> = repo
+        .results_of(SIXTH_LOAN)
+        .iter()
+        .map(|(_, record)| record["body"]["method"]["adapter"]["version"].as_str().unwrap_or_default().to_string())
+        .collect();
+    assert_eq!(versions, set_of(&["1.0.0", "2.0.0"]));
+    let fingerprints: BTreeSet<String> = repo
+        .results_of(SIXTH_LOAN)
+        .iter()
+        .map(|(_, record)| record["body"]["fingerprint"].as_str().unwrap_or_default().to_string())
+        .collect();
+    assert_eq!(fingerprints.len(), 1, "the adapter's version moved the fingerprint: {fingerprints:?}");
+    kept_without_a_launch(&repo);
 }
 
 // behavior: Restoring earlier content makes the earlier pass valid again
