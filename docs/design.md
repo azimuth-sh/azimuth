@@ -46,8 +46,6 @@ Azimuth lets people direct and review software work at the level of intent, and 
 - **Small.** There must be less to read than the code.
 - **Open downward.** A person can go from a Requirement to a Scenario, a Check and the code.
 
-Open: evidence as a third element, and the wording of the promise, were proposed in discussion and not explicitly confirmed.
-
 ### Adoption ladder
 
 **Azimuth is adopted one rung at a time.** There are three rungs: core, server and autonomy. Each rung is useful without the rungs above it, and no rung needs a rung above it. The process is not a rung. It is a replaceable layer beside them.
@@ -211,7 +209,7 @@ The cost. There is no separate reviewing agent in increment 1. Between the secon
 
 **The digest line of an installed file uses the scheme `text-1`,** over the file's text without that line. A skill is text that a person edits, like the model, so it is normalized the same way.
 
-The command is `azimuth skills install <harness>`, and the first increment knows the harnesses `claude` and `codex`. The text is always in `.agents/skills/azimuth-change/SKILL.md`. For `claude` the command adds a link at `.claude/skills/azimuth-change`. The digest line is the last line of the file, written `<!-- azimuth text-1:<hex> -->`.
+The command is `azimuth skills install <harness>`, and the first increment knows the harnesses `claude` and `codex`. The text is always in `.agents/skills/azimuth-change/SKILL.md`. For `claude` the command adds a link at `.claude/skills/azimuth-change`. The digest line is the last line of the file, written `<!-- azimuth text-1:<hex> -->`. The link is relative, so it survives a move of the clone.
 
 The cost. Another harness gets nothing until it is added to the CLI.
 
@@ -230,6 +228,48 @@ The cost. Upgrading takes two actions in one change: raise the pin, then run the
 | Its version equals the pin | works |
 | Its version differs | the reading commands and lint work and print a warning. `azimuth run` refuses, and prints the command that installs the pinned version |
 | CI | the install script reads the pin from the project file, so CI and developers cannot drift apart |
+
+**The command that installs the CLI is one line, and it names no version:** `curl -fsSL https://azimuth.sh/install | sh`. The script takes the version from the pin in the project file of the repository it is run in. A developer and a CI job use the same line, and the line does not change with an upgrade. The pin stays the only place that names a version.
+
+The cost. Piping a download into a shell means trusting the host, and the file it installs is the judge. The host name is compiled into the CLI, so moving it takes a new version.
+
+**The install script keeps versions side by side and changes nothing else on the machine.**
+
+| Question | Rule |
+| --- | --- |
+| Which version | the pin in the project file of the repository it is run in. Outside a repository, the latest release |
+| Which binary | by system and processor: macOS on arm64, or Linux on x86-64. On anything else it stops and names what is supported |
+| The Linux binary | linked statically, so it needs no particular system library |
+| What it verifies | the SHA-256 of the download against the sums file of the same release. On a mismatch it deletes the download and stops |
+| Where it puts the file | `~/.azimuth/versions/<version>/azimuth`, and a link `~/.azimuth/bin/azimuth` that points at the version just asked for |
+| The PATH | it never edits a shell profile. It prints the line to add |
+| Running it again | when the version is already there, it only moves the link |
+
+Two repositories on one machine can pin different versions, and each refuses the other's CLI. With both kept, switching is the same line again, with no download.
+
+The cost. Switching is a manual step. And a developer on another system gets a refusal and nothing more.
+
+Open: a launcher that reads the pin and picks the version by itself.
+
+Example: drim-dev's project file pins `0.2.0-alpha.2` and a developer still has `alpha.1`. `azimuth run` refuses, names both versions and prints the line. The developer runs it at the root of drim-dev, and the script installs `alpha.2`. The CI job of drim-dev holds the same line.
+
+**A release of Azimuth is one workflow, started by a version tag that a person pushes.** It is built after the code of increment 1 and before the first real work, because the project file pins a released CLI.
+
+| Piece | Rule |
+| --- | --- |
+| Trigger | a version tag. Publishing is a person's act |
+| Binaries | built for macOS on arm64 and Linux on x86-64, and attached to a GitHub release with a file of SHA-256 sums. Another target is added when somebody needs it |
+| The install script | a short shell script in the repository, served at `azimuth.sh/install`. It reads the pin, picks the target, downloads the binary and refuses it when the sum does not match |
+| The adapters | packed with the same version and pushed to the registry of their stack by the same workflow. The workflow stores no registry key: it trades its identity for a short-lived one, which the registry calls trusted publishing |
+| Tests | the same repository runs its own tests on every push |
+
+The cost. The sums file sits beside the binaries. It catches a broken download and not somebody who controls the release, because they replace both. GitHub and each registry now hold a part of the judge.
+
+**The site is a folder of the repository, published by GitHub Pages.** It holds the landing page and the install script, so the script has one source that anyone can read before running it. The install path then trusts one party, GitHub, which holds the binaries too.
+
+The cost. The source of the landing page is public, and while GitHub is down nobody can install.
+
+Open: a signature on the binaries.
 
 The pin is exact, not a range, while versions start with 0. Two developers on different versions would write records that the other cannot read.
 
@@ -411,7 +451,21 @@ A kind should exist only if an enforcer, the planner or a review uses it.
 
 Example: in drim-dev the area `deployment` is owned by the repository that owns the environment, not by the code repository. A Check about what the deployment declares lives there, and that repository plans it.
 
-Open: an area whose paths are listed by hand can go stale. In drim-dev the area `bff` is 11 listed paths inside `frontend/`.
+**Every file belongs to exactly one area, and areas do not overlap.**
+
+| Rule | What it means |
+| --- | --- |
+| Every file belongs to an area | a file under no mount is a lint finding |
+| Areas do not overlap | no folder is mounted twice, and no mount lies inside another. An overlap in the project file is a reading error |
+| A mount is a folder or a single file | the files at the top of a folder can then be placed |
+
+An area's declaration alone says what the area contains. Nothing has to be subtracted, and no area can say "the rest". An area is what a grant names, and a grant lets a change merge with no person looking, so its borders must be exact. A new folder that nobody placed fails lint, and the change that brings it must place it. That is an edit of the project file, so class D, and a person sees it.
+
+The cost. The first split is real work: `azimuth init` writes one area that mounts everything, and to add a second area a person replaces that mount with explicit lists and sorts every top folder and every root file once. After that every new top folder and every new root file is a class D change. Folders that have nothing to do with the product need a home too. And the rules do not see a file in the right folder with the wrong role. That takes a rule about the code's structure, which is a profile's enforcer.
+
+Neither rule can fire while one area mounts the whole repository, so they are built in the increment that first needs a second area.
+
+Example: drim-dev's `frontend/` has eleven folders at its top. The area `bff` mounts some paths inside it, and `web` mounts the others. An agent creates `frontend/services/`. Lint reports it as in no area, so the commit lane fails. The agent adds the folder to `web` in the project file, and a person sees that change before it merges.
 
 ## Checks
 
@@ -447,6 +501,16 @@ Lint works from source alone. It finds a marker that names an unknown Check and 
 The cost. A marker must be written literally. A trait built from a constant, or a custom attribute that produces the trait, is invisible to the scan. It does not pass silently, because the launch reports a test whose Check id source does not show.
 
 Example: an agent puts a marker on a helper method that is not a test. `azimuth lint` is content, because the id exists. `azimuth run` builds, the runner lists no test with that id, and the Check gets no result with the reason "marker in source matches no test". The CI job fails on the owed Check.
+
+**The core compares the two lists by count.** The core knows no language, so it cannot tell which test a marker line sits on. For each Check id it counts the marker lines in source and the listed tests that carry the id. More marker lines than listed tests means that a marker matches no listed test, and the Check gets no result.
+
+Two limits. A marker on a class enrolls several tests, so it can hide a stray marker for the same id. And the same id on a class and on its one method gives a false alarm, which goes away when the redundant marker is removed.
+
+Open for increment 3: the exact rule belongs to the adapter, which knows the language. It would report each marked piece of code that enrolls no test, as a new field of its report. Lint cannot do this work, because it starts nothing, and an adapter has to build a suite before it can list tests.
+
+Example: the API test project of drim-dev has a folder `Harnesses/` with helper code and no test methods. An agent writes two tests for one Check and puts the marker on one real test and, by mistake, on a harness method. Lint is content, because the id exists. The launch finds two marker lines and one listed test for that id, and the Check gets no result.
+
+**In the commit lane the disagreement is also a finding.** It points at the declaration of the Check in `verification.md`, because a count cannot say which marker matched nothing. The local lane prints no list of findings, so there the Check only gets no result.
 
 Example: drim-dev has 1,041 marker lines for 144 Checks. 728 of them sit on code that is not a test, all for 26 ingress Checks.
 
@@ -585,6 +649,12 @@ The cost. A reason is one line, however long.
 **A `never` result is bound to its run.** It closes the gate of that run. The next run on the same content runs the Check again.
 
 **Making reuse stricter is free. Making it looser always needs a person.** `Reuse:` is a rigor declaration. Removing or loosening it makes the change class D, like removing a review declaration, so no grant covers it and a person sees it on the change page. This holds whether or not the Requirement declares a Verification Review, because on the fast path no review guards `verification.md`. On the core rung the local view of the change says "rigor lowered", and the person's merge stands for it.
+
+**"Rigor lowered" covers every rigor declaration that a change removes.** A removed `Reuse:` line counts, and so does a removed `Verification: reviewed` or `Realization: reviewed`. Class D alone does not tell the person, because every edit of `specification.md` is class D, and a deleted review would hide among edits of text.
+
+In `change-1`, `rigor_lowered` is a list with one entry for each removed declaration. An entry holds its `kind`, which is `reuse`, `verification` or `realization`, and the `check` or the `requirement` that lost it. A Requirement or a Check that the change removes whole is on its removed list and is not counted here.
+
+Example: a Requirement in drim-dev declares `Verification: reviewed`. An agent rewrites one Scenario and deletes that line in the same change. `azimuth change show` prints class D, one Scenario changed, and a line that says the Requirement lost its Verification Review.
 
 Example: drim-dev's API image is built from the moving tag `mcr.microsoft.com/dotnet/aspnet:10.0`. Either the launch resolves the tag to a digest and adds it to the fingerprint, or the Check says `Reuse: never` with its reason:
 
@@ -739,6 +809,19 @@ Example: the test project of drim-dev's API lists no files to compile, so .NET c
 
 A digest is written with its scheme, as in `text-1:9f3a`, and two digests of different schemes are never equal. The hash algorithm is part of the scheme and is written nowhere else, with one exception: `file-1` uses the algorithm of the repository. One CLI version computes exactly one number of each scheme and never an older one. A result under another number is not comparable, so its Check is owed. The scheme is not a setting: it comes with the CLI version, which the project file pins, so every machine of a project uses the same numbers. The owed reason names the scheme that changed, for example "method changed: `parts-1` became `parts-2`".
 
+**The layout of `parts-1` is fixed, byte for byte.** Another tool must be able to compute the same fingerprint from the same tree. Every digest of the scheme is SHA-256 over these bytes:
+
+| Digest | The bytes |
+| --- | --- |
+| The files part | the line `files`, then one entry for every file, sorted by path: the mode, the object id and the path, separated by one space and ended by a zero byte |
+| The environment part | the line `environment`, then the name of the environment. On a developer's machine the name is `this machine` |
+| The method part | the line `method`, then `schemes` with the scheme names sorted and separated by one space, then `object_format` with the format of the repository |
+| The fingerprint | four lines in the order `claim`, `files`, `environment`, `method`. Each holds the name, one space and the digest of that part |
+
+The claim part is the `text-1` digest of the claim. Lines are separated by LF, and only the four lines of the fingerprint each end with one.
+
+The adapter's name and version are written in the record and are not in the method part. The file that pins the adapter is a file of the tree, so raising the pin moves the files part.
+
 There are separate schemes and not one, because a change in how files are grouped must not change a digest of model text. With a server, that would make every approval of a person stale for a reason that has nothing to do with what was approved.
 
 The cost. A change of `text` after approvals exist is expensive. That is the reason to keep its rule small.
@@ -800,29 +883,49 @@ Providers combine as layers in a stack. Each layer narrows inside what the previ
 
 **A provider speaks to the core in files, or in named parts of a file.** The core never learns why a file is on a list.
 
-**A provider answers with rules that the core applies alone.** A fingerprint must be computable with nothing started, and a build closure can only come from the build tool. So the tool is asked rarely, and its answer is kept.
+**A provider's report holds rules that the core applies alone.** A fingerprint must be computable with nothing started, and a build closure can only come from the build tool. So the tool is asked rarely, and its report is kept.
 
 | Part | Rule |
 | --- | --- |
-| The answer | folders and single files, never a list of every file. The core expands a folder on the tree itself, so a new file in it is an input at once |
-| Its sources | the answer names the files it was computed from. For .NET these are the project files, the lock files and `global.json` |
-| Storage | the core stores the answer in the local store under the digest of its sources. While they are unchanged, any command computes the fingerprint from the stored answer |
-| Reading commands | they never run a provider. A changed source or no stored answer means the list is unknown, and every Check of the suite is owed |
-| `azimuth run` | runs the provider and stores the new answer |
+| The inputs | folders and single files, never a list of every file. The core expands a folder on the tree itself, so a new file in it is an input at once |
+| The sources | the files the report was computed from. For .NET these are the project files, the lock files and `global.json` |
+| Storage | the core stores the report in the local store under the digest of its sources. While they are unchanged, any command computes the fingerprint from the stored report |
+| Reading commands | they never run a provider. A changed source or no stored report means the list is unknown, and every Check of the suite is owed |
+| `azimuth run` | runs the provider and stores the new report |
 
-The cost. Folder grain is coarser than the real build: an edit to a README inside a project folder makes that suite's Checks owed. A provider may miss a file that the build takes from outside its folders, and isolation in CI is the guard, because the suite is built there in a folder that holds only the listed files. And after a change to a source, status says owed and cannot name the files until the next run.
+**Inputs and sources answer different questions.**
 
-Example: drim-dev's API test project lists no `.cs` files, takes `Ingress/*.json` by a pattern, and references the API project. An agent adds a feature file in the API folder: no source changed, the folder rule covers the file, and status shows the Checks owed with nothing started. An agent adds a project reference: a source changed, so the list is unknown and the Checks are owed until the next run.
+| | Input | Source |
+| --- | --- | --- |
+| The question | can this file change the outcome of a Check? | can this file change which files are on the list? |
+| How many | many | a handful of build files |
+| When it changes | the Checks are owed. The list stays valid, and nothing is started | the list is out of date, and the provider is asked again |
+
+There are two lists and not one, because otherwise every edit of a code file would mean asking the build tool again, and a reading command could not answer.
+
+**The core adds every source that exists to the inputs itself.** A file that decides how the build is put together is a file the outcome depends on, and a provider must not be able to forget it. Without the rule a change of a source would make the Checks owed, the next run would get the same list, the fingerprint would equal the old one, and the old pass would stand although nothing ran. A source that does not exist is the only source that is not an input.
 
 **A source may be a path that does not exist.** A build can change with no existing file changing, because a build tool looks for files by name in the folders above a project. The provider names the places where its tool would look. A file that appears at such a path is a change of a source, the same as an edit.
 
-**A pattern in a build file becomes its base folder in the answer.** A new file there is then an input with nothing started.
+**A pattern in a build file becomes its base folder in the report.** A new file there is then an input with nothing started.
 
 For .NET the absent sources are `Directory.Build.props`, `Directory.Build.targets`, `Directory.Packages.props` and `nuget.config` in each folder from the project up to the root of the repository, and `global.json` where it is missing.
 
-The cost. The provider must know where its build tool looks, and a place it forgets is a silent hole. Isolation does not catch it, because a file that changes compiler options breaks no build when it is missing. The referee is the only guard: it runs kept Checks again and reports a contradiction, at most one referee period later.
+**The file that pins a provider is always a source of its reports, and a stored report records the provider's name and version.** A newer provider may give a different report, so results kept under the old one must not stand. Raising the pin makes every stored report of that provider invalid, the lists are unknown, and the Checks are owed. The method part of a fingerprint takes the provider's name and version from the stored report, so nothing is started to compute it.
 
-Example: drim-dev has no `Directory.Build.props`. An agent creates one at the root and sets one compiler option. Every project builds differently, no project file changed, and the new file lies in no project folder. Because the path is a source, the stored answers are no longer valid, and every Check of the .NET suites is owed.
+The cost. Folder grain is coarser than the real build: an edit to a README inside a project folder makes that suite's Checks owed. After a change to a source, status says owed and cannot name the files until the next run. Sources are inputs of every Check of the suite, so raising any tool in the pin file makes the whole suite owed, also a tool that has nothing to do with the build, because the core does not read inside that file.
+
+Two holes stay. A provider may miss a file that the build takes from outside its folders, and isolation in CI is the guard, because the suite is built there in a folder that holds only the listed files. And a provider may forget a place where its build tool looks. Isolation does not catch that one, because a file that changes compiler options breaks no build when it is missing. The referee is the only guard there: it runs kept Checks again and reports a contradiction, at most one referee period later. A provider installed outside the tree can also change with no file changing, which is the limit already stated for an adapter, with the same guard: CI restores the pinned version and computes everything itself.
+
+Open until the list of increment 5: the request and the report of a provider as formats, the name of a stored report's file, the reason shown for an unknown list, and the way a suite lists files that its tests read at run time.
+
+Open for increment 6: the sources of a reference graph. For a build closure the sources are a handful of build files. For a graph they may be every code file of the build, because one new file can change what a call in another file refers to, with no file on a Check's list changing. An extension method in C# is the plain case. The graph would then be computed again after almost every edit. Whether that is fast enough for `azimuth run`, and what status shows meanwhile, is not designed. It is decided after increment 5 is in use, when it is known how often lists are unknown in real work.
+
+Example: four files of drim-dev show the cases. `Features/Guides/CreateGuide.cs` is an input and no source: editing it can break a test and cannot change what the build includes. `DrimDev.Api.csproj` is both, because a new project reference there puts a whole folder on the list. `global.json` is both, because it chooses the SDK. `Directory.Build.props` does not exist in drim-dev, so it is a source and no input. If an agent creates it at the root and sets one compiler option, the stored reports are no longer valid, and every Check of the .NET suites is owed.
+
+Example: drim-dev's API test project lists no `.cs` files, takes `Ingress/*.json` by a pattern, and references the API project. An agent adds a feature file in the API folder: no source changed, the folder rule covers the file, and status shows the Checks owed with nothing started. An agent adds a project reference: a source changed, so the list is unknown and the Checks are owed until the next run.
+
+Example: the .NET closure provider is a local dotnet tool, pinned in drim-dev's `.config/dotnet-tools.json` beside the adapter. An agent raises its version there. Status shows every Check of the .NET suites as owed, with nothing started. The next `azimuth run` asks the new provider and stores its report with the new version.
 
 **Named parts.** A package supplies a splitter that returns named byte ranges of a file. The core hashes the ranges itself. Every byte outside a named range belongs to a part called rest, and every user of the file depends on rest.
 
@@ -1067,6 +1170,8 @@ The cost. A CI job written without the flag runs the local lane, which passes wi
 
 **Cost is measured.** Durations are stored and feed ranking and time limits.
 
+What is stored is the duration of each test, in its result. The duration of a launch also holds the build and the start of what the tests need, and no test's duration holds that time. `run-1` prints it for each suite. It is stored from the increment that first reads it, because a result belongs to one Check and a launch covers many.
+
 ### Outside the lanes
 
 **On request.** Anyone may run a named Check or Challenge wherever its facilities exist.
@@ -1180,13 +1285,16 @@ Results are never committed. They live in a folder of the working tree that git 
   outbox/<record-digest>.json                                    written by the session, waits for azimuth sync
 
 <shared git directory>/azimuth/
-  cache/results/<check-id>/<fingerprint>/<record-digest>.json    one file per result
+  cache/results/<check-id>/<record-digest>.json                  one file per result
+  cache/records/<record-digest>.json                             a record that is not the result of a Check
   cache/bundles/
   cache/inputs/<list-digest>.json
   unsent                                                         digests of records not sent to a server yet
 ```
 
-**The core has no dependencies.** It must run in other people's CI.
+**The core needs nothing installed beside it: no database, no service and no runtime.** It must run in other people's CI. It is one file, and a short fixed list of crates is compiled into it: `serde_json`, `toml`, `sha2` and `unicode-normalization`. Adding a crate is a change of this document.
+
+The cost. Each crate is code in the judge that nobody on the team has read, and each brings its own dependencies. `Cargo.lock` fixes the versions, and it does not make them reviewed.
 
 **One fingerprint may hold several results,** for example a pass and later fails.
 
@@ -1196,7 +1304,7 @@ Results are never committed. They live in a folder of the working tree that git 
 | --- | --- |
 | `format` | `result-1`. Kind and version in one name |
 | `actor` | `this machine`, until a session can name itself. Identity begins at the server rung |
-| `at` | the time |
+| `at` | the time, as UTC text with microseconds, such as `2026-11-16T14:05:36.842113Z` |
 | `subjects` | one entry: the Check, with `kind`, `name` and the `digest` of its claim. `kind` is the fixed word `check` |
 | `body` | the fields below |
 
@@ -1345,7 +1453,7 @@ proof = "docker info"
 | --- | --- |
 | `cli` | the one exact CLI version |
 | `repository` | the name of this repository and its target branch |
-| `area` | a name and the folders it mounts |
+| `area` | a name and the folders and single files it mounts |
 | `suite` | a name, its area, its folder, the command of its adapter, its marker form, and the facilities it needs. Optionally `marker_key` |
 | `facility` | a name and its proof command |
 
@@ -1451,6 +1559,18 @@ The cost. Each document is a promise. A renamed field breaks every skill that re
 
 **Text for a person is not a promise.** Only the JSON documents and the statuses are. A test of the text output looks for the facts a behavior names, such as a number, and never for a whole line.
 
+**A field with nothing to say is absent, and `null` is never written.** The rule holds for every document and every record. A record is named by the digest of its bytes, so two ways to say one thing would be two records for one fact.
+
+The cost. A reader cannot tell a field that does not apply from a field this version does not know. So a reader must not expect an optional field, as it must not fail on an unknown one.
+
+**A list in a printed document is always present, and it may be empty.** "Nothing found" is an answer, and a script can loop over the list without asking first whether it exists. A stored record leaves an empty list out, because one fact needs one form.
+
+**`line` is absent when a finding or a reading error concerns a whole file or a folder.**
+
+The cost. These are two rules where one would be simpler to remember. Whoever writes a reader must know whether it holds a document or a record.
+
+Example: `azimuth lint --json` in drim-dev with a clean model prints `"findings": []`. A tracked file found under `.azimuth/` gives one finding with `file` and no `line`. The record of a run on a clean commit holds `tree.base` and no `edits`.
+
 Example: `azimuth status --json` for one Requirement whose Check is kept.
 
 ```json
@@ -1488,7 +1608,7 @@ Example: `azimuth status --json` for one Requirement whose Check is kept.
 | `check-1` | `azimuth check show` | `id`, `requirement`, `scenario`, `suite`, `claim`, `reuse`, `state`, `reason`, `detail`, `parts_changed`, `files_changed`, `failing_tests`, and `result` with `where`, `commit` and `at` |
 | `change-1` | `azimuth change show` | `target`, `base`, `class`, then `requirements`, `scenarios` and `checks`, each with `added`, `changed` and `removed`. Then `markers_removed`, `not_compared` and `rigor_lowered` |
 | `lint-1` | `azimuth lint` | `findings`, each with `kind`, `file`, `line` and `message` |
-| `run-1` | `azimuth run` and `azimuth check run` | `lane`, `outcome`, `suites` with `name` and `launch`, `checks` with `id`, `state`, `reason`, `detail`, `failing_tests` and `duration_ms`, and `findings` in the commit lane |
+| `run-1` | `azimuth run` and `azimuth check run` | `lane`, `outcome`, `suites` with `name`, `launch` and `duration_ms`, `checks` with `id`, `state`, `reason`, `detail`, `failing_tests` and `duration_ms`, and `findings` in the commit lane |
 | `error-1` | any command, on a reading error | `errors`, each with `kind`, `file`, `line` and `message` |
 
 Names are lowercase with underscores. Ids and states are this document's own words: `kept`, `owed`, `passed`, `failed`, `proven`.
@@ -1505,6 +1625,7 @@ Names are lowercase with underscores. Ids and states are this document's own wor
 | A Check with `Reuse: never` on a developer's machine | the state is `owed` and the reason is `runs in CI` |
 | `parts_changed`, `files_changed` | a list of part names, and a list of paths from the repository root. When git no longer has the tree, the second is empty and `detail` says `files changed` |
 | `requirements` in `status-1` | every Requirement, also the proven ones. The text output lists only the incomplete ones |
+| `state` of a Requirement in `status-1` | `proven` or `incomplete` |
 | `module` | the folder path under `azimuth/model` |
 | `verification`, `realization` | `state` is `not reviewed` or `owed`, with `reason` when owed. A review has its own `reason`, and in increments 1 to 3 its only value is `this version records no reviews` |
 | `approval`, `process` | `approval` is `not recorded`. `process` is `default` or `differs` |
@@ -1512,8 +1633,9 @@ Names are lowercase with underscores. Ids and states are this document's own wor
 | `findings` in `run-1` | present only in the commit lane |
 | `suites` in `run-1` | only the suites whose adapter the core started or tried to start. A suite with a missing facility or with nothing to run is not listed, and its Checks say why. When an input changed during the launch, `launch` is `ok` and the Checks say `no result` |
 | `duration_ms` of a Check in `run-1` | the sum of the durations of its tests in this run. Absent when the Check did not run |
+| `duration_ms` of a suite in `run-1` | the wall time of the launch in this run, with the build. Absent when the adapter did not start. It is printed and not stored |
 | `result.commit`, `reuse` in `check-1` | the full commit id, of which text shows 7 characters. `reuse` is absent, or holds `value` and `reason` |
-| `change-1` | `class` is one letter. Lists hold ids, a Scenario as `requirement/scenario`. `markers_removed` is a number and `rigor_lowered` is true or false. With nothing to show, the text is empty and the document says class `A` with empty lists |
+| `change-1` | `class` is one letter. Lists hold ids, a Scenario as `requirement/scenario`. `markers_removed` is a number. `rigor_lowered` is a list whose entries hold `kind` and either `check` or `requirement`. With nothing to show, the text is empty and the document says class `A` with empty lists |
 | `error-1` | `file` is a path from the repository root, `line` counts from 1, and for the project file it is the line of the key |
 
 A launch with no result stores nothing, so a later `azimuth status` shows such a Check with the reason it had before the run.
@@ -1558,6 +1680,18 @@ The cost. A script that only looks at the status cannot tell a failed Check from
 **`azimuth change show` is what a person reads before a merge on the core rung**, where the merge stands for the approval. A removed Check and a loosened `Reuse:` appear there.
 
 Example: on the branch of the first change in drim-dev, `azimuth change show` prints one Requirement added with its Scenarios, two Checks added, class D because Requirements changed, and nothing removed. After `azimuth run`, `azimuth status` prints one line, because the only Requirement in the model is proven.
+
+**The base of `azimuth change show` is the target as the remote has it.** The CLI takes the target branch from the first remote that has it, `origin` first, and compares the working tree with the common ancestor. A target that the clone does not have ends with status 2.
+
+**Each list of `change-1` names the thing whose own text changed.**
+
+| Thing | It is changed when |
+| --- | --- |
+| A Requirement | its text above its first Scenario, its module or its review declarations changed. An edited Scenario does not put its Requirement on the list |
+| A Scenario | its text changed |
+| A Check | its claim, its Requirement, its Scenario or its `Reuse:` line changed |
+
+Blank lines at either end of a text do not count.
 
 ### Signing in
 
@@ -1726,17 +1860,17 @@ Example of an artifact that is not an image: a lab package of drim-dev is built 
 | Kind | Qualified by | Why |
 | --- | --- | --- |
 | A declaration in the model: a root, the scope of a grant, the paths that define a runner class | area, with a path inside one of its mounts | the model speaks in areas. The declaration survives a moved folder and a repository split, because only the topology changes |
-| A record: a work record, authorship, a commit record | repository and path | a record says what happened to a commit of one repository. It stays true after the topology changes, and it covers files that are in no area |
+| A record: a work record, authorship, a commit record | repository and path | a record says what happened to a commit of one repository. It stays true after the topology changes |
 
 **The server shows records by area by reading the topology of the tree that the record is about.** Nobody stores the area in a record.
 
-**A declaration may only name an area.** Lint refuses a declaration that points outside every area. If a runner class is defined by CI workflow files, their folder must first become an area.
+**A declaration may only name an area.** Every file belongs to exactly one area, so a declaration can reach any file through its area.
 
-**A grant never covers a file that is in no area.** A grant covers only what its scope names, and a scope can only name areas. A change that touches such a file always needs a person.
+**A grant covers only what its scope names, and a scope can only name areas.** No file is outside every area, so a new folder cannot arrive under a grant unnoticed: lint reports it until a change places it in an area, and a person sees that change.
 
-**The cost.** More areas to declare. A file in no area is a file about which Azimuth says nothing.
+**The cost.** More areas to declare, and every folder needs a home.
 
-Example: a grant for agent-written fixes is scoped to area `gateway`, mount `source`, which today is `backend/src/DrimDev.Gateway` in drim-dev. If the gateway later moves into a repository of its own, the grant holds with no edit, and only the topology changes. The work records of the old fixes still say drim-dev and the old paths, which is what happened. A change that also edits `.github/workflows/` is not covered by that grant, because that folder is in no area of drim-dev today.
+Example: a grant for agent-written fixes is scoped to area `gateway`, mount `source`, which today is `backend/src/DrimDev.Gateway` in drim-dev. If the gateway later moves into a repository of its own, the grant holds with no edit, and only the topology changes. The work records of the old fixes still say drim-dev and the old paths, which is what happened. A change that also edits `.github/workflows/` is not covered by that grant, because that folder belongs to another area.
 
 **Correctness does not depend on one repository telling another.** A dispatch between CI systems only makes a new result arrive sooner.
 
@@ -1949,6 +2083,14 @@ The project file names the command of each suite's adapter. The core starts that
 
 A missing adapter is a named state. `azimuth run` says which command is missing and how to install it, and `azimuth init` prints the same line for each stack it found.
 
+**`not started` means that the program on the command line could not be started.** An adapter that is started through a host program, such as `dotnet azimuth-xunit`, cannot be told from a crashed one when it is missing: the host starts, ends with a failure and prints a text, and reading that text would be a guess. Such a launch is `crashed`. The host's own message goes to standard error and names the fix.
+
+The cost. An agent that reads only `run-1` cannot tell a missing adapter from a broken one. It reads standard error, or it runs the restore command of the stack.
+
+Open for increment 2: a first question that the core sends to an adapter before a launch, so that no answer means `not started`.
+
+Example: a developer clones drim-dev on a new machine and runs `azimuth run` before `dotnet tool restore`. The .NET suite shows `crashed`, its Checks are owed with `no result`, and dotnet's own message says which command to run.
+
 **The CLI carries a small table of the runners it knows.** That is how `azimuth init` sees a stack whose adapter is absent.
 
 | For each known runner | Example for xUnit | Used for |
@@ -1961,6 +2103,8 @@ Init knows nothing else about a stack.
 
 **`azimuth init` lists suites only for a stack whose adapter is installed.** For another stack it prints the install line and says that this stack's suites are not in the project file. They are added by hand, which is an edit of the project file and so class D. Init never guesses a suite from the names of files.
 
+**`azimuth init` takes the target from the remote's default branch and the repository's name from its root folder.** With no remote it takes the current branch, and on a detached head it ends with status 2. Both are a first proposal in a file that a person reads before the first commit.
+
 The cost. Init lists every test project the adapter finds, also ones nobody will mark. Example: a repository has nine test projects, and five of them sit in a folder of prototypes. All nine become suites. They do nothing without a marked test, but every file in their folders is class C.
 
 Adapters are not bundled in the CLI. The .NET adapter must load the test assembly to list tests and their traits, so it is .NET code, and a team in another language would carry it for nothing.
@@ -1969,9 +2113,15 @@ The cost. Starting takes two installs for a stack, and Azimuth publishes to seve
 
 Example: drim-dev already pins one tool in `.config/dotnet-tools.json`. The .NET adapter is a second entry there, and CI runs `dotnet tool restore` before `azimuth run`.
 
-**The .NET adapter has one name everywhere.** The package id and the command are `azimuth-xunit`, so the project file says `dotnet azimuth-xunit`. Its code is in `adapters/xunit/` of the Azimuth repository. Azimuth's own tests pack it into a local folder feed and write the sample's tool manifest themselves, so they need no registry.
+**The .NET adapter is the package `Azimuth.Xunit`, and its command is `azimuth-xunit`.** The tool manifest lists the package, and the project file says `dotnet azimuth-xunit`. The id follows the family of Azimuth's packages on nuget.org, so that a reserved prefix `Azimuth.` can cover it. Its code is in `adapters/xunit/` of the Azimuth repository. Azimuth's own tests pack it into a local folder feed and write the sample's tool manifest themselves, so they need no registry.
 
-Unverified: whether the id `azimuth-xunit` is free on nuget.org.
+**The .NET adapter lists tests by reading the built assembly, and it runs nothing to do so.** A test is a method with `[Fact]`, `[Theory]` or an attribute that derives from them. It runs the asked tests through `dotnet test` with a filter on the marker, and it reads the outcomes from the runner's result file. It uses no package beyond the .NET runtime.
+
+The cost. The adapter decides by itself what a test is, so in a rare case it can disagree with xUnit. The launch is the guard: it gives no result when the tests run differ from the tests listed.
+
+Example: three of drim-dev's API tests carry `[RealBffFact]`, an attribute of their own that derives from `[Fact]`. The adapter follows the base types and lists them as tests.
+
+Open: whether nuget.org reserves the prefix `Azimuth.` for the project. A person asks for it.
 
 **A stack does not need all four.** An adapter alone is enough to start.
 
@@ -2694,6 +2844,8 @@ A Scenario with no Check is not a lint finding. It is a gap, and status names it
 
 The cost. Someone who reads the CI file sees one command and must know that it lints. The output of the lane names lint as its first step.
 
+**The commit lane reads no stored result.** A known fail and a Check with `Reuse: never` run like any other. A Check with no marked test is owed with the reason `no result`.
+
 **A reading error stops every command. A finding fails only lint and the commit lane.** The two are told apart by one test: can the model still be read without guessing?
 
 |  | A reading error | A finding |
@@ -2707,6 +2859,28 @@ The cost. Someone who reads the CI file sees one command and must know that it l
 Every command reads the model through the same reader, so a reading error has the same words everywhere. A status computed from a model that could not be read would be a guess: with one id in two modules, nobody can say which Requirement a marker's result belongs to. A finding must not stop a desk, because while an agent builds, a Check without its test is normal for a few minutes.
 
 The cost. One reading error anywhere blinds every command for the whole project, including modules that are fine. The fix is one line, and the message names the place.
+
+**Reading is strict where a guess would be needed.** Each of these is a reading error:
+
+| File | Reading error |
+| --- | --- |
+| `specification.md` | a review declaration with a value other than `reviewed`. A Scenario heading with no Requirement heading above it. A Scenario id used twice in one Requirement. A Requirement id used twice in the project |
+| `verification.md` | a Check that stands under no Scenario heading. A second `Reuse:` line on one Check. A Check id used twice in the project |
+| The project file | a missing required key. A suite that names an area no entry declares. A marker form that does not hold `<id>` exactly once. Two entries of one table with the same name. A suite path outside the repository |
+
+**A declaration that stands where it has no meaning is a reading error.** Each of these lines raises rigor, so ignoring one would lower rigor without a word. The message names the file and the place where the line belongs.
+
+| Line | Where it has a meaning |
+| --- | --- |
+| `Reuse:` | under a Check in `verification.md` |
+| `Verification:`, `Realization:` | under a Requirement in `specification.md` |
+| `Context:` | nowhere until the increment that reads it. Until then the line is a reading error wherever it stands |
+
+Text above the first Requirement of a file stays prose, whatever it looks like.
+
+The cost. One misplaced line stops every command until it is fixed, and nobody can write `Context:` lines ahead of the increment that reads them.
+
+Example: an agent in drim-dev writes `Reuse: never, the probe reads the running cluster` under the Scenario in `specification.md`, and not under the Check. Without the rule lint is clean, the Check passes once on a developer's machine, and from then on it is kept.
 
 Example: an agent copies a Requirement heading from one module into another and forgets to change the id. `azimuth status` prints that the id is declared in two modules, with both paths, and nothing else. Had the agent only forgotten to mark a test, `azimuth status` would work and show that Check as having no marked test.
 
@@ -3472,8 +3646,7 @@ This part lists everything that is not settled, so that nothing is lost between 
 
 | Question | Part |
 | --- | --- |
-| Evidence as a third element of the purpose, and the wording of the promise | Foundations |
-| How to keep hand-listed area paths from going stale | Foundations |
+| The sources of a reference graph, and how often the graph is computed again | Change tracking |
 | How to prove that a place called `public` is truly outside | Running |
 | Which environment facts a suite declares | Results |
 | How the server supplies the model to the CI of a code repository | Release |

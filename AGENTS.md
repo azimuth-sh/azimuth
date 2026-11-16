@@ -25,7 +25,8 @@ The design has no rule ids. A plain test fails when a sentence quoted by a behav
 
 - The core is written in Rust and ships as one file with no runtime.
 - A test adapter is a separate command in the language of its stack.
-- The language of the server is decided when the server is built.
+- The server is written in Rust as well.
+- The core compiles in four crates and no others: `serde_json`, `toml`, `sha2` and `unicode-normalization`. Adding a crate is a change of the design.
 - Versions start at `0.2.0-alpha.1`.
 - There is no backward-compatibility obligation during the alpha phase unless the design states one.
 - Azimuth's own tests use the sample repository in this repository. They never depend on another project's vocabulary, paths or checkout.
