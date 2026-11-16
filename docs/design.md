@@ -221,7 +221,7 @@ The text is not kept inside the CLI and printed on request. Guidance is a file i
 
 The cost. Upgrading takes two actions in one change: raise the pin, then run the install command again. A team that edited a skill merges the new shipped text by hand.
 
-**The core is written in Rust and ships as one file with no runtime.** A team on any stack needs nothing else for lint and status, and both start fast enough to run on every edit. The adapters are separate commands in the language of their stack. The language of the server is decided at the server rung.
+**The core is written in Rust and ships as one file with no runtime.** A team on any stack needs nothing else for lint and status, and both start fast enough to run on every edit. The adapters are separate commands in the language of their stack. The server is written in Rust as well.
 
 **The project file names the exact CLI version the repository uses.**
 
@@ -256,7 +256,19 @@ Agents write the core, and plain tests written by the author of the code are the
 | A small sample repository inside Azimuth's tests, on which the CLI runs end to end | Checks through the real entry point |
 | The increment is done when the real work it serves is proven with it, and not when its own tests pass | the gate |
 
-**Azimuth comes under Azimuth after the fourth increment of the core and before the server rung is built.** The server holds credentials and decides gates, so it is the part that most deserves proof. The cost is an adapter for Azimuth's own test framework. Open: with seven increments this happens before Challenges exist. Whether it moves is not decided.
+**Azimuth comes under Azimuth after the fourth increment of the core and before the server rung is built.** The server holds credentials and decides gates, so it is the part that most deserves proof. The moment stays there although Challenges do not exist yet.
+
+| Reason | What it means |
+| --- | --- |
+| The judge is never the code being written | the project file pins an exact released CLI. An increment is judged by the CLI of the increment before it, which real work has already proven |
+| The fingerprint is still coarse | every file is an input, so nothing can keep a result wrongly. Increments 5 and 6 narrow it, and they are then built under proof |
+| Challenges can come later | a Challenge runs against a Check that exists. When increment 7 arrives, the Checks of the server owe their Challenges, like every earlier Check |
+
+**Nothing is migrated.** The lists of increments 1 to 4 stay lists, and their plain tests keep running. Azimuth's own model starts empty and grows by changes. A behavior of an old list becomes a Requirement only when a change touches it.
+
+The cost. One more adapter, for `cargo test`, which serves the core and the server, because both are written in Rust. Two ways of working live side by side in one repository until old behaviors are touched. And the server is built before Challenges, so a weak Check of the server is caught only by the Verification Review or by a person until increment 7.
+
+Example: increment 5 adds the build closure. It is a change in the Azimuth repository with its own Requirement and Scenarios. Its Checks are marked Rust tests, run through the adapter for `cargo test` under the CLI pinned at increment 4.
 
 Example: for increment 1 the list has lines such as "`azimuth lint` fails when a marker names an unknown Check" and "`azimuth run` records a result in the local store". One session writes tests from them against the sample repository, another writes the code, and the increment is done when the first change in drim-dev shows its Scenarios proven.
 
@@ -554,9 +566,9 @@ A result is reused by default. The `Reuse:` field on a Check limits that, and it
 | --- | --- |
 | Form | `Reuse: <value>, <reason>` on one line |
 | Value | `never` in the first increment. `for N days` arrives later |
-| Reason | everything after the first comma, to the end of the line. Free prose in any language |
+| Reason | the text after the first comma, to the end of the line, without the spaces and tabs around it. Free prose in any language |
 | No line at all | the default |
-| Reading error | no comma, nothing after the comma, or a value the CLI does not know |
+| Reading error | no comma, nothing but spaces and tabs after the comma, or a value the CLI does not know |
 
 There is no fixed word such as "because", since model text may be in any language and a comma works in all of them. The reason stands on the same line, because position cannot carry meaning in Markdown. The reader checks only that a reason exists. Whether it is a good one is for the person who sees the class D change.
 
@@ -656,6 +668,8 @@ A fingerprint answers one question for one Check: is everything that could chang
 
 **The adapter's version is recorded with each result and is not part of the fingerprint.** The core learns it only from a report, so only after a launch, and a fingerprint must be computable with nothing started. An upgrade is seen through the pin, which is a tracked file and so an input. The limit is the one below: an adapter installed outside the tree can change with no fingerprint moving, and CI restores the pinned version and runs everything. When a provider narrows the list of files, it keeps the pin an input of every Check of the suite.
 
+The version is the one the adapter reports. The core compares it with nothing, also not with the version of the adapter's package.
+
 One limit. On a developer's machine a tool can change with no file changing, and the fingerprint does not move. The kept pass is then stale on that machine. The guard is the same as for an ignored file: CI runs everything.
 
 Example: drim-dev's `global.json` pins the .NET SDK with roll forward to the latest patch. A developer installs a newer patch. No file changed, so status still says "proven on this machine", although the Checks last ran under the older SDK. The next CI job runs them under the SDK of its own image.
@@ -710,7 +724,7 @@ Example: an agent runs `azimuth run` 40 times in one change, each time with a fe
 
 Example: the test project of drim-dev's API lists no files to compile, so .NET compiles every `.cs` file in its folder. An agent creates a new test file there and runs `azimuth run` before any `git add`. The file is an input, and the results carry a digest of the files that CI reproduces after the commit. A change to the ignored `frontend/.env.local` moves no fingerprint.
 
-**Model text is normalized before hashing.** One Unicode form, one kind of line ending, no trailing spaces at line ends. Nothing else is folded. Re-wrapped paragraphs and Markdown styling would need a parser inside the digest, and a parser upgrade would then make every review stale. Characters that only look alike are different text.
+**Model text is normalized before hashing.** The Unicode form is NFC. Every line ending becomes LF. Spaces and tabs at line ends are removed. Nothing else is folded. Re-wrapped paragraphs and Markdown styling would need a parser inside the digest, and a parser upgrade would then make every review stale. Characters that only look alike are different text.
 
 **Every digest names the scheme that produced it.** The rules can then change without silent mismatches.
 
@@ -786,6 +800,30 @@ Providers combine as layers in a stack. Each layer narrows inside what the previ
 
 **A provider speaks to the core in files, or in named parts of a file.** The core never learns why a file is on a list.
 
+**A provider answers with rules that the core applies alone.** A fingerprint must be computable with nothing started, and a build closure can only come from the build tool. So the tool is asked rarely, and its answer is kept.
+
+| Part | Rule |
+| --- | --- |
+| The answer | folders and single files, never a list of every file. The core expands a folder on the tree itself, so a new file in it is an input at once |
+| Its sources | the answer names the files it was computed from. For .NET these are the project files, the lock files and `global.json` |
+| Storage | the core stores the answer in the local store under the digest of its sources. While they are unchanged, any command computes the fingerprint from the stored answer |
+| Reading commands | they never run a provider. A changed source or no stored answer means the list is unknown, and every Check of the suite is owed |
+| `azimuth run` | runs the provider and stores the new answer |
+
+The cost. Folder grain is coarser than the real build: an edit to a README inside a project folder makes that suite's Checks owed. A provider may miss a file that the build takes from outside its folders, and isolation in CI is the guard, because the suite is built there in a folder that holds only the listed files. And after a change to a source, status says owed and cannot name the files until the next run.
+
+Example: drim-dev's API test project lists no `.cs` files, takes `Ingress/*.json` by a pattern, and references the API project. An agent adds a feature file in the API folder: no source changed, the folder rule covers the file, and status shows the Checks owed with nothing started. An agent adds a project reference: a source changed, so the list is unknown and the Checks are owed until the next run.
+
+**A source may be a path that does not exist.** A build can change with no existing file changing, because a build tool looks for files by name in the folders above a project. The provider names the places where its tool would look. A file that appears at such a path is a change of a source, the same as an edit.
+
+**A pattern in a build file becomes its base folder in the answer.** A new file there is then an input with nothing started.
+
+For .NET the absent sources are `Directory.Build.props`, `Directory.Build.targets`, `Directory.Packages.props` and `nuget.config` in each folder from the project up to the root of the repository, and `global.json` where it is missing.
+
+The cost. The provider must know where its build tool looks, and a place it forgets is a silent hole. Isolation does not catch it, because a file that changes compiler options breaks no build when it is missing. The referee is the only guard: it runs kept Checks again and reports a contradiction, at most one referee period later.
+
+Example: drim-dev has no `Directory.Build.props`. An agent creates one at the root and sets one compiler option. Every project builds differently, no project file changed, and the new file lies in no project folder. Because the path is a source, the stored answers are no longer valid, and every Check of the .NET suites is owed.
+
 **Named parts.** A package supplies a splitter that returns named byte ranges of a file. The core hashes the ranges itself. Every byte outside a named range belongs to a part called rest, and every user of the file depends on rest.
 
 **The first version ships file grain only.** Big shared files are handled by a profile rule: one type per file.
@@ -860,7 +898,19 @@ A result counts only if the core produced it in one launch, from start to end.
 
 A proof is a command, and never a setting. Nothing in the tree and nothing on the command line can say "present". A proof that fails, hangs or is missing means "cannot run here". The core ships no facility, because it knows no tools. `azimuth init` writes none, and a person adds a facility when a suite needs one. Until then the first run on a machine without the facility starts the suite, the launch crashes, and the Checks are owed with the crash as the reason. A change to a definition is class D, because it sits in the project file.
 
-**The core starts a proof or an adapter directly, with no shell.** The command line from the project file is split on spaces. The working directory is the root of the repository, and the environment is passed on unchanged. A proof that runs longer than 10 seconds counts as hung, and the number is fixed in the first increment.
+**The core starts a proof or an adapter directly, with no shell.** The command line from the project file is split on spaces. An adapter starts in its suite's folder, and a proof starts at the root of the repository. The environment is passed on unchanged. A proof that runs longer than 10 seconds counts as hung, and the number is fixed in the first increment.
+
+An adapter starts in its suite's folder so that each stack finds its own pin. A dotnet tool is found by walking up to the tool manifest, and an npm package by walking up to the nearest `package.json`. From the root of the repository an npm adapter installed in an application's folder is not found, and `npx` then turns to the registry for that name. A proof belongs to no suite, so the root is right for it.
+
+Example: drim-dev holds two web applications with their own `package.json`, in `frontend/` and in `poc/capability-learning/frontend/`. Two suites name the same command line, and each starts the adapter that its own application pins.
+
+**For `discover` the adapter starts at the root of the repository.** That verb has no suite, because `azimuth init` uses it before any suite exists. An adapter that is installed only inside an application's folder is then not found, and init treats its stack as one whose adapter is not installed: it prints the install line, and a person writes those suites into the project file. Whether init looks into folders whose `package.json` names an adapter is decided in the second increment.
+
+**A suite's folder holds its tests and the runner's own configuration.** A .NET test project already has its project file in the folder. A Playwright config goes into the folder of its tests. The adapter starts there, and the runner finds its configuration by itself. A change to that configuration is then a change inside the suite's folder, so it is at least class C. The contract of an adapter needs nothing new for a package that holds two suites.
+
+The command line of an adapter in the project file may carry arguments of its own, for a project that cannot move its configuration. The core adds none and passes the line on as written. The cost: a configuration outside the suite's folder is outside the judge, and nothing reports that.
+
+Example: drim-dev's frontend gets two suites. `frontend/e2e` holds the journeys with a config that starts the whole stack. `frontend/web` holds the page tests with a config that starts the frontend and a stand-in API. Both name the command `npx azimuth-playwright`, and both find the adapter in `frontend/node_modules`.
 
 The cost. An argument that contains a space cannot be written. A result can depend on an environment variable that the fingerprint does not see. And on a slow machine a proof that needs more than 10 seconds reports "cannot run here" although the facility is there.
 
@@ -983,6 +1033,33 @@ Nothing is detected from the environment. A wrong guess would make a CI job trus
 The status is 1 and not 2, because the command did its job: it ran what it could and reported every Check with its state. The tree is what is not fine. A missing adapter is not a missing facility. A facility may truly be absent on a machine, and the adapter is pinned in the repository, so one restore command brings it to any machine.
 
 The cost. A Check with one skipped test fails the local lane on every run until somebody removes the skip or the marker. And one passing hiccup, such as a container that did not start, fails a run that would pass a minute later.
+
+**From the second increment a launch has a time limit, and the core stops the whole group of processes.** A launch is a tree of processes, and killing only the adapter leaves the rest alive.
+
+| Step | What the core does |
+| --- | --- |
+| Start | starts each adapter and each proof in a process group of its own |
+| At the limit | asks the whole group to stop, with SIGTERM |
+| After a fixed grace | kills the whole group, with SIGKILL |
+| Outcome | `launch` gets a fifth word, `timed out`. The Checks of the launch have the reason `no result`, and the run ends with status 1 |
+
+The request and the report do not change. An adapter has one duty: when it is asked to stop, it stops its runner and exits, and no report is expected. A launch that timed out gives no result for any of its Checks, also for tests that had finished, as for a launch that crashed. The grace is one fixed number, 10 seconds to start with.
+
+The core cannot reach a container started through Docker, which is a child of the Docker daemon. The polite stop exists so that the runner can remove it, and after a kill it may stay. The core also cannot reach a process that leaves the group on purpose.
+
+The cost. A long launch that is stopped at the limit loses every test that had passed. A partial report written while being stopped would save them, and it would make every adapter harder to write and be the least trustworthy report.
+
+Unmeasured: the length of the grace, whether drim-dev's stack removes its database container on a polite stop, and the same mechanism on Windows, where a job object takes the place of a process group.
+
+Example: for a journey in drim-dev the adapter starts the Playwright runner, which starts a browser and the application host, which starts the API, the frontend and a database container. If only the adapter were killed, the stack would keep its port, and every later launch would stop because the port is taken.
+
+**The time limit of a launch is one optional number per suite in the project file.** The key is `time_limit_minutes`, a whole number, and the default is 30. The clock is wall time from the start of the adapter to its exit, so it includes the build. A proof keeps its own 10 seconds. The adapter is not told the number, and the runner's own limits stay the runner's business.
+
+It is not the time limit of a lane. That one is a budget for planning and decides which owed Checks fit into a run. This one is a backstop against a launch that hangs, so it should be generous.
+
+The cost. One number covers a launch of one test and a launch of the whole suite, so it never says that a test became slow. Somebody guesses it: too low gives a false `timed out` on a slow CI runner, and too high wastes that long on every hang. Raising it is an edit of the project file, so class D.
+
+Example: drim-dev's journey suite sets `time_limit_minutes = 20`. The stack may take up to 180 seconds to start by its config, and then the journeys run. A launch still alive after 20 minutes is stopped and reported as `timed out`.
 
 Example: an agent leaves a syntax error in a test file of drim-dev's API test project. The project compiles every `.cs` file in its folder, so the build fails and every Check of the suite stays owed. If `azimuth run` ended with 0, a loop of "edit, run until green" would stop there with nothing proven.
 
@@ -1120,7 +1197,7 @@ Results are never committed. They live in a folder of the working tree that git 
 | `format` | `result-1`. Kind and version in one name |
 | `actor` | `this machine`, until a session can name itself. Identity begins at the server rung |
 | `at` | the time |
-| `subjects` | one entry: the Check, with `kind`, `name` and the `digest` of its claim |
+| `subjects` | one entry: the Check, with `kind`, `name` and the `digest` of its claim. `kind` is the fixed word `check` |
 | `body` | the fields below |
 
 | Field of the body | Holds |
@@ -1129,13 +1206,13 @@ Results are never committed. They live in a folder of the working tree that git 
 | `fingerprint` | one digest, written with its scheme |
 | `parts` | the digests of `claim`, `files`, `environment` and `method` |
 | `tree` | `base`, the tree id of the commit, and `edits`, one line per path that is edited, new or deleted. A line holds `path`, and either `mode` and `id` or `"deleted": true` |
-| `method` | `schemes`, `object_format`, and `adapter` with `name` and `version` |
+| `method` | `schemes`, `object_format`, and `adapter` with `name` and `version`. `schemes` holds the schemes that produce the fingerprint, `file-1`, `parts-1` and `text-1`, sorted by name. `record-1` is not among them, because it says how a record is stored |
 | `tests` | every enrolled test with `name`, `outcome` and `duration_ms` |
 | `where`, `commit` | this machine or the reference environment, and the commit |
 
 `edits` is not the list of input files. The inputs are `base` with `edits` applied, and that list is never stored. Without a provider every file of the repository is an input, so the tree the run saw is the list. A provider later adds a field that names its narrowed list.
 
-**One file holds one result and is named by the digest of its own bytes.** The rule is the scheme `record-1`, which names what every record follows: the bytes are the canonical form of RFC 8785, and the file name is their SHA-256. A file whose bytes do not match its name is unreadable and counts as absent.
+**One file holds one result and is named by the digest of its own bytes.** The rule is the scheme `record-1`, which names what every record follows: the bytes are the canonical form of RFC 8785, and the file name is their SHA-256 as 64 lowercase hex characters, followed by `.json`. A file whose bytes do not match its name is unreadable and counts as absent.
 
 **Only the two roots are fixed:** the outbox in the worktree and the store in the git directory. The folders below them are an example, and Azimuth's tests find a record by reading files, never by path.
 
@@ -1159,7 +1236,7 @@ Example: a pass in drim-dev with one edited file. The test name is invented, and
     "tree": { "base": "c21a…",
               "edits": [ { "path": "backend/src/DrimDev.Api/Common/Auth/CallerAuthenticationHandler.cs",
                            "mode": "100644", "id": "file-1:a3f9…" } ] },
-    "method": { "schemes": ["text-1", "file-1", "parts-1"], "object_format": "sha1",
+    "method": { "schemes": ["file-1", "parts-1", "text-1"], "object_format": "sha1",
                 "adapter": { "name": "azimuth-xunit", "version": "0.2.0-alpha.1" } },
     "tests": [ { "name": "AdmissionTests.Refuses_credential_of_another_service",
                  "outcome": "passed", "duration_ms": 412 } ],
@@ -1194,6 +1271,7 @@ Whichever command first creates the folder writes that file.
 | Situation | What happens |
 | --- | --- |
 | A record written in a format this version cannot read | it counts as absent, so its Check is owed. `azimuth status` says in one line how many such records it skipped |
+| A file whose bytes do not match its name | it counts as absent and is counted with the skipped records. The number means the files in the store that this version did not use |
 | A person wants a clean start | they delete the store's folder. Every Check is then owed, and nothing else changes |
 | A known fail should run again | `azimuth check run <id>` |
 
@@ -1371,6 +1449,8 @@ The name of a format is a word and a number, as for a scheme. The number goes up
 
 The cost. Each document is a promise. A renamed field breaks every skill that reads it, so the skills that ship with the CLI must move with it.
 
+**Text for a person is not a promise.** Only the JSON documents and the statuses are. A test of the text output looks for the facts a behavior names, such as a number, and never for a whole line.
+
 Example: `azimuth status --json` for one Requirement whose Check is kept.
 
 ```json
@@ -1379,9 +1459,10 @@ Example: `azimuth status --json` for one Requirement whose Check is kept.
   "requirements": [
     {
       "id": "private-api-admits-only-the-bff",
+      "module": "api/admission",
       "state": "proven",
-      "verification": "not reviewed",
-      "realization": "not reviewed",
+      "verification": { "state": "not reviewed" },
+      "realization": { "state": "not reviewed" },
       "approval": "not recorded",
       "scenarios": [
         {
@@ -1393,7 +1474,8 @@ Example: `azimuth status --json` for one Requirement whose Check is kept.
       ]
     }
   ],
-  "skipped_records": 0
+  "skipped_records": 0,
+  "process": "default"
 }
 ```
 
@@ -1402,7 +1484,7 @@ Example: `azimuth status --json` for one Requirement whose Check is kept.
 | Format | Printed by | Fields |
 | --- | --- | --- |
 | `status-1` | `azimuth status` | `requirements`, each with `id`, `module`, `state`, `verification`, `realization`, `approval` and `scenarios`. Each Scenario has `id` and `checks`. Each Check has `id`, `state`, `reason` and `detail`. Then `skipped_records` and `process` |
-| `requirement-1` | `azimuth requirement show` | one Requirement, as in `status-1` |
+| `requirement-1` | `azimuth requirement show` | `format`, and beside it the fields of one Requirement entry of `status-1` |
 | `check-1` | `azimuth check show` | `id`, `requirement`, `scenario`, `suite`, `claim`, `reuse`, `state`, `reason`, `detail`, `parts_changed`, `files_changed`, `failing_tests`, and `result` with `where`, `commit` and `at` |
 | `change-1` | `azimuth change show` | `target`, `base`, `class`, then `requirements`, `scenarios` and `checks`, each with `added`, `changed` and `removed`. Then `markers_removed`, `not_compared` and `rigor_lowered` |
 | `lint-1` | `azimuth lint` | `findings`, each with `kind`, `file`, `line` and `message` |
@@ -1417,17 +1499,19 @@ Names are lowercase with underscores. Ids and states are this document's own wor
 
 | Field | Value |
 | --- | --- |
-| `reason` | exactly one of the reasons for owed, as written in this document. Anything more is in the text field `detail` |
+| `reason` of a Check | exactly one of the reasons for owed, as written in this document. Anything more is in the text field `detail` |
 | A Check whose launch gave no result | in `run-1` the state is `owed`, the reason is `no result`, and `detail` names the cause |
 | `contradicted` | a reason. The state is `owed` |
 | A Check with `Reuse: never` on a developer's machine | the state is `owed` and the reason is `runs in CI` |
 | `parts_changed`, `files_changed` | a list of part names, and a list of paths from the repository root. When git no longer has the tree, the second is empty and `detail` says `files changed` |
 | `requirements` in `status-1` | every Requirement, also the proven ones. The text output lists only the incomplete ones |
 | `module` | the folder path under `azimuth/model` |
-| `verification`, `realization` | `state` is `not reviewed` or `owed`, with `reason` when owed |
+| `verification`, `realization` | `state` is `not reviewed` or `owed`, with `reason` when owed. A review has its own `reason`, and in increments 1 to 3 its only value is `this version records no reviews` |
 | `approval`, `process` | `approval` is `not recorded`. `process` is `default` or `differs` |
 | `outcome`, `launch` in `run-1` | `outcome` is `success` or `failure`. `launch` is `ok`, `build failed`, `crashed` or `not started` |
 | `findings` in `run-1` | present only in the commit lane |
+| `suites` in `run-1` | only the suites whose adapter the core started or tried to start. A suite with a missing facility or with nothing to run is not listed, and its Checks say why. When an input changed during the launch, `launch` is `ok` and the Checks say `no result` |
+| `duration_ms` of a Check in `run-1` | the sum of the durations of its tests in this run. Absent when the Check did not run |
 | `result.commit`, `reuse` in `check-1` | the full commit id, of which text shows 7 characters. `reuse` is absent, or holds `value` and `reason` |
 | `change-1` | `class` is one letter. Lists hold ids, a Scenario as `requirement/scenario`. `markers_removed` is a number and `rigor_lowered` is true or false. With nothing to show, the text is empty and the document says class `A` with empty lists |
 | `error-1` | `file` is a path from the repository root, `line` counts from 1, and for the project file it is the line of the key |
@@ -1806,6 +1890,26 @@ Unverified: a .NET tool for the file reference graph. It is likely a small Rosly
 
 A report always lists every marked test of the suite, also the ones not asked for. That is the list the launch compares with the markers lint found in source. A test is the thing that carries the marker: a test with many data rows is one entry, and it failed if any row failed. The adapter reports what happened and judges nothing. Per test it says `passed`, `failed`, `skipped` or `not_run`, with a duration, and whether the Check passed is the core's rule. A build that fails is a report too, with `"build": "failed"` and no tests.
 
+**A test that the runner runs several times under different settings is one entry as well.** Playwright runs each test once per browser project of its config. The entry failed if the test failed in any of them, it passed only if it passed in all of them, and its duration is the sum. The contract needs nothing new.
+
+The cost. The result does not name the browser, so a person reads the runner's output to learn which one failed. And removing a browser from the config weakens the proof quietly: it is an edit inside the suite's folder, so class C, and it is not reported as rigor lowered, because no marker and no Check went away.
+
+Example: drim-dev's config has one browser project, `chromium`. If the team adds `firefox`, the config changed inside the suite's folder, so every Check of that suite is owed and runs again in both browsers. A journey that passes in Chromium and fails in Firefox is one failed test.
+
+**An adapter reports the first attempt of each test and turns the runner's own retries off.** It is a rule of the contract, for every adapter. A test that fails and then passes inside one launch is a fail and a pass on one fingerprint, which is a contradiction, and a runner that retries hides the fail. The adapter owns the runner's command line, so it turns retries off whatever the runner's configuration says. Running again belongs to the core, where every attempt is a result. The runner's own setting keeps its meaning for a person who starts the runner by hand.
+
+The cost. Every unstable test shows as a failed Check. On the core rung nothing is recorded across CI jobs, so a team sees more failed jobs and runs them again by hand.
+
+Example: drim-dev's Playwright config sets `retries` to 2 in CI. A journey test times out once because the stack started slowly, and passes on the second attempt. The runner calls it flaky and the job passes. Under the rule the adapter passes `--retries=0`, and the Check failed in that job.
+
+**The code under test is built and started by the launch.** An adapter does not let the runner use a process that was started before it. Otherwise a test can pass against a server from another branch, and the pass is stored under the fingerprint of the current tree. Nothing can detect that afterwards. The exception is a Check on a running system, where the place is a declared facility.
+
+The Playwright adapter refuses a config that would reuse a server, and a config that starts none. It reads the resolved config before it runs anything. If `reuseExistingServer` is true, or there is no `webServer` entry, it runs nothing and says why, and the Checks get no result. Playwright has no command line flag for reuse, so the adapter cannot switch it off as it does with retries. With reuse off, Playwright itself stops when the port is already taken.
+
+The cost. Every local launch of a Check that needs the whole stack pays a full start of it, which pushes such Checks to CI. And the rule is only as strong as each adapter.
+
+Example: drim-dev's config turns reuse on outside CI when one environment variable is set. A developer keeps the stack running for manual work and starts `azimuth run` for a journey. The adapter refuses and names the setting. With reuse off, Playwright stops because the port is taken. Either way the developer stops the stack first, or the team gives the test stack a port of its own.
+
 The request goes through standard input and not through arguments, because a lane may ask for hundreds of Check ids, and command lines have length limits and quoting rules that differ between systems.
 
 The `discover` request holds `format`, `verb` and `folder`. Its report holds `format`, `adapter`, and `projects`, each with a `path`.
@@ -1864,6 +1968,10 @@ Adapters are not bundled in the CLI. The .NET adapter must load the test assembl
 The cost. Starting takes two installs for a stack, and Azimuth publishes to several registries.
 
 Example: drim-dev already pins one tool in `.config/dotnet-tools.json`. The .NET adapter is a second entry there, and CI runs `dotnet tool restore` before `azimuth run`.
+
+**The .NET adapter has one name everywhere.** The package id and the command are `azimuth-xunit`, so the project file says `dotnet azimuth-xunit`. Its code is in `adapters/xunit/` of the Azimuth repository. Azimuth's own tests pack it into a local folder feed and write the sample's tool manifest themselves, so they need no registry.
+
+Unverified: whether the id `azimuth-xunit` is free on nuget.org.
 
 **A stack does not need all four.** An adapter alone is enough to start.
 
