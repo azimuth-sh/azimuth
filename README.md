@@ -1,6 +1,6 @@
 # Azimuth
 
-Azimuth lets people direct and review software work at the level of intent, and it proves that the code matches that intent.
+Azimuth lets people direct and review software work at the level of intent, and it shows with evidence how far the code matches that intent.
 
 ## Status
 

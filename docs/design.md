@@ -25,7 +25,9 @@ It describes the target design only. It does not describe today's implementation
 
 ## Foundations
 
-Azimuth lets people direct and review software work at the level of intent, and it proves that the code matches that intent.
+Azimuth lets people direct and review software work at the level of intent, and it shows with evidence how far the code matches that intent.
+
+**"Proven" is a status and not a claim about the code.** A Requirement is proven when each of its Scenarios has a Check, every one of those Checks has a pass that stands for this content, and every review it declares is recorded. The word says that the evidence asked for exists and is current. It never says that the code is correct, so no text of Azimuth says that Azimuth proves the code.
 
 ### Purpose
 
@@ -219,6 +221,8 @@ The text is not kept inside the CLI and printed on request. Guidance is a file i
 
 The cost. Upgrading takes two actions in one change: raise the pin, then run the install command again. A team that edited a skill merges the new shipped text by hand.
 
+Open: a skill file that nobody edited and that an earlier version shipped. Status says `process: default` for it, because it asks only whether the file was edited, so a forgotten second action goes unnoticed.
+
 **The core is written in Rust and ships as one file with no runtime.** A team on any stack needs nothing else for lint and status, and both start fast enough to run on every edit. The adapters are separate commands in the language of their stack. The server is written in Rust as well.
 
 **The project file names the exact CLI version the repository uses.**
@@ -237,19 +241,33 @@ The cost. Piping a download into a shell means trusting the host, and the file i
 
 | Question | Rule |
 | --- | --- |
-| Which version | the pin in the project file of the repository it is run in. Outside a repository, the latest release |
+| Which version | the pin in the project file of the repository it is run in. With no project file, the latest release |
+| Where the pin is read | `azimuth/project.toml` at the root of the git repository, also when the script is started in a subfolder |
+| A pin with no release | it stops, names the version and installs nothing |
+| A version | starts with a digit and holds only letters, digits, `.`, `+` and `-`. The pin comes from whatever repository a person stands in, so it is untrusted text and never chooses a path |
+| The latest release | each release holds a file `VERSION`, and the script reads it at the "latest release" address of the repository. A release is published as a normal release, also while its version says `alpha`, because that address skips a pre-release |
+| The files of a release | `azimuth-<version>-<target>` for the targets `aarch64-apple-darwin` and `x86_64-unknown-linux-musl`, then `SHA256SUMS` and `VERSION` |
 | Which binary | by system and processor: macOS on arm64, or Linux on x86-64. On anything else it stops and names what is supported |
 | The Linux binary | linked statically, so it needs no particular system library |
+| The protocol | with the built-in address, only HTTPS, for the request and for redirects. An address from `AZIMUTH_RELEASES` may use any protocol |
 | What it verifies | the SHA-256 of the download against the sums file of the same release. On a mismatch it deletes the download and stops |
+| A failed install | changes nothing. The link stays where it was, and no partial file is left |
+| A download of the script that is cut off | runs nothing. The whole script is one function that is called on its last line |
 | Where it puts the file | `~/.azimuth/versions/<version>/azimuth`, and a link `~/.azimuth/bin/azimuth` that points at the version just asked for |
 | The PATH | it never edits a shell profile. It prints the line to add |
+| In GitHub Actions | the script adds `~/.azimuth/bin` to the path of the job itself, through the file that `GITHUB_PATH` names. That file is the job's own mechanism and no shell profile |
 | Running it again | when the version is already there, it only moves the link |
+| For tests | the environment variable `AZIMUTH_RELEASES` replaces the address of the releases, and the script prints the address when the variable is set. Nothing else is configurable |
 
 Two repositories on one machine can pin different versions, and each refuses the other's CLI. With both kept, switching is the same line again, with no download.
 
-The cost. Switching is a manual step. And a developer on another system gets a refusal and nothing more.
+The cost. Switching is a manual step. And a developer on another system gets a refusal and nothing more. Whoever can set `AZIMUTH_RELEASES` on a machine decides what is installed there, and that person can already replace the binary. And GitHub shows an alpha as its latest release. Every developer adds one line to a shell profile by hand. The script knows one CI product by name, and a job on another one adds the folder itself.
 
 Open: a launcher that reads the pin and picks the version by itself.
+
+**When `azimuth` is not found, the default skill uses `~/.azimuth/bin/azimuth`.** It then tells the person which line is missing in the shell profile. A person adds that line once per machine, and an agent's shell on the same machine starts from the person's profile.
+
+Example: drim-dev's CI job runs the install line. The script sees `GITHUB_PATH` and appends `~/.azimuth/bin`, and the next step calls `azimuth run --lane commit` by name. On a developer's Mac the printed line goes into `~/.zshrc` once.
 
 Example: drim-dev's project file pins `0.2.0-alpha.2` and a developer still has `alpha.1`. `azimuth run` refuses, names both versions and prints the line. The developer runs it at the root of drim-dev, and the script installs `alpha.2`. The CI job of drim-dev holds the same line.
 
@@ -258,6 +276,7 @@ Example: drim-dev's project file pins `0.2.0-alpha.2` and a developer still has 
 | Piece | Rule |
 | --- | --- |
 | Trigger | a version tag. Publishing is a person's act |
+| The tag | must equal the version in the code. The workflow stops before it builds when they differ |
 | Binaries | built for macOS on arm64 and Linux on x86-64, and attached to a GitHub release with a file of SHA-256 sums. Another target is added when somebody needs it |
 | The install script | a short shell script in the repository, served at `azimuth.sh/install`. It reads the pin, picks the target, downloads the binary and refuses it when the sum does not match |
 | The adapters | packed with the same version and pushed to the registry of their stack by the same workflow. The workflow stores no registry key: it trades its identity for a short-lived one, which the registry calls trusted publishing |
@@ -265,15 +284,58 @@ Example: drim-dev's project file pins `0.2.0-alpha.2` and a developer still has 
 
 The cost. The sums file sits beside the binaries. It catches a broken download and not somebody who controls the release, because they replace both. GitHub and each registry now hold a part of the judge.
 
+**The workflows run as little foreign code as they can, with as few rights as they can.**
+
+| Rule | What it means |
+| --- | --- |
+| No new party | an action comes only from a party the release path already trusts: GitHub's own `actions/*`, because GitHub runs the runner and holds the binaries, and `NuGet/login`, because NuGet receives the package. The build is plain `cargo` and `dotnet` with the tools of the runner image, and the release is made with `gh` |
+| Pinned by commit | each action is named by its full commit id, with the version in a comment beside it |
+| Narrow rights | a workflow grants read access to the contents and nothing else. Only the job that makes the release may write to the repository, and only the job that pushes a package may ask for the short-lived registry identity. The job that publishes the site may write to Pages and prove its identity to Pages, and nothing else |
+
+**The steps of a release that can run on a developer's machine are scripts in the repository.** The tag check and the assembly of the release files are such scripts, in the folder `release/`. Tests run them, and the workflow only calls them.
+
+**A pushed tag alone publishes nothing.** The two publishing jobs name the environment `release`, and that environment requires the approval of a person in GitHub. A tag can be pushed by anything that holds a person's git credentials, also by an agent, and a pushed package cannot be removed.
+
+The cost. A release takes two acts of a person. The setting lives in GitHub and not in the repository, so no test proves that it is on. And a person approves their own run, so the gate guards against an accident and against an agent, and not against that person.
+
+**The compiler is pinned in the repository.** The file `rust-toolchain.toml` names one exact Rust version, with the linter and the two build targets. Every machine and every runner builds with it, so a clean run on one machine is a clean run on the other, and two builds of one tag use one compiler. A person raises the version, in a change of its own.
+
+**The .NET SDK is pinned to a line, not to one version.** The file `global.json` at the root names the lowest accepted version of the 10.0 line and accepts a newer one of that line. The .NET SDK does not download a pinned version by itself, so an exact pin would fail on every machine that lacks it. The adapter is not the judge, and its package is built once per release.
+
+The cost. A pinned action gets no fixes by itself. A person raises the commit id, and that edit is a change to the release path. When the pinned compiler is not on the image of the runner, every job downloads it from the Rust project's servers. The pin goes stale until a person raises it. The .NET SDK still comes from the image of the runner, within the pinned line, so two builds of one tag can pack the adapter with two patch versions. What a workflow does around the scripts is still proven only on GitHub.
+
 **The site is a folder of the repository, published by GitHub Pages.** It holds the landing page and the install script, so the script has one source that anyone can read before running it. The install path then trusts one party, GitHub, which holds the binaries too.
 
 The cost. The source of the landing page is public, and while GitHub is down nobody can install.
+
+**The site is published only by a person's act.** There are two such acts: a version tag, where the site follows the release, and a manual start of the site workflow from `main`. A push to `main` publishes nothing, because `site/install` is the installer, and a merged edit of it must not be live with no person's act.
+
+The cost. The site can lag behind `main`, and a merged fix of the page waits for a person. A third job holds a right beyond reading.
+
+**The landing page is a short introduction and only what a person needs to start.** It is one static file, `site/index.html`, with no script, no tracking and nothing loaded from another host. It is in English.
+
+| Section | Content |
+| --- | --- |
+| Introduction | what Azimuth is for, in the words of Foundations, and what "proven" means |
+| What it looks like | one Requirement of an invented sample, its Check, the marked test, and the output of `azimuth status` before and after a run |
+| Status | what exists in this version and what does not exist yet |
+| Install | the install line, what the script does and where it writes, the line for the PATH, and what the sums file does not protect against |
+| First steps | the first commands, one sentence each |
+| More | the source and this document |
+
+**The install line on the page is the line the CLI prints, and the line for the PATH is the line the script prints.** A test compares them, so the page cannot drift from the product at these two places.
+
+**The page promises only what the released version does.** Its Status section names what does not exist yet, and a person reads it again at every release.
+
+The cost. The page shows output of an alpha, and that output changes. Nothing but a person's reading keeps the Status section true.
 
 Open: a signature on the binaries.
 
 The pin is exact, not a range, while versions start with 0. Two developers on different versions would write records that the other cannot read.
 
 A range in `cli` is a reading error. The warning under another version is one line on standard error that names the pinned version.
+
+**`azimuth --version` prints the version and nothing else.** It needs no project file, and it prints no warning under another pinned version.
 
 An upgrade is a change to the project file, so it is class D. A new version of the judge is a person's decision, and no grant covers it.
 
