@@ -26,6 +26,25 @@ fn earlier_shipped_file() -> String {
     format!("{text}{}\n", skill_digest_line(text))
 }
 
+/// The skill text as the released `0.2.0-alpha.2` shipped it, without the digest line.
+const ALPHA_2_TEXT: &str = include_str!("fixtures/azimuth-change-0.2.0-alpha.2.md");
+
+/// The text of one numbered step, from its heading to the next heading.
+fn step_text(text: &str, number: u32) -> String {
+    let heading = format!("\n## {number}.");
+    let start = text.find(&heading).unwrap_or_else(|| panic!("the skill has no step {number}:\n{text}")) + 1;
+    let rest = &text[start..];
+    let end = rest[1..].find("\n## ").map_or(rest.len(), |index| index + 2);
+    rest[..end].to_string()
+}
+
+/// The paragraph, between blank lines, that holds the given position.
+fn paragraph_at(text: &str, at: usize) -> &str {
+    let start = text[..at].rfind("\n\n").map_or(0, |index| index + 2);
+    let end = text[at..].find("\n\n").map_or(text.len(), |index| at + index);
+    &text[start..end]
+}
+
 /// Paths the install wrote outside git's knowledge, every one of them inside the skill folders.
 fn written(repo: &Repo) -> Vec<String> {
     let paths = repo.untracked();
@@ -169,6 +188,26 @@ fn a_second_install_replaces_a_file_an_earlier_version_shipped() {
     digest_line_is_correct(&repo, SKILL_FILE);
 }
 
+// behavior: Run again by a newer CLI, it replaces a file nobody edited
+#[test]
+fn a_file_that_0_2_0_alpha_2_shipped_gets_the_current_text() {
+    // Repositories that installed 0.2.0-alpha.2 hold these exact bytes. Their step 1 does not
+    // move finished change folders, so the install must replace them with a text that differs.
+    let shipped = format!("{ALPHA_2_TEXT}{}\n", skill_digest_line(ALPHA_2_TEXT));
+    let repo = Repo::sample();
+    repo.write(SKILL_FILE, &shipped);
+    repo.commit_all("the default process of 0.2.0-alpha.2");
+    let output = install(&repo, "claude");
+    let fresh = Repo::sample();
+    install(&fresh, "claude");
+    assert_eq!(repo.read(SKILL_FILE), fresh.read(SKILL_FILE), "the file 0.2.0-alpha.2 wrote was not replaced:\n{}", output.text());
+    assert_ne!(
+        repo.read(SKILL_FILE),
+        shipped,
+        "the shipped text is still the text of 0.2.0-alpha.2, so a repository on that version gets nothing new"
+    );
+}
+
 // behavior: Run again by a newer CLI, it leaves an edited file alone and names it
 #[test]
 fn a_second_install_keeps_an_edited_file_and_names_it() {
@@ -207,4 +246,30 @@ fn the_skill_names_the_installed_binary_for_when_azimuth_is_not_found() {
     install(&repo, "codex");
     let text = digest_line_is_correct(&repo, SKILL_FILE);
     assert!(text.contains("~/.azimuth/bin/azimuth"), "the skill does not name ~/.azimuth/bin/azimuth:\n{text}");
+}
+
+// behavior: The installed skill tells the agent, in step 1 before it writes the proposal, to move every change folder that already exists on the target branch into `azimuth/changes/finished/`
+#[test]
+fn step_1_moves_the_finished_change_folders_before_the_proposal() {
+    // The wording is for the agent to read and is not asserted. The test asserts the folder, the
+    // branch whose folders move, the move itself, and that it comes before the proposal is
+    // written and before the stop, inside step 1 and not as a step of its own.
+    let repo = Repo::sample();
+    install(&repo, "claude");
+    let text = digest_line_is_correct(&repo, SKILL_FILE);
+    let headings: Vec<&str> = text.lines().filter(|line| line.starts_with("## ")).collect();
+    assert_eq!(headings.len(), 4, "the skill does not have four steps: {headings:?}");
+    let step = step_text(&text, 1);
+    let folder = "azimuth/changes/finished/";
+    let move_at = step.find(folder).unwrap_or_else(|| panic!("step 1 does not name {folder}:\n{step}"));
+    let paragraph = paragraph_at(&step, move_at).to_lowercase();
+    assert!(paragraph.contains("move"), "step 1 names {folder} and does not say to move folders there:\n{step}");
+    assert!(paragraph.contains("target branch"), "step 1 does not say that the folders on the target branch move:\n{step}");
+    let write_at = step
+        .find("azimuth/changes/<name>/proposal.md")
+        .unwrap_or_else(|| panic!("step 1 no longer says where the proposal is written:\n{step}"));
+    let says_before = paragraph.contains("before") && paragraph.contains("proposal") && !paragraph.contains("after");
+    assert!(move_at < write_at || says_before, "step 1 does not move the folders before the proposal is written:\n{step}");
+    let stop_at = step.find("Stop.").unwrap_or_else(|| panic!("step 1 does not stop:\n{step}"));
+    assert!(move_at < stop_at, "step 1 moves the folders after its stop:\n{step}");
 }

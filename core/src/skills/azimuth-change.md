@@ -11,6 +11,9 @@ its words.
 
 ## 1. Proposal
 
+Before you write the proposal, move every change folder that already exists on the target branch
+into `azimuth/changes/finished/`.
+
 Write `azimuth/changes/<name>/proposal.md`, one page with five parts: Outcome, Sources,
 Boundary, Decisions and Approver.
 
