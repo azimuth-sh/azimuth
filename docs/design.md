@@ -189,9 +189,15 @@ The cost. Through increments 1 to 3 no Requirement is reviewed by anything but t
 | Step | What the agent does | Stops for a person? |
 | --- | --- | --- |
 | 1. Proposal | writes the one page with its five parts | yes. The person reads it |
-| 2. Intent | writes the Requirement and its Scenarios, then the Checks, and runs `azimuth lint` | yes. The person reads `azimuth change show` before any code exists |
+| 2. Intent | writes the Requirement and its Scenarios, then the Checks, and runs `azimuth lint` | yes. The person reads `azimuth change diff` before any code exists |
 | 3. Build | writes the marked tests from the Scenarios, then the code, and runs `azimuth run` until `azimuth status` is quiet | no |
-| 4. Hand over | runs `azimuth run --lane commit`, then prints `azimuth change show` and `azimuth status` | yes. The person merges |
+| 4. Hand over | runs `azimuth run --lane commit`, then prints `azimuth change diff` and `azimuth status` | yes. The person merges |
+
+**At the end of the Intent step lint may still report two findings, and no other.** A Check that this change adds has no marked test, because its test is written in the Build. A marker names a Check that this change removes, because the test leaves in the Build. Both findings are correct, and the order of the steps makes them unavoidable: the person reads the intent before any code exists. Every other finding and every reading error is gone before the stop. The skill names the two, and the agent lists what remains when it stops. Lint itself does not change and knows no step.
+
+The cost. The agent judges which finding belongs to the change, so a wrong marker in another file can hide among the expected ones. It does not reach a merge, because the commit lane lints again at the hand over and fails on any finding.
+
+Example: a change adds the Check `other-header-names-say-nothing`. At the stop of the Intent step lint reports that this Check has no marked test, and the agent says so. The person finds the same id under "Checks added" in the preview of the change.
 
 **A skill says the route and where to stop. It never restates a rule that the CLI checks.** A lint finding itself says what is wrong and what to do. A rule written in two places goes stale in one of them.
 
@@ -346,7 +352,7 @@ The CLI's version is not part of the fingerprint. The scheme name is. An upgrade
 
 The cost. Every upgrade is a change that a person merges, and then every machine installs the new file. A person who works in two repositories with different pins needs two versions on one machine. No version switcher is built for that.
 
-Example: drim-dev already pins its .NET SDK in `global.json` and a dotnet tool in `.config/dotnet-tools.json` with roll forward turned off. The project file gets one more line of the same kind. A change that raises it shows in `azimuth change show` as class D with "CLI version changed".
+Example: drim-dev already pins its .NET SDK in `global.json` and a dotnet tool in `.config/dotnet-tools.json` with roll forward turned off. The project file gets one more line of the same kind. A change that raises it shows in `azimuth change diff` as class D with "CLI version changed".
 
 **Two costs.** Early work is proven by a weaker core: when Challenges arrive they are owed for every earlier Check, and some of those Checks may turn out weak. And record formats change between increments, which is cheap on the core rung because the local store is shared with nobody and can be emptied.
 
@@ -554,7 +560,7 @@ A Check is declared in `verification.md` of its module, under the Scenario it is
 
 |  | When | How | Needs |
 | --- | --- | --- | --- |
-| Markers in source | `azimuth lint`, status, `azimuth change show` | the core scans the suite's files for the marker's text form | the CLI only |
+| Markers in source | `azimuth lint`, status, `azimuth change diff` | the core scans the suite's files for the marker's text form | the CLI only |
 | Tests in the built suite | every launch | the adapter asks the runner | the adapter and a build |
 
 Lint must not need a build. A runner such as xUnit finds tests and their traits in the compiled assembly, and a build is not something to run on every edit.
@@ -594,6 +600,12 @@ Running a subset needs nothing new. The runner already filters by its own tag, a
 The form and the key can disagree, and that does not pass silently. The launch finds markers in source that match no listed test, and those Checks get no result. The cost is that lint cannot see a wrong pair, because it does not know what the runner will list.
 
 Example: a team whose tests already carry `[Trait("Check", "smoke")]` writes `marker = '[Trait("Proof", "<id>")]'` and `marker_key = "Proof"` on the suite.
+
+**In Playwright the marker is a tag, `@<marker_key>:<id>`.** It stands on a test or on a `describe` group, and a test may carry several. A tag is one string on one line, so the scan of the core finds it without knowing the language. The runner filters by a tag and names it in its listing, so the adapter asks for nothing else. The other candidate was an annotation. It is an object that may span several lines, and the runner does not filter by it.
+
+The cost. A tag starts with `@`, so the form is not the key and the value that xUnit has, and a person who knows one form has to learn the other.
+
+Example: a page test carries `tag: '@Check:overview-lists-the-labs'`. Lint finds that text in the file, and the adapter asks the runner for the tests whose tag starts with `@Check:`.
 
 **The word "test" covers anything an adapter can list, run and report on.** A network probe and a scan are tests.
 
@@ -719,7 +731,7 @@ The cost. A reason is one line, however long.
 
 In `change-1`, `rigor_lowered` is a list with one entry for each removed declaration. An entry holds its `kind`, which is `reuse`, `verification` or `realization`, and the `check` or the `requirement` that lost it. A Requirement or a Check that the change removes whole is on its removed list and is not counted here.
 
-Example: a Requirement in drim-dev declares `Verification: reviewed`. An agent rewrites one Scenario and deletes that line in the same change. `azimuth change show` prints class D, one Scenario changed, and a line that says the Requirement lost its Verification Review.
+Example: a Requirement in drim-dev declares `Verification: reviewed`. An agent rewrites one Scenario and deletes that line in the same change. `azimuth change diff` prints class D, one Scenario changed, and a line that says the Requirement lost its Verification Review.
 
 Example: drim-dev's API image is built from the moving tag `mcr.microsoft.com/dotnet/aspnet:10.0`. Either the launch resolves the tag to a digest and adds it to the fingerprint, or the Check says `Reuse: never` with its reason:
 
@@ -800,6 +812,12 @@ A fingerprint answers one question for one Check: is everything that could chang
 | Method | the scheme names and the object format of the repository | plus providers, profile and packages |
 
 "An input changed" names the part and, for files, the files that differ. The core rebuilds the list of the kept result from git and compares it with the current list. When the files part splits, the scheme name changes and every Check is owed once.
+
+**The wide views count the files, and `azimuth check show` names them.** In the text of `azimuth status` and `azimuth requirement show` an owed Check says how many files differ. `azimuth check show` prints the list, because it is the command that answers why a Check is in its state. The structured form keeps `files_changed` for every Check in all three, since an agent does not read it as lines.
+
+The cost. A person who wants the names runs one more command.
+
+Example: a change edits 33 files while the fingerprint is coarse, so all 11 Checks of the project are owed with the same 33 files. `azimuth status` prints 11 lines that end with "33 files changed". Naming the files under each Check would print 363 lines that say one thing.
 
 **The adapter's version is recorded with each result and is not part of the fingerprint.** The core learns it only from a report, so only after a launch, and a fingerprint must be computable with nothing started. An upgrade is seen through the pin, which is a tracked file and so an input. The limit is the one below: an adapter installed outside the tree can change with no fingerprint moving, and CI restores the pinned version and runs everything. When a provider narrows the list of files, it keeps the pin an input of every Check of the suite.
 
@@ -1068,17 +1086,23 @@ A proof is a command, and never a setting. Nothing in the tree and nothing on th
 
 **The core starts a proof or an adapter directly, with no shell.** The command line from the project file is split on spaces. An adapter starts in its suite's folder, and a proof starts at the root of the repository. The environment is passed on unchanged. A proof that runs longer than 10 seconds counts as hung, and the number is fixed in the first increment.
 
-An adapter starts in its suite's folder so that each stack finds its own pin. A dotnet tool is found by walking up to the tool manifest, and an npm package by walking up to the nearest `package.json`. From the root of the repository an npm adapter installed in an application's folder is not found, and `npx` then turns to the registry for that name. A proof belongs to no suite, so the root is right for it.
+An adapter starts in its suite's folder so that each stack finds its own pin. A dotnet tool is found by walking up to the tool manifest, and an npm package by walking up to the nearest `package.json`. From the root of the repository an npm adapter installed in an application's folder is not found, and plain `npx` would then turn to the registry for that name. A proof belongs to no suite, so the root is right for it.
 
 Example: drim-dev holds two web applications with their own `package.json`, in `frontend/` and in `poc/capability-learning/frontend/`. Two suites name the same command line, and each starts the adapter that its own application pins.
 
-**For `discover` the adapter starts at the root of the repository.** That verb has no suite, because `azimuth init` uses it before any suite exists. An adapter that is installed only inside an application's folder is then not found, and init treats its stack as one whose adapter is not installed: it prints the install line, and a person writes those suites into the project file. Whether init looks into folders whose `package.json` names an adapter is decided in the second increment.
+**For `discover` the adapter starts at the root of the repository.** That verb has no suite, because `azimuth init` uses it before any suite exists. An adapter that is installed only inside an application's folder is not found from there.
+
+**Init also asks an adapter in each folder whose package manifest lists it.** For npm that is a `package.json` with the adapter's package among its dependencies. Init starts the adapter in that folder and names that folder in the request, and the adapter reports the test projects under it. For Playwright a test project is a folder that holds a Playwright config. Init reads only manifests that git does not ignore, so `node_modules` stays out. This is no guess from the names of files: init reads one known package name in one known kind of file, and the adapter says where its tests are.
+
+A manifest that lists the adapter while the adapter cannot be started is a stack whose adapter is not installed. Init prints the install line, and a person writes those suites into the project file. A Playwright stack is recognized by a `package.json` that lists `@playwright/test`.
+
+The cost. Init reads every package manifest of the repository, which is one small read each. And an application whose packages are not installed yet shows as a stack without its adapter, although its manifest names it.
 
 **A suite's folder holds its tests and the runner's own configuration.** A .NET test project already has its project file in the folder. A Playwright config goes into the folder of its tests. The adapter starts there, and the runner finds its configuration by itself. A change to that configuration is then a change inside the suite's folder, so it is at least class C. The contract of an adapter needs nothing new for a package that holds two suites.
 
 The command line of an adapter in the project file may carry arguments of its own, for a project that cannot move its configuration. The core adds none and passes the line on as written. The cost: a configuration outside the suite's folder is outside the judge, and nothing reports that.
 
-Example: drim-dev's frontend gets two suites. `frontend/e2e` holds the journeys with a config that starts the whole stack. `frontend/web` holds the page tests with a config that starts the frontend and a stand-in API. Both name the command `npx azimuth-playwright`, and both find the adapter in `frontend/node_modules`.
+Example: drim-dev's frontend gets two suites. `frontend/e2e` holds the journeys with a config that starts the whole stack. `frontend/web` holds the page tests with a config that starts the frontend and a stand-in API. Both name the command line `npx --no @azimuth-sh/playwright`, and both find the adapter in `frontend/node_modules`.
 
 The cost. An argument that contains a space cannot be written. A result can depend on an environment variable that the fingerprint does not see. And on a slow machine a proof that needs more than 10 seconds reports "cannot run here" although the facility is there.
 
@@ -1221,13 +1245,21 @@ Unmeasured: the length of the grace, whether drim-dev's stack removes its databa
 
 Example: for a journey in drim-dev the adapter starts the Playwright runner, which starts a browser and the application host, which starts the API, the frontend and a database container. If only the adapter were killed, the stack would keep its port, and every later launch would stop because the port is taken.
 
-**The time limit of a launch is one optional number per suite in the project file.** The key is `time_limit_minutes`, a whole number, and the default is 30. The clock is wall time from the start of the adapter to its exit, so it includes the build. A proof keeps its own 10 seconds. The adapter is not told the number, and the runner's own limits stay the runner's business.
+**The time limit of a launch is one optional number per suite in the project file.** The key is `time_limit_minutes`, a whole number, and the default is 30. A value below 1, or one that is not a whole number, is a reading error, because a limit of zero stops every launch at once and can only be a mistake. The clock is wall time from the start of the adapter to its exit, so it includes the build. A proof keeps its own 10 seconds. The adapter is not told the number, and the runner's own limits stay the runner's business.
 
 It is not the time limit of a lane. That one is a budget for planning and decides which owed Checks fit into a run. This one is a backstop against a launch that hangs, so it should be generous.
 
 The cost. One number covers a launch of one test and a launch of the whole suite, so it never says that a test became slow. Somebody guesses it: too low gives a false `timed out` on a slow CI runner, and too high wastes that long on every hang. Raising it is an edit of the project file, so class D.
 
 Example: drim-dev's journey suite sets `time_limit_minutes = 20`. The stack may take up to 180 seconds to start by its config, and then the journeys run. A launch still alive after 20 minutes is stopped and reported as `timed out`.
+
+**The core holds the runner's output back and prints it only for a launch with trouble.** Trouble is a launch that crashed, timed out or failed its build, or one with a failed test. Then the output of that launch is printed whole on standard error, after the launch ended. A launch where every test passed prints none of it. The core prints one line when a launch starts and one when it ends, so a long launch does not look like a hang.
+
+While a launch runs, the core writes the held output to a file under `.azimuth/`, and removes the file after a launch with no trouble. A long suite writes a lot, and memory is the wrong place for it. If the core itself is killed, the file is what remains. With `--json` the rule is the same: standard output holds the one document, and the held output goes to standard error.
+
+The cost. During a long launch nothing moves on the screen after the start line. A person who wants to watch the runner starts it by hand.
+
+Example: the API suite of drim-dev prints several hundred lines of build and test output. On a run where all 17 Checks pass, a person sees the two lines of the launch and the result. When one test fails, the whole output of that launch follows, with the assertion message in it.
 
 Example: an agent leaves a syntax error in a test file of drim-dev's API test project. The project compiles every `.cs` file in its folder, so the build fails and every Check of the suite stays owed. If `azimuth run` ended with 0, a loop of "edit, run until green" would stop there with nothing proven.
 
@@ -1603,7 +1635,7 @@ A lane is wider than Checks. Later it also runs Challenges and the start-up guar
 | `azimuth status` | where does the project tree stand? It lists every Requirement that has less than full evidence, with the reason | everything is proven, and then it prints one line |
 | `azimuth requirement show <id>` | how does this Requirement stand? Its Scenarios, the Checks under each with their state, its reviews, its approval | never |
 | `azimuth check show <id>` | why is this Check in this state? | never |
-| `azimuth change show` | what did this change do to the model? Added, changed and removed Requirements, Scenarios and Checks, the class of the change, and "rigor lowered" where it applies. By default it compares the branch with its target | the change touches no model file and no test |
+| `azimuth change diff` | what did this change do to the model? Added, changed and removed Requirements, Scenarios and Checks, the class of the change, and "rigor lowered" where it applies. By default it compares the branch with its target | the change touches no model file and no test, and then it prints one line |
 
 They run nothing and need no network. They read the tree and the local store. Each has a form for agents with the same content as structured output, so an agent never parses text meant for a person.
 
@@ -1671,7 +1703,7 @@ Example: `azimuth status --json` for one Requirement whose Check is kept.
 | `status-1` | `azimuth status` | `requirements`, each with `id`, `module`, `state`, `verification`, `realization`, `approval` and `scenarios`. Each Scenario has `id` and `checks`. Each Check has `id`, `state`, `reason` and `detail`. Then `skipped_records` and `process` |
 | `requirement-1` | `azimuth requirement show` | `format`, and beside it the fields of one Requirement entry of `status-1` |
 | `check-1` | `azimuth check show` | `id`, `requirement`, `scenario`, `suite`, `claim`, `reuse`, `state`, `reason`, `detail`, `parts_changed`, `files_changed`, `failing_tests`, and `result` with `where`, `commit`, `edited_paths` and `at` |
-| `change-1` | `azimuth change show` | `target`, `base`, `class`, then `requirements`, `scenarios` and `checks`, each with `added`, `changed` and `removed`. Then `markers_removed`, `not_compared` and `rigor_lowered` |
+| `change-1` | `azimuth change diff` | `target`, `base`, `class`, then `requirements`, `scenarios` and `checks`, each with `added`, `changed` and `removed`. Then `markers_removed`, `not_compared` and `rigor_lowered` |
 | `lint-1` | `azimuth lint` | `findings`, each with `kind`, `file`, `line` and `message` |
 | `run-1` | `azimuth run` and `azimuth check run` | `lane`, `outcome`, `suites` with `name`, `launch` and `duration_ms`, `checks` with `id`, `state`, `reason`, `detail`, `failing_tests` and `duration_ms`, and `findings` in the commit lane |
 | `error-1` | any command, on a reading error | `errors`, each with `kind`, `file`, `line` and `message` |
@@ -1742,11 +1774,11 @@ A wrong argument is anything the CLI does not know: a command, a flag, a lane, o
 
 The cost. A script that only looks at the status cannot tell a failed Check from an owed one in the commit lane. It has to read the document.
 
-**`azimuth change show` is what a person reads before a merge on the core rung**, where the merge stands for the approval. A removed Check and a loosened `Reuse:` appear there.
+**`azimuth change diff` is what a person reads before a merge on the core rung**, where the merge stands for the approval. A removed Check and a loosened `Reuse:` appear there.
 
-Example: on the branch of the first change in drim-dev, `azimuth change show` prints one Requirement added with its Scenarios, two Checks added, class D because Requirements changed, and nothing removed. After `azimuth run`, `azimuth status` prints one line, because the only Requirement in the model is proven.
+Example: on the branch of the first change in drim-dev, `azimuth change diff` prints one Requirement added with its Scenarios, two Checks added, class D because Requirements changed, and nothing removed. After `azimuth run`, `azimuth status` prints one line, because the only Requirement in the model is proven.
 
-**The base of `azimuth change show` is the target as the remote has it.** The CLI takes the target branch from the first remote that has it, `origin` first, and compares the working tree with the common ancestor. A target that the clone does not have ends with status 2.
+**The base of `azimuth change diff` is the target as the remote has it.** The CLI takes the target branch from the first remote that has it, `origin` first, and compares the working tree with the common ancestor. A target that the clone does not have ends with status 2.
 
 **Each list of `change-1` names the thing whose own text changed.**
 
@@ -2105,9 +2137,19 @@ Example: drim-dev's Playwright config sets `retries` to 2 in CI. A journey test 
 
 The Playwright adapter refuses a config that would reuse a server, and a config that starts none. It reads the resolved config before it runs anything. If `reuseExistingServer` is true, or there is no `webServer` entry, it runs nothing and says why, and the Checks get no result. Playwright has no command line flag for reuse, so the adapter cannot switch it off as it does with retries. With reuse off, Playwright itself stops when the port is already taken.
 
-The cost. Every local launch of a Check that needs the whole stack pays a full start of it, which pushes such Checks to CI. And the rule is only as strong as each adapter.
+**A refusal is a launch with no report.** The adapter writes the reason to standard error and ends with a status other than 0. The launch reads `crashed`, and its Checks are owed with the reason `no result`. The report has no place for a refusal, and a word of its own would change the contract.
+
+**For a runner with no build step, a suite whose tests cannot be listed is a failed build.** The Playwright adapter reports `"build": "failed"` and no tests when the runner cannot list the suite, for example after a syntax error in a test file. The effect is the one of a .NET build that fails: every Check of the suite is owed.
+
+The cost. Every local launch of a Check that needs the whole stack pays a full start of it, which pushes such Checks to CI. And the rule is only as strong as each adapter. The word `crashed` now covers an adapter that broke, an adapter that is missing and a config that was refused, so an agent that reads only `run-1` cannot tell them apart and reads standard error.
 
 Example: drim-dev's config turns reuse on outside CI when one environment variable is set. A developer keeps the stack running for manual work and starts `azimuth run` for a journey. The adapter refuses and names the setting. With reuse off, Playwright stops because the port is taken. Either way the developer stops the stack first, or the team gives the test stack a port of its own.
+
+**A test that needs a second stack built builds it in its own set-up.** An adapter builds the suite of its own stack and knows no other. So a test of one runner that starts an application of another stack builds that application before it starts it. The core gets no command that prepares a suite, because it knows no tools, and a prepared build that somebody declared fresh is the setting the rule above forbids. The suite declares a facility for what the build needs.
+
+The cost. Every launch of such a test pays the other build. A machine without the facility cannot run the suite, so a project may give these tests a suite of their own.
+
+Example: two tests of drim-dev's API test project start the built frontend and watch what reaches the API. With the build in their set-up they cannot pass against the frontend of yesterday. Before, they ran only behind an environment switch and used whatever build lay in the folder.
 
 The request goes through standard input and not through arguments, because a lane may ask for hundreds of Check ids, and command lines have length limits and quoting rules that differ between systems.
 
@@ -2152,7 +2194,7 @@ A missing adapter is a named state. `azimuth run` says which command is missing 
 
 The cost. An agent that reads only `run-1` cannot tell a missing adapter from a broken one. It reads standard error, or it runs the restore command of the stack.
 
-Open for increment 2: a first question that the core sends to an adapter before a launch, so that no answer means `not started`.
+Not built: a first question that the core sends to an adapter before a launch, so that no answer means `not started`. It was open for the second increment and was left out there, because it needs a new verb in the contract and one more start of the adapter for each launch. It can come with the third increment, which changes the report and gives the contract a new number.
 
 Example: a developer clones drim-dev on a new machine and runs `azimuth run` before `dotnet tool restore`. The .NET suite shows `crashed`, its Checks are owed with `no result`, and dotnet's own message says which command to run.
 
@@ -2168,7 +2210,9 @@ Init knows nothing else about a stack.
 
 **`azimuth init` lists suites only for a stack whose adapter is installed.** For another stack it prints the install line and says that this stack's suites are not in the project file. They are added by hand, which is an edit of the project file and so class D. Init never guesses a suite from the names of files.
 
-**`azimuth init` takes the target from the remote's default branch and the repository's name from its root folder.** With no remote it takes the current branch, and on a detached head it ends with status 2. Both are a first proposal in a file that a person reads before the first commit.
+**`azimuth init` takes the target from the remote's default branch and the repository's name from the remote's address.** The name is the last part of the address, without `.git`. With no remote it takes the current branch, and on a detached head it ends with status 2. With no remote the name is the one of the root folder. Both are a first proposal in a file that a person reads before the first commit.
+
+The folder is the wrong source where a remote exists. A git worktree and a clone into a folder of another name are the same repository, and the name on the host is the one thing all of them agree on. On the server rung the name tells the repositories of a project apart, so a wrong first proposal that is committed is a wrong identity.
 
 The cost. Init lists every test project the adapter finds, also ones nobody will mark. Example: a repository has nine test projects, and five of them sit in a folder of prototypes. All nine become suites. They do nothing without a marked test, but every file in their folders is class C.
 
@@ -2179,6 +2223,12 @@ The cost. Starting takes two installs for a stack, and Azimuth publishes to seve
 Example: drim-dev already pins one tool in `.config/dotnet-tools.json`. The .NET adapter is a second entry there, and CI runs `dotnet tool restore` before `azimuth run`.
 
 **The .NET adapter is the package `Azimuth.Xunit`, and its command is `azimuth-xunit`.** The tool manifest lists the package, and the project file says `dotnet azimuth-xunit`. The id follows the family of Azimuth's packages on nuget.org, so that a reserved prefix `Azimuth.` can cover it. Its code is in `adapters/xunit/` of the Azimuth repository. Azimuth's own tests pack it into a local folder feed and write the sample's tool manifest themselves, so they need no registry.
+
+**The Playwright adapter is the npm package `@azimuth-sh/playwright`, and the project file says `npx --no @azimuth-sh/playwright`.** The package is a development dependency of the application whose tests it runs, and it has one command. The scope belongs to the project, so nobody else can publish a package under it. The command line names the package and not the bare command, because a bare name is looked up in the registry, where anybody can own it. `--no` makes `npx` run only what is installed, so a missing adapter ends with a message of `npx` and with no download. Its code is in `adapters/playwright/` of the Azimuth repository. Azimuth's own tests pack it into a file and install it from that file, so they need no registry.
+
+For Playwright the install line is `npm install --save-dev --save-exact @azimuth-sh/playwright@<version>`. `--save-exact` writes the one version into `package.json`, as the tool manifest of .NET holds one version.
+
+The cost. A scoped name is longer to type, and the line in the project file is longer than the one for .NET. A new package under the scope is published by a person the first time, because the registry binds trusted publishing to a package that exists.
 
 **A package says where it comes from.** A published version cannot be changed, so each adapter package names its license, the project's site and the source repository, and carries a short readme. For `Azimuth.Xunit` that is the license `Apache-2.0`, the site `https://azimuth.sh`, the repository `https://github.com/azimuth-sh/azimuth` and the author `Azimuth`. The readme says what the adapter is, how a repository installs it and how a test is marked.
 
@@ -3325,7 +3375,7 @@ The suite's folder is a hand-written list. It is allowed here because it can onl
 
 The cost. A harmless file in a test folder, such as a note or a data file, makes a change class C.
 
-Example: the API test project of drim-dev holds a folder `Harnesses/` whose files have no test method and so no marker. One of them is the code every component test calls the API through. An agent fixes a bug in a feature and, to make a test pass, changes that harness so that it retries a failed request. No marked test changed. The change is class C, and `azimuth change show` lists the harness file under "the judge changed".
+Example: the API test project of drim-dev holds a folder `Harnesses/` whose files have no test method and so no marker. One of them is the code every component test calls the API through. An agent fixes a bug in a feature and, to make a test pass, changes that harness so that it retries a failed request. No marked test changed. The change is class C, and `azimuth change diff` lists the harness file under "the judge changed".
 
 **A change to a rigor declaration is class D.** The gate computes from the change's own tree, because new Requirements exist only there. So a change could delete a declared review and need less proof for itself. Counting it as a change of intent means that no grant ever covers it and a person sees it on the change page.
 
@@ -3349,11 +3399,15 @@ Example: a grant with ceiling C covers the area `api`. An agent's change makes a
 
 The preview builds nothing, so it knows marker lines and never test names. Counting the tests under a class needs knowledge of the language, which the core does not have.
 
-**The preview says what it cannot see.** For every changed file that holds a marker, `azimuth change show` adds the line "tests in this file were not compared". The scan cannot tell a marker on a class from a marker on a method, so it says this for both.
+**The preview says what it cannot see.** For every changed file that holds a marker, `azimuth change diff` adds the line "tests in this file were not compared". The scan cannot tell a marker on a class from a marker on a method, so it says this for both.
+
+**A file that the target does not have is not named there.** The line exists because the preview cannot see a test that was removed inside a file, and a new file cannot have lost one. It is absent from the plain form and from `not_compared` of the structured form. A new file with markers shows through its effect, the Checks that got a marked test.
+
+**The command is `change diff` because it compares, and it takes no id.** The word `show` belongs to the commands that take an id and print one thing. In the plain form each id stands on a line of its own under its kind, because a person reads this list at the stop before a merge. The earlier name `change show` is not kept as a second name.
 
 The cost. On the core rung an agent can delete one test from a marked class, and the preview reports class C. The person's reading of the diff at merge is the only guard there.
 
-Example: a test class in drim-dev has 14 tests and its markers sit on the class. An agent removes one of the 14 to get a green run. No marker line changes. On the core rung `azimuth change show` prints class C and names that file as not compared. On the server rung the result at the head lists 13 test names where the target's result lists 14, and the change is class D.
+Example: a test class in drim-dev has 14 tests and its markers sit on the class. An agent removes one of the 14 to get a green run. No marker line changes. On the core rung `azimuth change diff` prints class C and names that file as not compared. On the server rung the result at the head lists 13 test names where the target's result lists 14, and the change is class D.
 
 **The class is status.** It exists only when there is content to compare, and it is computed again after every push. The CLI can compute it from the working tree as a preview. The gate uses only the class the server computes for the head.
 
@@ -3365,7 +3419,7 @@ Example: a test class in drim-dev has 14 tests and its markers sit on the class.
 | Which commit? | the common ancestor of the current commit and the target branch, never the tip of the target |
 | Which copy of the branch? | the remote-tracking one as last fetched, or the local one when no remote exists. The CLI never fetches |
 | On the target branch itself? | the change is the working tree against the last commit |
-| Another base? | `azimuth change show --target <ref>`, for a change that builds on an unmerged one |
+| Another base? | `azimuth change diff --target <ref>`, for a change that builds on an unmerged one |
 
 The tip of the target holds work that landed after the branch started. Compared with the tip, that work looks like something this change removed. If it added a Check, the preview would say "1 Check removed" and class D for a change that touched nothing of the kind.
 
