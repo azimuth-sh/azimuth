@@ -155,7 +155,7 @@ The cost. Until an input provider is added, almost any edit makes every Check ow
 | 1 | the model, markers, one test adapter, the coarse fingerprint (the claim plus every file of the repository), owed and kept results, facilities, the local lane and a CI job that fails on a failed or owed Check, the class of a change, `Reuse:`, `azimuth lint`, `azimuth run`, the four reading commands, the local store | it is enough for one Requirement, and it already runs the real mechanism in its simplest form. A result cannot exist without a fingerprint, so only the precision waits. Almost any edit makes every Check owed, which is coarse and correct. A second run on an unchanged tree is kept, and going back to earlier content brings the pass back |
 | 2 | a second test adapter, for Playwright; time limits for a launch | the next real work needs a browser test. A second runner tests the adapter contract before anything else changes it |
 | 3 | the step library with controls and the outcome "inconclusive" | it changes the adapter's report, so it comes once and for both adapters |
-| 4 | work records, authorship, `azimuth work`, local reviews and their issues | a Verification Review judges whether controls are adequate, so it needs steps. The first change that edits working code gives a review something to find |
+| 4 | work records, authorship, `azimuth work`, local reviews with their issues and remarks | a Verification Review judges whether controls are adequate, so it needs steps. The first change that edits working code gives a review something to find |
 | 5 | the first input provider, the build closure, together with isolation | a second module exists, so change tracking has something to tell apart. The increment changes one thing, the list of files, so a fault in it is easy to see. Closure cannot see a file read at run time, and isolation is the mechanical test that the list is complete |
 | 6 | the profile with its structure units and enforcers; the reference graph; ranking | it narrows the list inside one build. It is the largest, and it pays when the model is large |
 | 7 | Challenges | they are the most expensive part |
@@ -3059,7 +3059,7 @@ The model says what should be true. Records say what somebody observed. A review
 
 | Kind | What it is | Examples | Does it change |
 | --- | --- | --- | --- |
-| Record | a statement that somebody observed or decided something about named content | Check result, review, answer to an issue, approval, acceptance, overrule, grant, work record, commit record, build record, release record | never. Its id is its own digest |
+| Record | a statement that somebody observed or decided something about named content | Check result, review, answer to an issue, approval, acceptance, overrule, deferral, grant, work record, commit record, build record, release record | never. Its id is its own digest |
 | Content | a copy of model parts, stored by digest | the Scenarios, terms, roots and Check declarations of a branch | never. The repository stays the source |
 | Status | something computed from records and content | Requirement status, stability, "ready to merge", "contradicted" | recomputed, never used as input |
 
@@ -3214,7 +3214,7 @@ Later: a hash chain over records, only for the hosted server, when customers wan
 
 ### A person's decisions
 
-**A person's decisions exist only as pages of the server.** Agents drive the CLI, so anything that must provably come from a person has no CLI command. This covers approving Scenarios, accepting, overruling an issue, and giving or revoking a grant.
+**A person's decisions exist only as pages of the server.** Agents drive the CLI, so anything that must provably come from a person has no CLI command. This covers approving Scenarios, accepting, overruling or deferring an issue, and giving or revoking a grant.
 
 | Decision | When | Can a grant remove it |
 | --- | --- | --- |
@@ -3358,7 +3358,7 @@ Example: a release changes only the component `web-api` of drim-dev. The gate wa
 
 Example: a fixing agent on a runner repairs `CliCredentialOperations.cs` after a failed Check. Before the merge, somebody pushes a hand edit to the same branch. The grant accepts the rest of the change and leaves this file for a person, marked "author unknown".
 
-**A grant never removes** the approval of Scenarios, a review where the Requirement requires a person, or the overruling of an issue.
+**A grant never removes** the approval of Scenarios, a review where the Requirement requires a person, or the overruling or deferring of an issue.
 
 **A person revokes a grant at any time. The server suspends it after one failure attributed to work done under it.**
 
@@ -3716,6 +3716,32 @@ Example: in the drim-dev `lab-engine` change, increment 2 adds two Scenarios to 
 
 Example, with a supposed issue: a reviewer of `stored-cli-secrets-disclose-no-credentials` in drim-dev raises one issue, that `RefreshAsync` writes the presented refresh token to a log. The author starts a second reviewer, which finds nothing. The obligation stays open, because issue 1 of the first record has no outcome. After the fix in `CliCredentialOperations.cs`, a reviewer marks it fixed on the new content, and the obligation closes.
 
+**A reviewer raises two kinds of things: an issue and a remark.** An issue says that the code breaks a Scenario or a decision, with the input that shows it, or that the code does something nothing asks for. Anything else is a remark: structure, naming, a doubt, a possible improvement. The reviewer sorts them when raising them, by naming what each is measured against. An issue blocks until it has an outcome. A remark blocks nothing, needs no act of anybody and never keeps an owed review open. A remark is a part of the review record like an issue, numbered with the issues and marked as a remark.
+
+**A behavior defect that no Scenario covers becomes a Scenario.** The Scenario is added, which is a change of intent that a person sees, and its Check does not pass yet. Azimuth already shows that as owed, and it closes by itself when the Check passes. So the list of remarks holds only what has no Scenario form.
+
+**An issue can be deferred: true, and not now.** That is a fourth outcome, beside fixed, withdrawn and overruled, and its record is a deferral record. An overrule says that the reviewer was wrong. A deferral says that the reviewer was right and that the Requirement is merged with a known break. So only a person decides it, and the view of the change shows it before the merge.
+
+**Every issue and every remark has an anchor, and the anchor decides when it comes back.**
+
+| It is about | Anchor | It is shown again when a change |
+| --- | --- | --- |
+| one behavior | a Scenario | edits that Scenario, its Checks or their tests |
+| how a Requirement is built | a Requirement | touches its text, its tests, or the code under its roots |
+| structure across Requirements | a module | touches anything in the module |
+| a word that is used loosely | a term | edits the term or a Scenario that uses it |
+| code that nothing asks for | the file or the area | touches that file |
+
+It takes the narrowest anchor it is about, and a reviewer cannot raise one without an anchor. At the first stop of a change, before any code exists, the CLI shows the deferred issues and the open remarks of the anchors that the change touches. They are paid in this change or confirmed again, and the review of the change gives each of them an outcome. A change that removes an anchor has to deal with what is anchored there, and lint reports it. Everywhere else remarks are shown as a count, and `azimuth requirement show` lists the deferred issues of its Requirement.
+
+**No agent sorts through the list by the calendar.** While the content of an anchor has the same digest, what is anchored there is as true as on the day it was raised, and where the content changed, the work brings it back. Later: a filter that merges duplicates when a review is recorded. Later: an agent that groups the remarks of one module and turns a pattern into one proposal, a missing Scenario, a decision or an enforcer. Such an agent may order, group and propose, and it never gives an outcome.
+
+The cost. A real defect can sit among the remarks, when the reviewer could not name the Scenario that it breaks. The anchor only makes sure that it is read again at the right place. A remark on code that nobody touches stays forever. And a person now has one more thing to decide, though only for an issue that was kept after the author's answer.
+
+Unmeasured: whether a limit of remarks for one Requirement, or their age in the status, is needed against a list that only grows.
+
+Example: a reviewer of `lab-overview-lists-the-labs` raises one issue and two remarks. The issue: the page shows a lab that the labs flag hides, with the request that shows it. The remarks: a helper duplicates one of the catalog, and a name misleads. The author fixes the issue. The remarks stay on the Requirement. Three weeks later a change edits that Requirement's Scenario, and its first stop lists both remarks.
+
 **An issue is a part of the review record that raised it.** A review with several issues is one statement by one reviewer about one content, so it is one record, and its issues are numbered. An issue is named by the digest of that record plus its number.
 
 **An issue has no stored state.** Its later history is separate records that point at it, and "open" means that no record gives it an outcome.
@@ -3727,7 +3753,7 @@ Example, with a supposed issue: a reviewer of `stored-cli-secrets-disclose-no-cr
 | It is withdrawn | a withdrawal record | the reviewer who raised it |
 | It is overruled | an overrule record | a person |
 
-**An overrule is recorded only from the server rung,** because it is a decision of a person. On the core rung a kept issue stays open in the status, and the person's merge stands for the ruling.
+**An overrule and a deferral are recorded only from the server rung,** because each is a decision of a person. On the core rung a kept issue stays open in the status, and the person's merge stands for the ruling.
 
 **Issues are never files in the tree and never entries in the team's issue tracker.** They follow the path of every record: the outbox, the store, then the server. On the core rung they do not leave the clone, so another machine and CI never see them.
 
@@ -3759,7 +3785,7 @@ Example: for `stored-cli-secrets-disclose-no-credentials` an edit to `CliCredent
 
 **What differs between kinds is data, never structure.** The kind decides which parts are named and which questions are asked. A project that declares a new kind needs no new record schema and no code in the core.
 
-**Issues can be raised in a review of any kind,** and they are answered, fixed, withdrawn or overruled in the same way.
+**Issues can be raised in a review of any kind,** and they are answered, fixed, withdrawn, overruled or deferred in the same way.
 
 **A Challenge finding is not an issue, and it gets one of three outcomes in the same way.** A finding comes from a run, not from a reviewer. It is named by the digest of the Challenge result record plus its number.
 
