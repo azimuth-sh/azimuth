@@ -21,6 +21,21 @@ pub struct LiveRun {
     stderr_reader: Option<std::thread::JoinHandle<()>>,
 }
 impl LiveRun {
+    pub fn interrupt_cli(&mut self, signal: &str) {
+        assert!(self.child.try_wait().unwrap().is_none());
+        let table = processes().unwrap_or_else(|error| panic!("{error}"));
+        let cli = &table[&self.child.id()];
+        assert!(cli.running() && cli.group == self.cli_group);
+        assert!(
+            std::path::Path::new(cli.command.split_whitespace().next().unwrap())
+                .file_name()
+                .is_some_and(|name| name == "azimuth")
+        );
+        assert!(
+            cli.signal_if_same(signal),
+            "the verified CLI could not be signalled"
+        );
+    }
     pub fn start(repo: &Repo, args: &[&str], name: &str) -> Self {
         Self::start_inner(repo, args, name, false)
     }

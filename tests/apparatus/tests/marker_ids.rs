@@ -178,3 +178,79 @@ fn the_unknown_check_finding_names_the_complete_id_without_the_full_stop() {
         .expect("the unknown-Check diagnostic must delimit the identifier it names");
     assert_eq!(named, "Sixth-loan-is-refused", "{finding:#}");
 }
+
+// behavior-2: A marker form that starts with `<id>` is a reading error
+#[test]
+fn a_marker_without_a_prefix_is_a_located_reading_error_for_every_reader() {
+    let commands: &[&[&str]] = &[
+        &["run", "--json"],
+        &["check", "run", SIXTH_LOAN, "--json"],
+        &["status", "--json"],
+        &["requirement", "show", LATE_FINE, "--json"],
+        &["check", "show", LATE_RETURN, "--json"],
+        &["change", "diff", "--json"],
+        &["lint", "--json"],
+    ];
+    std::thread::scope(|scope| {
+        for form in ["<id>", "<id>@"] {
+            for args in commands {
+                scope.spawn(move || {
+                    let repo = Repo::sample();
+                    repo.replace(
+                        PROJECT_FILE,
+                        "marker = \"# Check: <id>\"",
+                        &format!("marker = {}", toml::Value::String(form.into())),
+                    );
+                    let line = repo.line_of(PROJECT_FILE, "marker =");
+                    let output = repo.azimuth(args);
+                    output.expect_status(2);
+                    let document = output.json();
+                    assert_eq!(document["format"], "error-1");
+                    let errors = document["errors"].as_array().unwrap();
+                    assert!(
+                        errors.iter().any(|error| error["file"] == PROJECT_FILE
+                            && error["line"].as_u64() == Some(line)),
+                        "{args:?}: {document:#}"
+                    );
+                    assert!(repo.adapter_starts().is_empty());
+                    assert!(repo.records().is_empty());
+                });
+            }
+        }
+    });
+}
+
+// behavior-2: A letter or a digit that is not ASCII ends the id
+#[test]
+fn an_accented_letter_and_a_full_width_digit_end_ascii_ids() {
+    for suffix in ["étagère", "９tail"] {
+        let repo = Repo::sample();
+        rewrite_markers(&repo, "@Check:<id>", |id| format!("'@Check:{id}{suffix}'"));
+        assert!(repo.lint_findings(0).is_empty());
+        for id in ALL_CHECKS {
+            assert_eq!(repo.check_show(id)["suite"], "desk-checks");
+        }
+    }
+}
+
+// behavior-2: With a text after `<id>` in the form, the id ends where that text starts
+#[test]
+fn two_markers_with_both_delimiters_do_not_create_an_id_between_them() {
+    let repo = Repo::sample();
+    rewrite_markers(&repo, "@<id>@", |id| format!("@{id}@"));
+    repo.replace(
+        LENDING_VERIFICATION,
+        &format!("- Check: {SIXTH_LOAN}"),
+        "- Check: a",
+    );
+    repo.replace(
+        LENDING_VERIFICATION,
+        &format!("- Check: {RETURNED_BOOK}"),
+        "- Check: b",
+    );
+    repo.write(LOAN_LIMIT_TESTS, "@a@ and @b@\n");
+    assert!(repo.lint_findings(0).is_empty());
+    for id in ["a", "b"] {
+        assert_eq!(repo.check_show(id)["suite"], "desk-checks");
+    }
+}

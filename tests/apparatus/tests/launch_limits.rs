@@ -647,3 +647,78 @@ fn denied_cleanup_inspection_still_stops_the_owned_descriptor_holder_and_fails_l
         "descriptor holders outlived their test despite owned shutdown: {survivors:#?}"
     );
 }
+
+fn assert_cli_interrupt_stops_launch(signal: &str, resistant: bool) {
+    let repo = tree(
+        if resistant {
+            "partial-resists"
+        } else {
+            "partial"
+        },
+        None,
+    );
+    let mut run = LiveRun::start(&repo, &["run", "--json"], "cli-interrupted");
+    run.wait_until(Duration::from_secs(30), |run| {
+        run.events()
+            .iter()
+            .filter(|event| event["event"] == "started")
+            .count()
+            == 3
+            && run
+                .events()
+                .iter()
+                .any(|event| event["event"] == "finished-tests")
+    });
+    assert_tree_is_separate_and_alive(&run, "adapter");
+    run.interrupt_cli(signal);
+    run.wait_until(Duration::from_secs(20), |run| {
+        ["adapter", "runner", "grandchild"].iter().all(|role| {
+            run.events()
+                .iter()
+                .any(|event| event["role"] == *role && event["event"] == "SIGINT")
+        })
+    });
+    let output = run.finish(Duration::from_secs(45));
+    assert_ne!(output.status, 0, "{}", output.text());
+    assert_tree_stopped(&run, "adapter");
+    let first = first_interrupt(&run);
+    for role in ["adapter", "runner", "grandchild"] {
+        assert!(
+            stamp(&run, role, "observed-exit") - first <= 11_500_000_000,
+            "{role} survived the stop's grace"
+        );
+    }
+    if resistant {
+        for role in ["adapter", "runner"] {
+            grace_bounds(&run, role);
+        }
+    }
+    assert!(
+        repo.store_files().is_empty() && repo.outbox_files().is_empty(),
+        "an interrupted launch stored a partial report"
+    );
+}
+
+// behavior-2: On SIGINT or SIGTERM the CLI stops its running launch with SIGINT to the group, the grace and the kill, ends with a failure, and stores nothing of that launch
+#[test]
+fn sigint_to_the_cli_stops_its_separate_launch_before_exiting() {
+    assert_cli_interrupt_stops_launch("-INT", false);
+}
+
+// behavior-2: On SIGINT or SIGTERM the CLI stops its running launch with SIGINT to the group, the grace and the kill, ends with a failure, and stores nothing of that launch
+#[test]
+fn sigterm_to_the_cli_stops_its_separate_launch_before_exiting() {
+    assert_cli_interrupt_stops_launch("-TERM", false);
+}
+
+// behavior-2: On SIGINT or SIGTERM the CLI stops its running launch with SIGINT to the group, the grace and the kill, ends with a failure, and stores nothing of that launch
+#[test]
+fn sigint_to_the_cli_escalates_after_the_grace_for_a_resistant_launch() {
+    assert_cli_interrupt_stops_launch("-INT", true);
+}
+
+// behavior-2: On SIGINT or SIGTERM the CLI stops its running launch with SIGINT to the group, the grace and the kill, ends with a failure, and stores nothing of that launch
+#[test]
+fn sigterm_to_the_cli_escalates_after_the_grace_for_a_resistant_launch() {
+    assert_cli_interrupt_stops_launch("-TERM", true);
+}

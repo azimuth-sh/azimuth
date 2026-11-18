@@ -7,9 +7,11 @@ fn main() {
     std::io::stdin().read_to_string(&mut input).unwrap();
     let request: serde_json::Value = serde_json::from_str(&input).unwrap();
     let cwd = std::env::current_dir().unwrap();
-    assert_eq!(
-        std::env::args().skip(1).collect::<Vec<_>>(),
-        vec!["--no", "@azimuth-sh/playwright"]
+    let args = std::env::args().skip(1).collect::<Vec<_>>();
+    let dotnet = args == ["azimuth-xunit"];
+    assert!(
+        dotnet || args == ["--no", "@azimuth-sh/playwright"],
+        "unexpected host arguments: {args:?}"
     );
     assert_eq!(request["format"], "adapter-request-1");
     assert_eq!(request["verb"], "discover");
@@ -40,7 +42,11 @@ fn main() {
         })
     )
     .unwrap();
-    let Ok(text) = std::fs::read_to_string(cwd.join(".apparatus-projects.json")) else {
+    let Ok(text) = std::fs::read_to_string(cwd.join(if dotnet {
+        ".apparatus-dotnet-projects.json"
+    } else {
+        ".apparatus-projects.json"
+    })) else {
         eprintln!("the fake adapter is not installed in this folder");
         std::process::exit(1);
     };

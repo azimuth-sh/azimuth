@@ -392,3 +392,150 @@ fn the_hosted_adapter_gets_every_written_argument() {
         assert_eq!(strings_of(&calls[0]["args"]), expected);
     }
 }
+
+// behavior-2: Init writes only the reported folders that lie under the folder it asked about, each once, and none that git ignores
+#[test]
+fn init_rejects_outside_duplicate_and_ignored_discovery_paths() {
+    let mut repo = fresh();
+    fake_adapter(&mut repo);
+    manifest(
+        &repo,
+        "apps/a",
+        r#"{"devDependencies":{"@playwright/test":"1.65.1","@azimuth-sh/playwright":"0.2.0-alpha.2"}}"#,
+    );
+    let absolute = repo.path("apps/a/absolute").display().to_string();
+    let reported = vec![
+        "apps/a/tests",
+        "apps/a/tests",
+        "apps/b/sibling",
+        "apps/a/../b/through-parent",
+        "apps/a/generated",
+        "apps/a/deep/cache",
+        "apps/a/deep/real",
+        &absolute,
+    ];
+    for path in &reported {
+        std::fs::create_dir_all(repo.path(path)).unwrap();
+    }
+    repo.write("apps/a/.gitignore", "generated/\n");
+    repo.write("apps/a/deep/.gitignore", "cache/\n");
+    repo.write(
+        "apps/a/.apparatus-projects.json",
+        &json!(reported
+            .iter()
+            .map(|path| json!({"path":path}))
+            .collect::<Vec<_>>())
+        .to_string(),
+    );
+    repo.azimuth(&["init"]).expect_status(0);
+    assert_eq!(paths(&repo), vec!["apps/a/deep/real", "apps/a/tests"]);
+}
+
+// behavior-2: The folder in a `discover` request and each path in its report are relative to the root of the repository, and `.` is the root
+#[test]
+fn discovery_requests_and_root_projects_keep_repository_relative_paths() {
+    let mut repo = fresh();
+    fake_adapter(&mut repo);
+    manifest(
+        &repo,
+        "apps/a",
+        r#"{"devDependencies":{"@azimuth-sh/playwright":"0.2.0-alpha.2"}}"#,
+    );
+    answers(&repo, ".", &["."]);
+    answers(&repo, "apps/a", &["apps/a/tests"]);
+    repo.azimuth(&["init"]).expect_status(0);
+    assert_eq!(paths(&repo), vec![".", "apps/a/tests"]);
+    let mut folders: Vec<_> = starts(&repo)
+        .into_iter()
+        .map(|call| call["request"]["folder"].as_str().unwrap().to_string())
+        .collect();
+    folders.sort();
+    assert_eq!(folders, vec![".", "apps/a"]);
+}
+
+// behavior-2: The CLI's table of known runners has an entry for Playwright: how to recognize it, the marker form, the adapter's command and its install line
+#[test]
+fn init_keeps_suite_names_unique_when_two_stacks_report_tests() {
+    let mut repo = fresh();
+    fake_adapter(&mut repo);
+    std::fs::copy(
+        env!("CARGO_BIN_EXE_manifest-adapter"),
+        repo.beside("fake-npm-host/dotnet"),
+    )
+    .unwrap();
+    manifest(
+        &repo,
+        ".",
+        r#"{"devDependencies":{"@azimuth-sh/playwright":"0.2.0-alpha.2","@playwright/test":"1.65.1"}}"#,
+    );
+    repo.write("tests/Desk.Tests.csproj",r#"<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><PackageReference Include="xunit" Version="2.9.3" /></ItemGroup></Project>"#);
+    repo.write("tests/playwright.config.js", "module.exports={};\n");
+    answers(&repo, ".", &["tests"]);
+    repo.write(
+        ".apparatus-dotnet-projects.json",
+        &json!([{"path":"tests"}]).to_string(),
+    );
+    repo.azimuth(&["init"]).expect_status(0);
+    let found = suites(&repo);
+    assert_eq!(found.len(), 2, "{found:#?}");
+    let names: std::collections::BTreeSet<_> = found
+        .iter()
+        .map(|suite| suite["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        names.len(),
+        found.len(),
+        "init wrote duplicate suite names: {found:#?}"
+    );
+    repo.azimuth(&["status", "--json"]).expect_status(0);
+}
+
+// behavior-2: In a repository with a Playwright stack whose adapter is not installed, init prints the install line and says that this stack's suites are not in the project file
+#[test]
+fn init_names_only_the_application_whose_adapter_is_missing() {
+    let mut repo = fresh();
+    fake_adapter(&mut repo);
+    manifest(
+        &repo,
+        "apps/a",
+        r#"{"devDependencies":{"@azimuth-sh/playwright":"0.2.0-alpha.2","@playwright/test":"1.65.1"}}"#,
+    );
+    manifest(
+        &repo,
+        "apps/b",
+        r#"{"devDependencies":{"@playwright/test":"1.65.1"}}"#,
+    );
+    answers(&repo, "apps/a", &["apps/a/tests"]);
+    let output = repo.azimuth(&["init"]);
+    output.expect_status(0);
+    assert_eq!(paths(&repo), vec!["apps/a/tests"]);
+    assert!(output.text().contains(&install_line()), "{}", output.text());
+    assert!(
+        output.text().contains("apps/b"),
+        "the missing application's path is absent: {}",
+        output.text()
+    );
+    assert!(
+        !output
+            .text()
+            .contains("The suites of this stack are not in the project file"),
+        "one application's suites were reported, so this whole-stack claim is false: {}",
+        output.text()
+    );
+}
+
+// behavior-2: `azimuth run` names the missing command of a Playwright suite and prints the install line
+#[test]
+fn a_known_host_with_extra_arguments_still_has_its_install_hint() {
+    let mut repo = Repo::sample();
+    repo.replace(
+        PROJECT_FILE,
+        "adapter = \"text-suite-adapter\"",
+        "adapter = \"npx --no @azimuth-sh/playwright --project=chromium\"",
+    );
+    repo.set_env("PATH", &repo.path_without_programs(&["npx", "dotnet"]));
+    let output = repo.azimuth(&["run"]);
+    output.expect_status(1);
+    assert!(output.text().contains(&install_line()), "{}", output.text());
+    assert!(repo.records().is_empty());
+}

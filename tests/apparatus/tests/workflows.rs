@@ -2162,3 +2162,144 @@ fn the_npm_pin_is_numeric_exact_and_installed_in_an_earlier_step_of_this_job() {
         && call["job"] == "pack"));
     assert!(std::panic::catch_unwind(|| assert_staging_npm_installation(&root, &calls)).is_err());
 }
+
+// behavior-2: The draft is published only after the push to NuGet succeeded
+#[test]
+fn publishing_an_already_public_release_is_a_successful_noop() {
+    let replay =
+        release_replay::replay_existing_release(&release_workflow(), "0.2.0-alpha.73", false, true);
+    assert_eq!(replay.status, 0, "{}", replay.diagnostic);
+    let mutations: Vec<_> = replay
+        .calls
+        .iter()
+        .filter(|call| call["verb"] != "view")
+        .collect();
+    assert!(
+        mutations.is_empty(),
+        "the already-published release was mutated: {mutations:#?}"
+    );
+    assert_eq!(replay.state, replay.before);
+}
+
+// behavior-2: The release is first made as a draft with every file attached
+#[test]
+fn rerunning_the_draft_job_replaces_the_four_assembled_attachments() {
+    let replay =
+        release_replay::replay_existing_release(&release_workflow(), "0.2.0-alpha.73", true, false);
+    assert_eq!(
+        replay.status, 0,
+        "rerunning over a draft failed: {}",
+        replay.diagnostic
+    );
+    assert_eq!(replay.state["isDraft"], true);
+    let assets = replay.state["assets"].as_array().unwrap();
+    assert_eq!(assets.len(), 4);
+    let actual: std::collections::BTreeMap<String, Vec<u8>> = assets
+        .iter()
+        .map(|asset| {
+            (
+                asset["name"].as_str().unwrap().to_string(),
+                asset["bytes"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|byte| byte.as_u64().unwrap() as u8)
+                    .collect(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        actual, replay.assembled,
+        "the existing draft did not end with the newly assembled bytes"
+    );
+}
+
+// behavior-2: The release is first made as a draft with every file attached
+#[test]
+fn the_draft_job_refuses_an_existing_published_release() {
+    let replay =
+        release_replay::replay_existing_release(&release_workflow(), "0.2.0-alpha.73", true, true);
+    assert_ne!(
+        replay.status, 0,
+        "a published release was accepted as a draft"
+    );
+    assert_eq!(replay.state, replay.before);
+}
+
+// behavior-2: The release workflow packs the Playwright adapter with the version of the release and stages that packed file at npm
+#[test]
+fn staging_uses_the_printed_packed_filename_even_with_another_tarball_in_checkout() {
+    let calls =
+        release_replay::pack_and_stage_with_stray_tarball(&release_workflow(), "0.2.0-alpha.73");
+    let packs: Vec<_> = calls.iter().filter(|call| call["verb"] == "pack").collect();
+    let stages: Vec<_> = calls
+        .iter()
+        .filter(|call| call["verb"] == "stage publish")
+        .collect();
+    assert_eq!(packs.len(), 1);
+    assert_eq!(stages.len(), 1);
+    assert_eq!(stages[0]["bytes"], packs[0]["bytes"]);
+    assert_eq!(
+        Path::new(stages[0]["file"].as_str().unwrap()).file_name(),
+        Path::new(packs[0]["file"].as_str().unwrap()).file_name()
+    );
+}
+
+#[test]
+fn the_release_recorder_handles_safe_draft_reruns_and_publication_noops() {
+    let text = r#"jobs:
+  draft:
+    steps:
+      - uses: actions/download-artifact@abc
+        with:
+          pattern: binary-*
+          path: dist
+      - run: sh release/assemble.sh "${GITHUB_REF_NAME#v}" dist
+      - run: |
+          if gh release view "$GITHUB_REF_NAME" --json isDraft >/dev/null 2>&1; then
+            draft=$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)
+            if [ "$draft" != true ]; then
+              exit 1
+            fi
+          else
+            gh release create "$GITHUB_REF_NAME" --draft --notes "" dist/*
+          fi
+          gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+  publication:
+    steps:
+      - run: |
+          draft=$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)
+          if [ "$draft" = true ]; then
+            gh release edit "$GITHUB_REF_NAME" --draft=false
+          fi
+"#;
+    let root = Node {
+        key: String::new(),
+        value: None,
+        children: read_yaml(text, "safe release recorder control"),
+        line: 0,
+    };
+    let draft = release_replay::replay_existing_release(&root, "0.2.0-alpha.73", true, false);
+    assert_eq!(draft.status, 0, "{}", draft.diagnostic);
+    let assets = draft.state["assets"].as_array().unwrap();
+    assert_eq!(assets.len(), 4);
+    for asset in assets {
+        let bytes: Vec<u8> = asset["bytes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|byte| byte.as_u64().unwrap() as u8)
+            .collect();
+        assert_eq!(
+            Some(&bytes),
+            draft.assembled.get(asset["name"].as_str().unwrap())
+        );
+    }
+    let refused = release_replay::replay_existing_release(&root, "0.2.0-alpha.73", true, true);
+    assert_ne!(refused.status, 0);
+    assert_eq!(refused.state, refused.before);
+    let noop = release_replay::replay_existing_release(&root, "0.2.0-alpha.73", false, true);
+    assert_eq!(noop.status, 0, "{}", noop.diagnostic);
+    assert_eq!(noop.state, noop.before);
+    assert!(noop.calls.iter().all(|call| call["verb"] == "view"));
+}

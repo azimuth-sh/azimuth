@@ -2003,3 +2003,121 @@ test('unmarked title',async()=>{throw new Error('the filter admitted an unmarked
         }
     }
 }
+
+#[path = "support/playwright_review.rs"]
+mod review;
+
+// behavior-2: An adapter reports the runner's own verdict of the first attempt of a test
+// behavior-2: A test marked `test.fail()` is `passed` when its body fails and `failed` when its body passes
+#[test]
+fn expected_failures_use_the_real_runners_verdict() {
+    review::expected_failure_verdict();
+}
+
+// behavior-2: When the runner reports an error outside any test, the adapter ends with a failure and writes no report
+#[test]
+fn a_throwing_global_setup_writes_no_adapter_report() {
+    review::outside_error("setup", false);
+}
+
+// behavior-2: When the runner reports an error outside any test, the adapter ends with a failure and writes no report
+#[test]
+fn a_throwing_global_teardown_after_passes_writes_no_adapter_report() {
+    review::outside_error("teardown", false);
+}
+
+// behavior-2: When the runner reports an error outside any test, the adapter ends with a failure and writes no report
+#[test]
+fn a_server_command_that_exits_before_ready_writes_no_adapter_report() {
+    review::outside_error("server", false);
+}
+
+// behavior-2: A global setup or teardown that throws, or a web server that does not start, gives a launch that reads `crashed`, also when every test passed
+#[test]
+fn a_throwing_global_setup_is_a_crashed_core_launch() {
+    review::outside_error("setup", true);
+}
+
+// behavior-2: A global setup or teardown that throws, or a web server that does not start, gives a launch that reads `crashed`, also when every test passed
+#[test]
+fn a_throwing_global_teardown_discards_the_passing_checks() {
+    review::outside_error("teardown", true);
+}
+
+// behavior-2: A global setup or teardown that throws, or a web server that does not start, gives a launch that reads `crashed`, also when every test passed
+#[test]
+fn a_server_command_that_exits_before_ready_is_a_crashed_core_launch() {
+    review::outside_error("server", true);
+}
+
+// behavior-2: An entry that neither failed in a project nor passed in all is `not_run` if a project did not run it, and `skipped` otherwise
+#[test]
+fn project_outcomes_distinguish_skipped_from_failed() {
+    review::mixed_projects();
+}
+
+// behavior-2: An entry that neither failed in a project nor passed in all is `not_run` if a project did not run it, and `skipped` otherwise
+#[test]
+fn unasked_tests_are_not_run_in_any_browser_project() {
+    review::unasked_projects();
+}
+
+// behavior-2: An installation that is a link from `node_modules` to the adapter's code, as pnpm makes it, counts as the application's
+#[test]
+fn a_link_in_the_applications_node_modules_is_an_installation() {
+    review::linked_installation();
+}
+
+// behavior-2: The package states the versions of Playwright the adapter works with, and with another version the adapter ends with a failure that says so
+#[test]
+fn the_package_declares_a_range_covering_the_locked_runner() {
+    review::declared_compatibility();
+}
+
+// behavior-2: The package states the versions of Playwright the adapter works with, and with another version the adapter ends with a failure that says so
+#[test]
+fn an_unsupported_real_runner_is_refused_with_its_version_and_range() {
+    review::unsupported_runner();
+}
+
+// behavior-2: The folder in a `discover` request and each path in its report are relative to the root of the repository, and `.` is the root
+#[test]
+fn real_discovery_uses_repository_paths_including_dot_for_the_root() {
+    review::repository_relative_discovery();
+}
+
+// behavior-2: It writes the report to standard output, and the runner's output goes to standard error
+#[test]
+fn a_persons_json_output_file_does_not_change_the_adapter_report() {
+    review::reporter_environment("PLAYWRIGHT_JSON_OUTPUT_FILE");
+}
+
+// behavior-2: Its report lists every marked test of the suite, also the ones not asked for
+#[test]
+fn a_persons_only_failures_setting_does_not_remove_passing_tests() {
+    review::reporter_environment("PLAYWRIGHT_JSON_ONLY_FAILURES");
+}
+
+// behavior-2: A test carries a Check id in a tag of the form `@<marker_key>:<id>`
+#[test]
+fn an_empty_or_invalid_tag_id_is_not_a_marker() {
+    review::empty_and_invalid_tags();
+}
+
+// behavior-2: For `discover` the Playwright adapter reports each folder that holds a Playwright config
+#[test]
+fn discovery_enters_dot_named_test_folders_but_not_git_or_node_modules() {
+    review::hidden_discovery();
+}
+
+// behavior: The request is `adapter-request-1` and the report `adapter-report-1`
+#[test]
+fn a_request_split_inside_a_utf8_folder_character_arrives_intact() {
+    review::split_unicode_request(false);
+}
+
+// behavior: The request is `adapter-request-1` and the report `adapter-report-1`
+#[test]
+fn a_request_split_inside_a_utf8_marker_key_character_arrives_intact() {
+    review::split_unicode_request(true);
+}

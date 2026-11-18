@@ -120,6 +120,19 @@ fn replay_job(
     tag: &str,
     artifacts: &mut BTreeMap<String, Artifact>,
 ) {
+    if let Err(output) = replay_job_result(root, job, work, temp, tag, artifacts) {
+        output.expect_status(0);
+    }
+}
+
+fn replay_job_result(
+    root: &Node,
+    job: &Node,
+    work: &Path,
+    temp: &Path,
+    tag: &str,
+    artifacts: &mut BTreeMap<String, Artifact>,
+) -> Result<(), Output> {
     fs::create_dir_all(work).unwrap();
     source_files(work);
     let tools = temp.join("tools");
@@ -271,7 +284,9 @@ fn replay_job(
             .args(["-eu", "-c", &script])
             .current_dir(work.join(interpolate(working, &effective)));
         let result: Output = run_with_time_limit(command, Duration::from_secs(30), None);
-        result.expect_status(0);
+        if result.status != 0 {
+            return Err(result);
+        }
         if let Ok(text) = fs::read_to_string(&github_env) {
             for line in text.lines() {
                 if let Some((k, v)) = line.split_once('=') {
@@ -280,9 +295,18 @@ fn replay_job(
             }
         }
     }
+    Ok(())
 }
 
 pub fn pack_and_stage(root: &Node, version: &str) -> Vec<Value> {
+    pack_and_stage_checkout(root, version, false)
+}
+
+pub fn pack_and_stage_with_stray_tarball(root: &Node, version: &str) -> Vec<Value> {
+    pack_and_stage_checkout(root, version, true)
+}
+
+fn pack_and_stage_checkout(root: &Node, version: &str, stray: bool) -> Vec<Value> {
     assert_default_conditions(root);
     let pack: Vec<_> = jobs(root)
         .into_iter()
@@ -324,6 +348,10 @@ pub fn pack_and_stage(root: &Node, version: &str) -> Vec<Value> {
         }
     }
     let temp = tempfile::tempdir().unwrap();
+    if stray {
+        fs::create_dir_all(temp.path().join("pack")).unwrap();
+        fs::write(temp.path().join("pack/azimuth-sh-playwright-9.9.9.tgz"),serde_json::json!({"packed_manifest":{"name":"@azimuth-sh/playwright","version":"9.9.9"}}).to_string()).unwrap();
+    }
     let mut artifacts = BTreeMap::new();
     let tag = format!("v{version}");
     replay_job(
@@ -498,4 +526,102 @@ pub fn create_draft(root: &Node, version: &str) -> (Vec<Value>, BTreeMap<String,
         calls,
         assembled.expect("the workflow did not assemble the current tag's release files"),
     )
+}
+
+pub struct ExistingRelease {
+    pub status: i32,
+    pub diagnostic: String,
+    pub calls: Vec<Value>,
+    pub state: Value,
+    pub before: Value,
+    pub assembled: BTreeMap<String, Vec<u8>>,
+}
+
+pub fn replay_existing_release(
+    root: &Node,
+    version: &str,
+    drafting: bool,
+    published: bool,
+) -> ExistingRelease {
+    assert_default_conditions(root);
+    let candidates: Vec<_> = jobs(root)
+        .into_iter()
+        .filter(|job| {
+            job.descendants()
+                .into_iter()
+                .filter(|node| node.key == "run")
+                .any(|node| {
+                    expanded_commands(node.value.as_deref().unwrap())
+                        .iter()
+                        .any(|words| {
+                            if drafting {
+                                shell::invokes(words, &["gh", "release", "create"])
+                            } else {
+                                super::publish_draft(words)
+                            }
+                        })
+                })
+        })
+        .collect();
+    assert_eq!(candidates.len(), 1, "no unique release phase");
+    let temp = tempfile::tempdir().unwrap();
+    let work = temp.path().join("release");
+    let mut artifacts = BTreeMap::new();
+    let mut assembled = BTreeMap::new();
+    for target in ["aarch64-apple-darwin", "x86_64-unknown-linux-musl"] {
+        let name = format!("azimuth-{version}-{target}");
+        let bytes = format!("binary of {version} for {target}\n").into_bytes();
+        artifacts.insert(
+            format!("binary-{target}"),
+            vec![(PathBuf::from(&name), bytes.clone())],
+        );
+        assembled.insert(name, bytes);
+    }
+    let mut names: Vec<_> = assembled.keys().cloned().collect();
+    names.extend(["VERSION".into(), "SHA256SUMS".into()]);
+    let before = serde_json::json!({"tag":format!("v{version}"),"isDraft":!published,"assets":names.into_iter().map(|name|serde_json::json!({"name":name,"bytes":b"stale release bytes".to_vec()})).collect::<Vec<_>>()});
+    let state_path = temp.path().join("gh-state.json");
+    fs::write(&state_path, before.to_string()).unwrap();
+    let (status, diagnostic) = match replay_job_result(
+        root,
+        candidates[0],
+        &work,
+        temp.path(),
+        &format!("v{version}"),
+        &mut artifacts,
+    ) {
+        Ok(()) => (0, String::new()),
+        Err(output) => (output.status, output.text()),
+    };
+    let calls = fs::read_to_string(temp.path().join("gh.jsonl"))
+        .unwrap_or_default()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let state = fs::read(state_path)
+        .ok()
+        .map(|bytes| serde_json::from_slice(&bytes).unwrap())
+        .unwrap_or(Value::Null);
+    if drafting {
+        let folder = files_under(&work)
+            .into_iter()
+            .find(|file| file.file_name().is_some_and(|name| name == "VERSION"))
+            .expect("the draft job did not assemble VERSION")
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        assembled.insert("VERSION".into(), fs::read(folder.join("VERSION")).unwrap());
+        assembled.insert(
+            "SHA256SUMS".into(),
+            fs::read(folder.join("SHA256SUMS")).unwrap(),
+        );
+    }
+    ExistingRelease {
+        status,
+        diagnostic,
+        calls,
+        state,
+        before,
+        assembled,
+    }
 }

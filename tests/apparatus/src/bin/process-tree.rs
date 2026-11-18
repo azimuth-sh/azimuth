@@ -78,7 +78,7 @@ fn main() {
         panic!("could not exec the installed .NET adapter: {error}");
     }
     let mode = std::env::var("TREE_MODE").unwrap();
-    let ignores = (mode == "resists" && role != "grandchild")
+    let ignores = ((mode == "resists" || mode == "partial-resists") && role != "grandchild")
         || (mode == "orphan-resists" && role == "grandchild");
     if ignores {
         // SIGKILL cannot be ignored; accepting another terminating signal would hide a wrong stop.
@@ -88,10 +88,28 @@ fn main() {
             }
         }
     }
+    if mode == "partial-resists" {
+        // The partial-report control must reap its real runner before resisting the stop.
+        #[cfg(target_os = "macos")]
+        let child_signal = 20;
+        #[cfg(not(target_os = "macos"))]
+        let child_signal = 17;
+        unsafe {
+            signal(child_signal, 0);
+        }
+    }
     unsafe {
         // Opposite SIGTERM dispositions make a wrong stop signal observable, rather than
         // allowing both signals to lead to the same apparent timeout and escalation.
-        signal(15, if ignores { 0 } else { 1 });
+        // Resisting TERM too keeps a later polite signal from masquerading as KILL.
+        signal(
+            15,
+            if mode == "partial-resists" || !ignores {
+                1
+            } else {
+                0
+            },
+        );
         signal(2, stop as *const () as usize);
     }
     if role == "adapter" || role == "proof" {
@@ -146,7 +164,11 @@ fn main() {
                 return;
             }
         }
-        if mode == "partial" || mode == "inherited-output" || mode == "late-output" {
+        if mode == "partial"
+            || mode == "partial-resists"
+            || mode == "inherited-output"
+            || mode == "late-output"
+        {
             let mut runner = Command::new("text-suite-adapter")
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
