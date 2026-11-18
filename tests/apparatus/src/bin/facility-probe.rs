@@ -19,6 +19,7 @@ fn main() {
             .expect("the apparatus log is writable");
         let entry = serde_json::json!({
             "program": "facility-probe",
+            "time_ns": azimuth_tests::process::monotonic_ns(),
             "args": args,
             "cwd": std::env::current_dir().map(|dir| dir.display().to_string()).unwrap_or_default(),
             "mark": std::env::var("APPARATUS_MARK").ok(),
@@ -29,11 +30,17 @@ fn main() {
         Some("present") => {}
         Some("edit") => {
             let path = args.get(1).expect("edit names a file");
-            let mut file = std::fs::OpenOptions::new().append(true).open(path).expect("the file to edit exists");
+            let mut file = std::fs::OpenOptions::new()
+                .append(true)
+                .open(path)
+                .expect("the file to edit exists");
             writeln!(file, "edited by the proof").expect("the edit is written");
         }
         Some("sleep") => {
-            let seconds: u64 = args.get(1).and_then(|text| text.parse().ok()).expect("sleep names whole seconds");
+            let seconds: u64 = args
+                .get(1)
+                .and_then(|text| text.parse().ok())
+                .expect("sleep names whole seconds");
             std::thread::sleep(std::time::Duration::from_secs(seconds));
         }
         Some("hang") => std::thread::sleep(std::time::Duration::from_secs(600)),

@@ -17,6 +17,8 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 use tempfile::TempDir;
 
+pub mod process;
+
 pub use serde_json;
 pub use serde_json::json;
 
@@ -96,26 +98,72 @@ fn build_binaries() -> PathBuf {
         .and_then(Path::parent)
         .expect("the test binary sits in target/<profile>/deps")
         .to_path_buf();
-    let profile_folder = dir.file_name().and_then(|name| name.to_str()).expect("a profile folder").to_string();
+    let profile_folder = dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("a profile folder")
+        .to_string();
     // Cargo calls the folder of the `dev` profile `debug`; every other profile has its own name.
-    let profile = if profile_folder == "debug" { "dev".to_string() } else { profile_folder };
-    let target_dir = dir.parent().expect("the profile folder sits in the target folder");
+    let profile = if profile_folder == "debug" {
+        "dev".to_string()
+    } else {
+        profile_folder
+    };
+    let target_dir = dir
+        .parent()
+        .expect("the profile folder sits in the target folder");
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut command = Command::new(cargo);
     command
         .current_dir(&workspace)
-        .args(["build", "--quiet", "--profile", &profile, "--package", "azimuth", "--bin", "azimuth"])
-        .args(["--package", "azimuth-tests", "--bin", "text-suite-adapter", "--bin", "facility-probe", "--bin", "stdin-recorder"])
+        .args([
+            "build",
+            "--quiet",
+            "--profile",
+            &profile,
+            "--package",
+            "azimuth",
+            "--bin",
+            "azimuth",
+        ])
+        .args([
+            "--package",
+            "azimuth-tests",
+            "--bin",
+            "text-suite-adapter",
+            "--bin",
+            "facility-probe",
+            "--bin",
+            "stdin-recorder",
+            "--bin",
+            "process-tree",
+            "--bin",
+            "git-recorder",
+        ])
         .env("CARGO_TARGET_DIR", target_dir);
     if cfg!(feature = "dotnet") {
         // The same features as the running tests, so cargo does not rebuild this package twice.
         command.args(["--features", "azimuth-tests/dotnet"]);
     }
     let status = command.status().expect("cargo starts");
-    assert!(status.success(), "cargo could not build the binaries the tests start ({status})");
-    for name in ["azimuth", "text-suite-adapter", "facility-probe", "stdin-recorder"] {
-        assert!(dir.join(name).exists(), "{name} is not in {} after the build", dir.display());
+    assert!(
+        status.success(),
+        "cargo could not build the binaries the tests start ({status})"
+    );
+    for name in [
+        "azimuth",
+        "text-suite-adapter",
+        "facility-probe",
+        "stdin-recorder",
+        "process-tree",
+        "git-recorder",
+    ] {
+        assert!(
+            dir.join(name).exists(),
+            "{name} is not in {} after the build",
+            dir.display()
+        );
     }
     dir
 }
@@ -314,6 +362,13 @@ impl Repo {
         run_with_limit(command)
     }
 
+    pub fn azimuth_command(&self, args: &[&str]) -> Command {
+        let mut command = Command::new(binaries_dir().join("azimuth"));
+        command.args(args).current_dir(&self.root);
+        self.base_env(&mut command);
+        command
+    }
+
     /// The environment of every command a test starts. It is cleared first, so that nothing on
     /// the machine running the tests, such as a CI variable, reaches the command by accident.
     fn base_env(&self, command: &mut Command) {
@@ -354,9 +409,26 @@ impl Repo {
     }
 
     pub fn adapter_starts(&self) -> Vec<Value> {
-        self.log_entries()
-            .into_iter()
-            .filter(|entry| entry["program"] == "text-suite-adapter")
+        let entries = self.log_entries();
+        entries
+            .iter()
+            .filter(|e| e["program"] == "text-suite-adapter" && e["event"] == "started")
+            .map(|start| {
+                let mut entry = start.clone();
+                if let Some(end) = entries.iter().rev().find(|e| {
+                    e["program"] == "text-suite-adapter"
+                        && e["pid"] == start["pid"]
+                        && e.get("event").is_none()
+                }) {
+                    entry
+                        .as_object_mut()
+                        .unwrap()
+                        .extend(end.as_object().unwrap().clone());
+                    entry["event"] = json!("started");
+                    entry["time_ns"] = start["time_ns"].clone();
+                }
+                entry
+            })
             .collect()
     }
 
@@ -598,7 +670,16 @@ pub fn all_keys(value: &Value) -> Vec<String> {
 pub fn strings_of(value: &Value) -> Vec<String> {
     value
         .as_array()
-        .map(|items| items.iter().filter_map(|item| item.as_str().map(str::to_string)).collect())
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| {
+                    item.as_str()
+                        .unwrap_or_else(|| panic!("list contains a non-string element: {item:#}"))
+                        .to_string()
+                })
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -785,7 +866,11 @@ pub fn write_record(dir: &Path, value: &Value) -> PathBuf {
 }
 
 /// The lists of behaviors the tests are written from, under `docs/increments/`.
-pub const BEHAVIOR_LISTS: [&str; 2] = ["increments/1.md", "increments/release.md"];
+pub const BEHAVIOR_LISTS: [&str; 3] = [
+    "increments/1.md",
+    "increments/2.md",
+    "increments/release.md",
+];
 
 /// One row of a behavior table in a list.
 #[derive(Debug, Clone)]
@@ -995,7 +1080,8 @@ pub fn cli_version() -> String {
 }
 
 /// The install line of the .NET adapter up to its version, as the design writes it.
-pub const XUNIT_INSTALL: &str = "dotnet tool install --local --create-manifest-if-needed Azimuth.Xunit";
+pub const XUNIT_INSTALL: &str =
+    "dotnet tool install --local --create-manifest-if-needed Azimuth.Xunit";
 
 /// Each install line of the .NET adapter in a printed text, as a person would copy it. The words
 /// around it are free text: the line ends at the end of its printed line, at `)`, at `;`, or at a
@@ -1120,8 +1206,17 @@ pub fn is_bare_hash(text: &str) -> bool {
 
 /// The `files_changed` list of a `check-1` document, sorted: paths from the repository root.
 pub fn files_changed(check: &Value) -> Vec<String> {
-    let mut files = strings_of(&check["files_changed"]);
-    assert!(check["files_changed"].is_array(), "`files_changed` is not a list: {check:#}");
+    let mut files: Vec<String> = check["files_changed"]
+        .as_array()
+        .unwrap_or_else(|| panic!("`files_changed` is not a list: {check:#}"))
+        .iter()
+        .map(|entry| {
+            entry
+                .as_str()
+                .unwrap_or_else(|| panic!("changed path is not text: {entry:#}"))
+                .to_string()
+        })
+        .collect();
     files.sort();
     files
 }
@@ -1180,6 +1275,56 @@ pub fn detail_of_entry(check: &Value) -> String {
     check["detail"].as_str().unwrap_or_default().to_string()
 }
 
+pub fn assert_owed_file_count(text: &str, id: &str, expected: usize) {
+    let lines: Vec<_> = text
+        .lines()
+        .filter(|line| {
+            line.split_whitespace().any(|word| {
+                word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-') == id
+            }) && line
+                .split(|c: char| !c.is_ascii_alphanumeric())
+                .any(|word| word == "owed")
+        })
+        .collect();
+    assert_eq!(
+        lines.len(),
+        1,
+        "{id} has no single owed Check line:\n{text}"
+    );
+    let words: Vec<_> = lines[0]
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .collect();
+    let counts: Vec<usize> = words
+        .iter()
+        .enumerate()
+        .filter(|(_, word)| **word == "file" || **word == "files")
+        .flat_map(|(index, _)| {
+            words[index.saturating_sub(2)..=(index + 2).min(words.len() - 1)]
+                .iter()
+                .filter_map(|word| word.parse().ok())
+        })
+        .collect();
+    assert_eq!(
+        counts,
+        vec![expected],
+        "{id} does not associate its file count with files: {}",
+        lines[0]
+    );
+}
+pub fn assert_no_file_names(text: &str, files: &[&str]) {
+    for file in files {
+        let base = std::path::Path::new(file)
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(
+            !text.contains(file) && !text.contains(base),
+            "wide view names {file}: {text}"
+        );
+    }
+}
 
 #[cfg(test)]
 mod apparatus_checks {

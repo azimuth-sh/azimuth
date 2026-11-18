@@ -23,11 +23,17 @@ path = "src/bin/stdin-recorder.rs"
 [features]
 # The .NET adapter tests need the .NET SDK and the real adapter, so they run only on request.
 dotnet = []
+long-timeout = []
 
 [[test]]
 name = "dotnet_adapter"
 path = "tests/dotnet_adapter.rs"
 required-features = ["dotnet"]
+
+[[test]]
+name = "default_launch_limit"
+path = "tests/default_launch_limit.rs"
+required-features = ["long-timeout"]
 
 # The apparatus is test code only, so these never reach the shipped core. `sha2` and
 # `unicode-normalization` let a test compute a record's name and a `text-1` digest itself.

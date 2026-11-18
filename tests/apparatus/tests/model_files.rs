@@ -588,7 +588,7 @@ const COMMANDS_THAT_READ: [&[&str]; 7] = [
     &["status", "--json"],
     &["requirement", "show", LATE_FINE, "--json"],
     &["check", "show", LATE_RETURN, "--json"],
-    &["change", "show", "--json"],
+    &["change", "diff", "--json"],
     &["lint", "--json"],
 ];
 

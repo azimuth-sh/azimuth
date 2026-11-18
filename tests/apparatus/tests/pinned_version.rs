@@ -31,7 +31,7 @@ const READING_COMMANDS: [&[&str]; 5] = [
     &["status", "--json"],
     &["requirement", "show", LOAN_LIMIT, "--json"],
     &["check", "show", SIXTH_LOAN, "--json"],
-    &["change", "show", "--json"],
+    &["change", "diff", "--json"],
 ];
 
 // behavior: With another version, lint and the reading commands work and print a warning

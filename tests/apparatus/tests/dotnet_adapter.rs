@@ -26,7 +26,12 @@ const SIXTH_LOAN_CHECK: &str = "desk-refuses-a-sixth-loan";
 const ON_TIME_CHECK: &str = "desk-charges-nothing-on-time";
 const LATE_DAYS_CHECK: &str = "desk-fines-each-late-day";
 const LOST_BOOK_CHECK: &str = "desk-charges-for-a-lost-book";
-const DOTNET_CHECKS: [&str; 4] = [SIXTH_LOAN_CHECK, ON_TIME_CHECK, LATE_DAYS_CHECK, LOST_BOOK_CHECK];
+const DOTNET_CHECKS: [&str; 4] = [
+    SIXTH_LOAN_CHECK,
+    ON_TIME_CHECK,
+    LATE_DAYS_CHECK,
+    LOST_BOOK_CHECK,
+];
 
 struct Feed {
     folder: PathBuf,
@@ -667,5 +672,204 @@ fn the_printed_install_line_installs_the_adapter() {
         }),
         "the folder does not list {MANIFEST_ID} at {version}:\n{}",
         listed.stdout
+    );
+}
+
+// behavior-2: An adapter that receives SIGTERM stops its runner and exits, and writes no report
+#[test]
+fn sigterm_stops_the_real_runner_without_writing_a_report() {
+    use azimuth_tests::process::{processes, Process};
+    use std::collections::BTreeMap;
+    use std::io::Write;
+    use std::process::{Child, Stdio};
+    use std::time::Instant;
+
+    struct RunningAdapter {
+        child: Child,
+        owned: BTreeMap<u32, Process>,
+    }
+    impl RunningAdapter {
+        fn observe(&mut self) -> BTreeMap<u32, Process> {
+            let table = processes().unwrap_or_else(|error| panic!("{error}"));
+            let mut descendants = std::collections::BTreeSet::new();
+            if self.owned.is_empty() {
+                descendants.insert(self.child.id());
+            }
+            for p in self.owned.values() {
+                if table.get(&p.pid).is_some_and(|now| {
+                    now.running() && now.birth == p.birth && now.command == p.command
+                }) {
+                    descendants.insert(p.pid);
+                }
+            }
+            loop {
+                let before = descendants.len();
+                for p in table.values() {
+                    if descendants.contains(&p.parent) {
+                        descendants.insert(p.pid);
+                    }
+                }
+                if before == descendants.len() {
+                    break;
+                }
+            }
+            for pid in descendants {
+                if let Some(p) = table.get(&pid) {
+                    self.owned.insert(pid, p.clone());
+                }
+            }
+            table
+        }
+    }
+    impl Drop for RunningAdapter {
+        fn drop(&mut self) {
+            for p in self.owned.values() {
+                p.signal_if_same("-KILL");
+            }
+            if matches!(self.child.try_wait(), Ok(None)) {
+                let _ = self.child.kill();
+            }
+            let _ = self.child.wait();
+        }
+    }
+    let repo = sample();
+    let journal = repo.beside("hanging-test.pid");
+    repo.write(
+        "dotnet/LibraryDesk.Tests/StopTests.cs",
+        r#"
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Threading;
+using Xunit;
+namespace LibraryDesk.Tests;
+public class StopTests {
+    [Fact]
+    [Trait("Check", "desk-stops-when-asked")]
+    public void Waits_for_the_runner_to_stop() {
+        var path = Environment.GetEnvironmentVariable("STOP_TEST_PID")!;
+        File.WriteAllText(path + ".tmp", Process.GetCurrentProcess().Id.ToString());
+        File.Move(path + ".tmp", path);
+        Thread.Sleep(300000);
+    }
+}
+"#,
+    );
+    // Resolve the installed tool's declared entry point, so this owned process is the adapter
+    // itself, without guessing among host processes whose command happens to name the tool.
+    let settings: Vec<_> = files_under(&repo.beside("nuget-packages"))
+        .into_iter()
+        .filter(|path| {
+            path.file_name()
+                .is_some_and(|name| name == "DotnetToolSettings.xml")
+        })
+        .collect();
+    assert_eq!(settings.len(), 1);
+    let xml = std::fs::read_to_string(&settings[0]).unwrap();
+    let tag = opening_tag(&xml, "Command").unwrap();
+    let attribute = |name: &str| {
+        tag.split(&format!("{name}=\""))
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap()
+            .to_string()
+    };
+    assert_eq!(attribute("Name"), ADAPTER);
+    let entry = settings[0].parent().unwrap().join(attribute("EntryPoint"));
+    assert!(entry.is_file());
+    let stdout = repo.beside("stop.stdout");
+    let stderr = repo.beside("stop.stderr");
+    let child = Command::new("dotnet")
+        .arg(&entry)
+        .current_dir(repo.path(DOTNET_SUITE))
+        .envs(own_folders(&repo))
+        .env("STOP_TEST_PID", &journal)
+        .env("UseSharedCompilation", "false")
+        .env("MSBUILDDISABLENODEREUSE", "1")
+        .env("DOTNET_CLI_USE_MSBUILD_SERVER", "0")
+        .stdin(Stdio::piped())
+        .stdout(std::fs::File::create(&stdout).unwrap())
+        .stderr(std::fs::File::create(&stderr).unwrap())
+        .spawn()
+        .unwrap();
+    let mut run = RunningAdapter {
+        child,
+        owned: BTreeMap::new(),
+    };
+    run.child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(
+            run_request(&["desk-stops-when-asked"])
+                .to_string()
+                .as_bytes(),
+        )
+        .unwrap();
+    let start = Instant::now();
+    while !journal.exists() && start.elapsed() < Duration::from_secs(180) {
+        run.observe();
+        if run.child.try_wait().unwrap().is_some() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(
+        journal.exists(),
+        "real marked test did not start:\n{}\n{}",
+        std::fs::read_to_string(&stdout).unwrap(),
+        std::fs::read_to_string(&stderr).unwrap()
+    );
+    let runner: u32 = std::fs::read_to_string(&journal).unwrap().parse().unwrap();
+    let table = run.observe();
+    assert!(
+        run.owned.contains_key(&runner),
+        "published runner is not a descendant of our adapter"
+    );
+    let adapter = table.get(&run.child.id()).unwrap();
+    assert!(adapter
+        .command
+        .split_whitespace()
+        .any(|arg| arg == entry.to_str().unwrap()));
+    assert!(
+        adapter.signal_if_same("-TERM"),
+        "could not signal the identified adapter"
+    );
+    let stop = Instant::now();
+    let survivors = loop {
+        let table = run.observe();
+        let survivors: Vec<_> = run
+            .owned
+            .values()
+            .filter(|old| {
+                table.get(&old.pid).is_some_and(|now| {
+                    now.running() && now.birth == old.birth && now.command == old.command
+                })
+            })
+            .cloned()
+            .collect();
+        let exited = run.child.try_wait().unwrap().is_some();
+        if exited && survivors.is_empty() {
+            break survivors;
+        }
+        if stop.elapsed() >= Duration::from_secs(30) {
+            break survivors;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    assert!(
+        survivors.is_empty(),
+        "adapter left owned runner processes alive after SIGTERM: {survivors:#?}"
+    );
+    assert!(
+        run.child.try_wait().unwrap().is_some(),
+        "adapter did not exit after SIGTERM"
+    );
+    assert_eq!(
+        std::fs::read_to_string(stdout).unwrap(),
+        "",
+        "stopped adapter wrote a report"
     );
 }

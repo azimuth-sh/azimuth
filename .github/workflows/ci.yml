@@ -26,5 +26,8 @@ jobs:
         run: cargo test --no-fail-fast
       - name: Tests of the .NET adapter
         run: cargo test --features azimuth-tests/dotnet --test dotnet_adapter
+      - name: Default launch time limit
+        if: matrix.runner == 'ubuntu-24.04'
+        run: cargo test --features azimuth-tests/long-timeout --test default_launch_limit
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings

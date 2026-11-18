@@ -287,3 +287,80 @@ fn init_works_with_no_credential_and_no_reachable_network() {
     assert!(repo.path(PROJECT_FILE).is_file());
     assert!(files_under(&repo.beside("home")).is_empty(), "init wrote into the home folder");
 }
+
+// behavior-2: Init writes the repository's name from the last part of the remote's address, without `.git`
+#[test]
+fn init_names_the_repository_from_its_remote_address() {
+    for (address, name) in [
+        (
+            "https://example.invalid/library/river-ledger.git",
+            "river-ledger",
+        ),
+        (
+            "ssh://git@example.invalid/library/loan-catalog.git",
+            "loan-catalog",
+        ),
+        ("git@host:group/shelf-register.git", "shelf-register"),
+        (
+            "https://example.invalid/library/book-archive",
+            "book-archive",
+        ),
+    ] {
+        let (origin, clone) = clone_on_a_feature_branch();
+        origin.git_in(&clone, &["remote", "set-url", "origin", address]);
+        init_in(&origin, &clone);
+        let written = parse_toml(&std::fs::read_to_string(clone.join(PROJECT_FILE)).unwrap());
+        assert_eq!(
+            written["repository"]["name"].as_str(),
+            Some(name),
+            "remote {address}: {written:#?}"
+        );
+    }
+}
+
+// behavior-2: In a git worktree whose folder has another name, init writes the name from the remote and not the folder's
+#[test]
+fn init_uses_the_same_remote_name_in_a_linked_worktree() {
+    let (origin, clone) = clone_on_a_feature_branch();
+    origin.git_in(
+        &clone,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "git@example.invalid:library/borrowers-index.git",
+        ],
+    );
+    let worktree = origin.beside("intent-sandbox");
+    origin.git_in(
+        &clone,
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            "intent",
+            worktree.to_str().unwrap(),
+        ],
+    );
+    init_in(&origin, &worktree);
+    let written = parse_toml(&std::fs::read_to_string(worktree.join(PROJECT_FILE)).unwrap());
+    assert_eq!(
+        written["repository"]["name"].as_str(),
+        Some("borrowers-index")
+    );
+}
+
+// behavior-2: With no remote init writes the name of the root folder
+#[test]
+fn init_without_a_remote_uses_the_name_of_a_renamed_root() {
+    let repo = fresh("main");
+    let root = repo.beside("neighborhood-lending");
+    std::fs::rename(repo.root(), &root).unwrap();
+    repo.azimuth_in(&root, &["init"], &[]).expect_status(0);
+    let written = parse_toml(&std::fs::read_to_string(root.join(PROJECT_FILE)).unwrap());
+    assert_eq!(
+        written["repository"]["name"].as_str(),
+        Some("neighborhood-lending")
+    );
+}

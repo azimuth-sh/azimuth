@@ -177,19 +177,39 @@ fn an_owed_check_has_a_named_reason() {
     }
 }
 
+// behavior-2: The text of `azimuth check show` names the files
 // behavior: When the files part changed, `azimuth check show` names the files that differ
 #[test]
 fn check_show_names_the_files_that_differ() {
     let repo = Repo::sample();
     repo.run_json(&[], 0);
     repo.append(PRODUCT_FILE, "renewals do not count\n");
-    repo.write("desk/shelves.txt", "north shelf holds novels\n");
-    let document = repo.check_show(ON_TIME_RETURN);
-    let mut files = files_changed(&document);
-    files.sort();
-    assert_eq!(files, vec![PRODUCT_FILE.to_string(), "desk/shelves.txt".to_string()], "{document:#}");
-    let text = repo.azimuth(&["check", "show", ON_TIME_RETURN]).stdout;
-    assert!(text.contains(PRODUCT_FILE) && text.contains("desk/shelves.txt"), "{text}");
+    repo.write("desk/shelves.txt", "north shelf\n");
+    let expected = vec![PRODUCT_FILE.to_string(), "desk/shelves.txt".to_string()];
+    assert_eq!(files_changed(&repo.check_show(ON_TIME_RETURN)), expected);
+    let output = repo.azimuth(&["check", "show", ON_TIME_RETURN]);
+    output.expect_status(0);
+    let mut candidates = repo.tracked_paths();
+    candidates.push("desk/shelves.txt".into());
+    candidates.sort();
+    let shown: Vec<_> = candidates
+        .into_iter()
+        .filter(|path| {
+            output.stdout.contains(path)
+                || output.stdout.contains(
+                    std::path::Path::new(path)
+                        .file_name()
+                        .unwrap()
+                        .to_str()
+                        .unwrap(),
+                )
+        })
+        .collect();
+    assert_eq!(
+        shown, expected,
+        "check show names more than the differing files:\n{}",
+        output.stdout
+    );
 }
 
 // behavior: The reason "an input changed" names the part that changed
@@ -280,4 +300,78 @@ fn reuse_is_absent_or_a_value_and_a_reason() {
     assert_eq!(reuse.len(), 2, "{strict:#}");
     assert_eq!(reuse["value"], "never");
     assert_eq!(reuse["reason"].as_str().map(str::trim), Some("the desk reads today's date"));
+}
+
+// behavior-2: The text of `azimuth requirement show` does the same
+#[test]
+fn requirement_show_counts_files_on_each_owed_check_line() {
+    let repo = Repo::sample();
+    repo.run_json(&[], 0);
+    repo.append(PRODUCT_FILE, "renewals do not count\n");
+    for count in [1, 3] {
+        if count == 3 {
+            repo.write("desk/shelves.txt", "north\n");
+            repo.write("desk/catalog.txt", "books\n");
+        }
+        let output = repo.azimuth(&["requirement", "show", LOAN_LIMIT]);
+        output.expect_status(0);
+        for check in [SIXTH_LOAN, RETURNED_BOOK] {
+            assert_owed_file_count(&output.stdout, check, count);
+        }
+        assert_no_file_names(
+            &output.stdout,
+            &[PRODUCT_FILE, "desk/shelves.txt", "desk/catalog.txt"],
+        );
+    }
+}
+
+// behavior-2: With `--json` all three still hold `files_changed` for every Check
+#[test]
+fn reading_documents_keep_the_exact_file_list_for_each_check() {
+    let repo = Repo::sample();
+    repo.run_json(&[], 0);
+    repo.append(PRODUCT_FILE, "renewals do not count\n");
+    repo.azimuth(&["check", "run", RETURNED_BOOK, "--json"])
+        .expect_status(0);
+    repo.write("desk/shelves.txt", "north\n");
+    repo.azimuth(&["check", "run", ON_TIME_RETURN, "--json"])
+        .expect_status(0);
+    let expectations = std::collections::BTreeMap::from([
+        (
+            SIXTH_LOAN,
+            (
+                "owed",
+                vec![PRODUCT_FILE.to_string(), "desk/shelves.txt".to_string()],
+            ),
+        ),
+        (
+            RETURNED_BOOK,
+            ("owed", vec!["desk/shelves.txt".to_string()]),
+        ),
+        (
+            LATE_RETURN,
+            (
+                "owed",
+                vec![PRODUCT_FILE.to_string(), "desk/shelves.txt".to_string()],
+            ),
+        ),
+        (ON_TIME_RETURN, ("kept", vec![])),
+    ]);
+    let status = repo.status_json();
+    assert_eq!(status_checks(&status).len(), 4);
+    for requirement in [LOAN_LIMIT, LATE_FINE] {
+        let output = repo.azimuth(&["requirement", "show", requirement, "--json"]);
+        output.expect_status(0);
+        let shown = output.json();
+        assert_eq!(shown["format"], "requirement-1");
+        let checks = status_checks(&json!({"requirements":[shown]}));
+        assert_eq!(checks.len(), 2);
+        for (id, entry) in checks {
+            let (state, expected) = &expectations[id.as_str()];
+            for document in [&entry, &status_checks(&status)[&id], &repo.check_show(&id)] {
+                assert_eq!(document["state"], *state);
+                assert_eq!(&files_changed(document), expected, "{id}: {document:#}");
+            }
+        }
+    }
 }

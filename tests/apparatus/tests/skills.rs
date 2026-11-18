@@ -228,14 +228,29 @@ fn the_skill_names_its_steps_and_stops() {
     let repo = Repo::sample();
     install(&repo, "claude");
     let text = repo.read(SKILL_FILE);
-    for command in ["azimuth lint", "azimuth change show", "azimuth run", "azimuth run --lane commit", "azimuth status"] {
-        assert!(text.contains(command), "the skill does not name {command:?}");
+    for command in [
+        "azimuth lint",
+        "azimuth change diff",
+        "azimuth run",
+        "azimuth run --lane commit",
+        "azimuth status",
+    ] {
+        assert!(
+            text.contains(command),
+            "the skill does not name {command:?}"
+        );
     }
     let lower = text.to_lowercase();
     for step in ["proposal", "intent", "build", "hand over"] {
-        assert!(lower.contains(step), "the skill does not name the step {step:?}");
+        assert!(
+            lower.contains(step),
+            "the skill does not name the step {step:?}"
+        );
     }
-    assert!(lower.matches("stop").count() >= 3, "the skill names fewer than three stops");
+    assert!(
+        lower.matches("stop").count() >= 3,
+        "the skill names fewer than three stops"
+    );
 }
 
 // behavior: The installed skill tells the agent to use `~/.azimuth/bin/azimuth` when `azimuth` is not found
@@ -272,4 +287,261 @@ fn step_1_moves_the_finished_change_folders_before_the_proposal() {
     assert!(move_at < write_at || says_before, "step 1 does not move the folders before the proposal is written:\n{step}");
     let stop_at = step.find("Stop.").unwrap_or_else(|| panic!("step 1 does not stop:\n{step}"));
     assert!(move_at < stop_at, "step 1 moves the folders after its stop:\n{step}");
+}
+
+// behavior-2: The shipped skill names the command `azimuth change diff` at both stops
+#[test]
+fn both_stops_name_change_diff_and_neither_names_change_show() {
+    let repo = Repo::sample();
+    install(&repo, "codex");
+    let text = digest_line_is_correct(&repo, SKILL_FILE);
+    for number in [2, 4] {
+        assert!(
+            step_text(&text, number).contains("azimuth change diff"),
+            "step {number} does not name azimuth change diff:\n{text}"
+        );
+    }
+    assert!(
+        !text.contains("azimuth change show"),
+        "the skill names an unknown command:\n{text}"
+    );
+}
+
+// behavior-2: Step 2 of the shipped skill no longer says to run lint until it reports nothing
+#[test]
+fn intent_does_not_wait_for_lint_to_report_nothing() {
+    let repo = Repo::sample();
+    install(&repo, "codex");
+    let step = step_text(&digest_line_is_correct(&repo, SKILL_FILE), 2);
+    assert!(step.contains("azimuth lint"));
+    let lower = step
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+    for instruction in lower.split(['.', ';']) {
+        let demands_empty = instruction.contains("until")
+            && ["nothing", "zero", "no findings", "none", "clean", "empty"]
+                .iter()
+                .any(|word| instruction.contains(word));
+        let prohibits = instruction.contains("do not")
+            || instruction.contains("don't")
+            || instruction.contains("never")
+            || instruction.contains("not required");
+        assert!(
+            !demands_empty || prohibits,
+            "Intent still instructs an empty lint result: {instruction}"
+        );
+    }
+}
+
+// behavior-2: It names the first finding that may remain: a Check that this change adds has no marked test
+// behavior-2: It names the second: a marker names a Check that this change removes
+// behavior-2: It says that every other finding and every reading error is gone before the stop
+// behavior-2: It tells the agent to list the findings that remain when it stops
+#[test]
+fn intent_names_exactly_the_two_findings_that_may_remain_at_the_stop() {
+    let repo = Repo::sample();
+    install(&repo, "codex");
+    let step = step_text(&digest_line_is_correct(&repo, SKILL_FILE), 2);
+    let lower = step
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+    let permission = [
+        "may remain",
+        "may still report",
+        "may report",
+        "can still report",
+        "can remain",
+        "are allowed",
+        "is allowed",
+        "permitted",
+        "acceptable",
+    ]
+    .iter()
+    .any(|phrase| lower.contains(phrase));
+    let exactly_two = (lower.contains("two") || lower.split_whitespace().any(|word| word == "2"))
+        && ["only", "no other", "no others", "exactly"]
+            .iter()
+            .any(|word| lower.contains(word));
+    assert!(
+        permission && exactly_two,
+        "Intent does not allow exactly two findings: {step}"
+    );
+    let clauses: Vec<_> = lower
+        .split(['.', ';'])
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect();
+    let added = |text: &str| {
+        text.contains("check")
+            && text.contains("add")
+            && text.contains("change")
+            && (((text.contains("no")
+                || text.contains("without")
+                || text.contains("lack")
+                || text.contains("missing"))
+                && text.contains("mark")
+                && text.contains("test"))
+                || text.contains("without a marked test")
+                || text.contains("missing a marked test"))
+    };
+    let removed = |text: &str| {
+        text.contains("marker")
+            && text.contains("check")
+            && (text.contains("remov") || text.contains("delet"))
+            && text.contains("change")
+    };
+    let normalized = step.lines().fold(String::new(), |mut text, line| {
+        if line.trim_start().starts_with(['-', '*']) {
+            text.push(';');
+        }
+        text.push_str(line);
+        text.push(' ');
+        text
+    });
+    let statements: Vec<_> = normalized
+        .split(['.', ';'])
+        .map(|part| {
+            part.split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .to_lowercase()
+        })
+        .collect();
+    for describes in [added as fn(&str) -> bool, removed as fn(&str) -> bool] {
+        assert!(
+            statements.iter().any(|text| describes(text)
+                && ![
+                    "do not allow",
+                    "not allowed",
+                    "must fix",
+                    "fix a check",
+                    "fix the marker"
+                ]
+                .iter()
+                .any(|negative| text.contains(negative))),
+            "Intent does not permit one of the two findings: {step}"
+        );
+    }
+    for statement in &statements {
+        let permits = [
+            "may remain",
+            "may still report",
+            "may report",
+            "can still report",
+            "can remain",
+            "allowed",
+            "permitted",
+            "acceptable",
+        ]
+        .iter()
+        .any(|word| statement.contains(word));
+        let negated = ["not allowed", "do not allow", "no other", "no others"]
+            .iter()
+            .any(|word| statement.contains(word));
+        if permits && !negated {
+            assert!(
+                !statement.contains("third") && !statement.contains("three findings"),
+                "third permitted finding: {statement}"
+            );
+            let finding = statement.contains("check") || statement.contains("marker");
+            if finding {
+                assert!(
+                    added(statement) || removed(statement),
+                    "another finding is permitted: {statement}"
+                );
+            }
+        }
+    }
+    let bullets: Vec<_> = step
+        .lines()
+        .filter(|line| line.trim_start().starts_with(['-', '*']))
+        .map(|line| line.to_lowercase())
+        .filter(|line| {
+            line.contains("finding") || line.contains("check") || line.contains("marker")
+        })
+        .collect();
+    if !bullets.is_empty() {
+        assert_eq!(
+            bullets.len(),
+            2,
+            "Intent permits a third listed finding: {step}"
+        );
+        for bullet in &bullets {
+            assert!(
+                added(bullet) || removed(bullet),
+                "third allowed finding: {bullet}"
+            );
+        }
+    }
+    assert!(
+        statements.iter().any(
+            |text| (text.contains("other") || text.contains("remaining"))
+                && (text.contains("finding") && text.contains("reading error"))
+                && ["fix", "clear", "gone", "resolve"]
+                    .iter()
+                    .any(|word| text.contains(word))
+                && text.contains("before")
+                && text.contains("stop")
+        ),
+        "Intent does not clear other findings and reading errors before the stop: {step}"
+    );
+    assert!(
+        clauses.iter().any(|text| ["list", "enumerate", "show"]
+            .iter()
+            .any(|word| text.contains(word))
+            && (text.contains("remain") || text.contains("remaining"))
+            && text.contains("stop")
+            && !["do not", "don't", "never", "not list", "not show"]
+                .iter()
+                .any(|word| text.contains(word))),
+        "Intent does not tell the agent to list what remains at the stop: {step}"
+    );
+}
+
+// behavior-2: `azimuth lint` reports the same findings as before, with no option for a step
+#[test]
+fn lint_still_reports_both_intent_findings_and_accepts_no_step_option() {
+    let repo = Repo::sample();
+    repo.replace(LENDING_VERIFICATION, "- Check: returned-book-frees-a-slot\n  After one return the desk lends again to a borrower who held five loans.\n", "");
+    repo.append(
+        LENDING_VERIFICATION,
+        "\n- Check: renewal-keeps-the-count\n  A renewal keeps the count.\n",
+    );
+    let findings = repo.lint_findings(1);
+    assert_eq!(findings.len(), 2, "{findings:#?}");
+    assert_eq!(
+        findings_at(
+            &findings,
+            LOAN_LIMIT_TESTS,
+            Some(repo.line_of(LOAN_LIMIT_TESTS, RETURNED_BOOK))
+        )
+        .len(),
+        1
+    );
+    assert_eq!(
+        findings_at(
+            &findings,
+            LENDING_VERIFICATION,
+            Some(repo.line_of(LENDING_VERIFICATION, "renewal-keeps-the-count"))
+        )
+        .len(),
+        1
+    );
+    for (file, id) in [
+        (LOAN_LIMIT_TESTS, RETURNED_BOOK),
+        (LENDING_VERIFICATION, "renewal-keeps-the-count"),
+    ] {
+        let entries = findings_at(&findings, file, None);
+        assert_eq!(entries.len(), 1);
+        assert!(
+            entries[0]["message"].as_str().unwrap().contains(id),
+            "finding names another Check: {entries:#?}"
+        );
+    }
+    let output = repo.azimuth(&["lint", "--step", "intent", "--json"]);
+    output.expect_status(2);
 }

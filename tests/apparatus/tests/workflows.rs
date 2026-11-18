@@ -619,3 +619,31 @@ fn the_cli_crate_is_not_for_publishing() {
         cli["publish"]
     );
 }
+
+#[test]
+fn ubuntu_ci_runs_the_real_default_launch_limit() {
+    let all = workflows();
+    let (_, _, root) = all.iter().find(|(name, _, _)| name == "ci.yml").unwrap();
+    let steps = &root
+        .child("jobs")
+        .unwrap()
+        .child("test")
+        .unwrap()
+        .child("steps")
+        .unwrap()
+        .children;
+    let found: Vec<_> = steps
+        .iter()
+        .filter(|step| {
+            step.child("run").and_then(|node| node.value.as_deref())
+                == Some(
+                    "cargo test --features azimuth-tests/long-timeout --test default_launch_limit",
+                )
+        })
+        .collect();
+    assert_eq!(found.len(), 1);
+    assert_eq!(
+        found[0].child("if").unwrap().value.as_deref(),
+        Some("matrix.runner == 'ubuntu-24.04'")
+    );
+}

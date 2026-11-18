@@ -2,8 +2,8 @@
 
 use azimuth_tests::*;
 
-fn change_show(repo: &Repo, args: &[&str]) -> serde_json::Value {
-    let mut all = vec!["change", "show", "--json"];
+fn change_diff(repo: &Repo, args: &[&str]) -> serde_json::Value {
+    let mut all = vec!["change", "diff", "--json"];
     all.extend_from_slice(args);
     let output = repo.azimuth(&all);
     output.expect_status(0);
@@ -52,19 +52,19 @@ fn remove_returned_book_check(repo: &Repo) {
 
 // behavior: By default it compares the branch with its target
 #[test]
-fn change_show_compares_the_branch_with_main() {
+fn change_diff_compares_the_branch_with_main() {
     let repo = Repo::sample();
     on_branch(&repo);
     add_check(&repo, "renewal-keeps-the-count");
     repo.commit_all("add a Check");
-    let document = change_show(&repo, &[]);
+    let document = change_diff(&repo, &[]);
     assert_eq!(document["target"], "main", "{document:#}");
     assert!(names(&document, "checks", "added", "renewal-keeps-the-count"), "{document:#}");
 }
 
 // behavior: It lists added, changed and removed Requirements, Scenarios and Checks
 #[test]
-fn change_show_lists_what_the_change_did_to_the_model() {
+fn change_diff_lists_what_the_change_did_to_the_model() {
     let repo = Repo::sample();
     on_branch(&repo);
     add_check(&repo, "renewal-keeps-the-count");
@@ -80,7 +80,7 @@ fn change_show_lists_what_the_change_did_to_the_model() {
     repo.replace(RETURNS_SPEC, "The desk records a fine of three days.", "The desk records a fine for each of the three days.");
     repo.replace(RETURNS_VERIFICATION, "A return three days late records a fine of three days.", "A return three days late records three days of fine.");
     repo.commit_all("rework lending");
-    let document = change_show(&repo, &[]);
+    let document = change_diff(&repo, &[]);
     assert!(names(&document, "requirements", "added", "renewals-are-limited"), "{document:#}");
     assert!(names(&document, "requirements", "changed", LOAN_LIMIT), "{document:#}");
     assert!(names(&document, "scenarios", "removed", &format!("{LOAN_LIMIT}/{RETURNED_BOOK}")), "{document:#}");
@@ -92,20 +92,20 @@ fn change_show_lists_what_the_change_did_to_the_model() {
 
 // behavior: It stores nothing
 #[test]
-fn change_show_stores_nothing() {
+fn change_diff_stores_nothing() {
     let repo = Repo::sample();
     on_branch(&repo);
     add_check(&repo, "renewal-keeps-the-count");
     let before = repo.snapshot();
-    change_show(&repo, &[]);
-    repo.azimuth(&["change", "show"]).expect_status(0);
-    assert_eq!(repo.snapshot(), before, "change show wrote into the worktree");
-    assert!(repo.store_files().is_empty(), "change show wrote the store");
+    change_diff(&repo, &[]);
+    repo.azimuth(&["change", "diff"]).expect_status(0);
+    assert_eq!(repo.snapshot(), before, "change diff wrote into the worktree");
+    assert!(repo.store_files().is_empty(), "change diff wrote the store");
 }
 
 // behavior: It reads the name of the target branch from the project file
 #[test]
-fn change_show_uses_the_target_of_the_project_file() {
+fn change_diff_uses_the_target_of_the_project_file() {
     let repo = Repo::sample_with(|root| {
         let project = std::fs::read_to_string(root.join(PROJECT_FILE)).unwrap();
         std::fs::write(root.join(PROJECT_FILE), project.replace("target = \"main\"", "target = \"release\"")).unwrap();
@@ -115,7 +115,7 @@ fn change_show_uses_the_target_of_the_project_file() {
     repo.commit_all("a Check on the release branch");
     on_branch(&repo);
     add_check(&repo, "renewal-keeps-the-count");
-    let document = change_show(&repo, &[]);
+    let document = change_diff(&repo, &[]);
     assert_eq!(document["target"], "release");
     assert!(names(&document, "checks", "added", "renewal-keeps-the-count"), "{document:#}");
     assert!(!names(&document, "checks", "added", "release-only-check"), "the change was compared with main: {document:#}");
@@ -123,7 +123,7 @@ fn change_show_uses_the_target_of_the_project_file() {
 
 // behavior: It compares with the common ancestor of the current commit and the target branch
 #[test]
-fn change_show_compares_with_the_common_ancestor() {
+fn change_diff_compares_with_the_common_ancestor() {
     let repo = Repo::sample();
     let start = repo.head();
     on_branch(&repo);
@@ -133,7 +133,7 @@ fn change_show_compares_with_the_common_ancestor() {
     add_check(&repo, "landed-on-main-later");
     repo.commit_all("work that landed on main after the branch started");
     repo.git(&["checkout", "--quiet", "change"]);
-    let document = change_show(&repo, &[]);
+    let document = change_diff(&repo, &[]);
     assert_eq!(document["base"].as_str().map(|base| start.starts_with(base)), Some(true), "{document:#}");
     assert!(!names(&document, "checks", "removed", "landed-on-main-later"), "{document:#}");
     assert_eq!(class(&document), "C", "{document:#}");
@@ -141,7 +141,7 @@ fn change_show_compares_with_the_common_ancestor() {
 
 // behavior: It uses the remote-tracking copy of the target, or the local one when no remote exists, and fetches nothing
 #[test]
-fn change_show_uses_the_last_fetched_target_and_never_fetches() {
+fn change_diff_uses_the_last_fetched_target_and_never_fetches() {
     let origin = Repo::sample();
     let clone = origin.beside("clone");
     origin.git_in(&origin.beside(""), &["clone", "--quiet", origin.root().to_str().unwrap(), clone.to_str().unwrap()]);
@@ -160,7 +160,7 @@ fn change_show_uses_the_last_fetched_target_and_never_fetches() {
     origin.append(PRODUCT_FILE, "a commit on the remote that was never fetched\n");
     origin.commit_all("remote moves");
 
-    let output = origin.azimuth_in(&clone, &["change", "show", "--json"], &[]);
+    let output = origin.azimuth_in(&clone, &["change", "diff", "--json"], &[]);
     output.expect_status(0);
     let document = output.json();
     assert!(names(&document, "checks", "added", "local-main-only"), "the local copy was used: {document:#}");
@@ -172,11 +172,11 @@ fn change_show_uses_the_last_fetched_target_and_never_fetches() {
 fn on_the_target_branch_the_working_tree_is_the_change() {
     let repo = Repo::sample();
     add_check(&repo, "renewal-keeps-the-count");
-    let document = change_show(&repo, &[]);
+    let document = change_diff(&repo, &[]);
     assert!(names(&document, "checks", "added", "renewal-keeps-the-count"), "{document:#}");
     assert_eq!(document["base"].as_str().map(|base| repo.head().starts_with(base)), Some(true), "{document:#}");
     repo.commit_all("commit the Check");
-    let committed = change_show(&repo, &[]);
+    let committed = change_diff(&repo, &[]);
     assert!(listed(&committed, "checks", "added").is_empty(), "{committed:#}");
 }
 
@@ -190,10 +190,10 @@ fn another_target_can_be_named() {
     repo.git(&["checkout", "--quiet", "-b", "second"]);
     add_check(&repo, "second-change-check");
     repo.commit_all("second change");
-    let stacked = change_show(&repo, &["--target", "first"]);
+    let stacked = change_diff(&repo, &["--target", "first"]);
     assert!(names(&stacked, "checks", "added", "second-change-check"), "{stacked:#}");
     assert!(!names(&stacked, "checks", "added", "first-change-check"), "{stacked:#}");
-    let whole = change_show(&repo, &[]);
+    let whole = change_diff(&repo, &[]);
     assert!(names(&whole, "checks", "added", "first-change-check") && names(&whole, "checks", "added", "second-change-check"));
 }
 
@@ -218,19 +218,19 @@ fn shallow_clone_without_ancestor() -> (Repo, std::path::PathBuf) {
 #[test]
 fn a_missing_ancestor_ends_with_two() {
     let (origin, shallow) = shallow_clone_without_ancestor();
-    origin.azimuth_in(&shallow, &["change", "show"], &[]).expect_status(2);
-    origin.azimuth_in(&shallow, &["change", "show", "--json"], &[]).expect_status(2);
+    origin.azimuth_in(&shallow, &["change", "diff"], &[]).expect_status(2);
+    origin.azimuth_in(&shallow, &["change", "diff", "--json"], &[]).expect_status(2);
 }
 
 // behavior: When the common ancestor is not in the clone it says so and prints no class
 #[test]
 fn a_missing_ancestor_is_named_and_no_class_is_guessed() {
     let (origin, shallow) = shallow_clone_without_ancestor();
-    let output = origin.azimuth_in(&shallow, &["change", "show"], &[]);
+    let output = origin.azimuth_in(&shallow, &["change", "diff"], &[]);
     assert!(output.text().contains("the common commit is not in this clone"), "{}", output.text());
     let lower = output.text().to_lowercase();
     assert!(!lower.contains("class"), "a class was printed:\n{}", output.text());
-    let json = origin.azimuth_in(&shallow, &["change", "show", "--json"], &[]);
+    let json = origin.azimuth_in(&shallow, &["change", "diff", "--json"], &[]);
     assert!(!json.stdout.contains("\"class\""), "{}", json.stdout);
 }
 
@@ -240,7 +240,7 @@ fn change_document_has_its_fields() {
     let repo = Repo::sample();
     on_branch(&repo);
     add_check(&repo, "renewal-keeps-the-count");
-    let document = change_show(&repo, &[]);
+    let document = change_diff(&repo, &[]);
     for field in ["target", "base", "class", "requirements", "scenarios", "checks", "markers_removed", "not_compared", "rigor_lowered"] {
         assert!(has(&document, field), "no `{field}`: {document:#}");
     }
@@ -257,7 +257,7 @@ fn the_preview_reads_the_working_tree() {
     let repo = Repo::sample();
     on_branch(&repo);
     add_check(&repo, "renewal-keeps-the-count");
-    let document = change_show(&repo, &[]);
+    let document = change_diff(&repo, &[]);
     assert!(names(&document, "checks", "added", "renewal-keeps-the-count"), "{document:#}");
     assert_eq!(class(&document), "C");
 }
@@ -266,8 +266,8 @@ fn class_of(edit: impl FnOnce(&Repo)) -> (String, serde_json::Value, Output) {
     let repo = Repo::sample();
     on_branch(&repo);
     edit(&repo);
-    let document = change_show(&repo, &[]);
-    let text = repo.azimuth(&["change", "show"]);
+    let document = change_diff(&repo, &[]);
+    let text = repo.azimuth(&["change", "diff"]);
     (class(&document), document, text)
 }
 
@@ -287,7 +287,7 @@ fn an_installed_skill_change_is_class_d() {
     repo.commit_all("install the default process");
     on_branch(&repo);
     repo.replace(SKILL_FILE, "\n", "\nThe person also reads the build log.\n");
-    let document = change_show(&repo, &[]);
+    let document = change_diff(&repo, &[]);
     assert_eq!(class(&document), "D", "{document:#}");
 }
 
@@ -322,7 +322,7 @@ fn a_rigor_declaration_change_is_class_d() {
     });
     on_branch(&repo);
     repo.replace(RETURNS_VERIFICATION, "  Reuse: never, the desk reads today's date\n", "");
-    assert_eq!(class(&change_show(&repo, &[])), "D");
+    assert_eq!(class(&change_diff(&repo, &[])), "D");
 }
 
 // behavior: A change to `verification.md`, a file with a marker or any file inside a suite's folder makes the class at least C
@@ -390,10 +390,10 @@ fn removing_a_marker_line_is_class_d() {
     });
     on_branch(&repo);
     repo.remove("suites/desk-checks/free-return-weekend.test");
-    let document = change_show(&repo, &[]);
+    let document = change_diff(&repo, &[]);
     assert_eq!(class(&document), "D", "{document:#}");
     assert_eq!(document["markers_removed"], 1, "{document:#}");
-    let text = repo.azimuth(&["change", "show"]).stdout;
+    let text = repo.azimuth(&["change", "diff"]).stdout;
     assert!(text.contains("1 marker removed"), "{text}");
 }
 
@@ -415,12 +415,12 @@ fn a_changed_marked_file_is_named_as_not_compared() {
 
 // behavior: It builds nothing and starts no adapter
 #[test]
-fn change_show_starts_no_adapter() {
+fn change_diff_starts_no_adapter() {
     let repo = Repo::sample();
     on_branch(&repo);
     repo.need_facility("present");
     add_check(&repo, "renewal-keeps-the-count");
-    change_show(&repo, &[]);
+    change_diff(&repo, &[]);
     assert!(repo.adapter_starts().is_empty() && repo.probe_starts().is_empty());
 }
 
@@ -447,10 +447,10 @@ fn loosening_reuse_lowers_rigor() {
     });
     on_branch(&repo);
     repo.replace(RETURNS_VERIFICATION, "  Reuse: never, the desk reads today's date\n", "");
-    let document = change_show(&repo, &[]);
+    let document = change_diff(&repo, &[]);
     assert_eq!(class(&document), "D");
     assert_eq!(document["rigor_lowered"], json!([{ "kind": "reuse", "check": ON_TIME_RETURN }]), "{document:#}");
-    let text = repo.azimuth(&["change", "show"]).stdout;
+    let text = repo.azimuth(&["change", "diff"]).stdout;
     assert!(text.contains("rigor lowered") && text.contains(ON_TIME_RETURN), "{text}");
 }
 
@@ -474,10 +474,10 @@ fn removing_a_review_declaration_lowers_rigor() {
     for line in ["Verification: reviewed\n", "Realization: reviewed\n"] {
         let repo = with_reviews_declared();
         repo.replace(LENDING_SPEC, line, "");
-        let document = change_show(&repo, &[]);
+        let document = change_diff(&repo, &[]);
         assert_eq!(class(&document), "D", "{line:?}: {document:#}");
         assert_eq!(count(&document["rigor_lowered"]), 1, "{line:?}: {document:#}");
-        let text = repo.azimuth(&["change", "show"]).stdout;
+        let text = repo.azimuth(&["change", "diff"]).stdout;
         assert!(text.contains("rigor lowered") && text.contains(LOAN_LIMIT), "{line:?}:\n{text}");
     }
 }
@@ -499,7 +499,7 @@ fn each_lowered_declaration_is_an_entry_with_its_kind_and_owner() {
     on_branch(&repo);
     repo.replace(LENDING_SPEC, "Verification: reviewed\nRealization: reviewed\n", "");
     repo.replace(RETURNS_VERIFICATION, "  Reuse: never, the desk reads today's date\n", "");
-    let document = change_show(&repo, &[]);
+    let document = change_diff(&repo, &[]);
     let mut entries = document["rigor_lowered"].as_array().cloned().unwrap_or_else(|| panic!("not a list: {document:#}"));
     entries.sort_by_key(|entry| entry["kind"].as_str().unwrap_or_default().to_string());
     assert_eq!(
@@ -533,7 +533,7 @@ fn a_removed_requirement_or_check_is_not_listed_as_lowered() {
     for file in [LATE_FINE_TESTS, FREE_RETURN_TESTS] {
         repo.remove(file);
     }
-    let document = change_show(&repo, &[]);
+    let document = change_diff(&repo, &[]);
     assert!(names(&document, "requirements", "removed", LATE_FINE), "{document:#}");
     assert!(names(&document, "checks", "removed", ON_TIME_RETURN), "{document:#}");
     assert_eq!(document["rigor_lowered"], json!([]), "{document:#}");
@@ -551,7 +551,7 @@ fn a_removed_requirement_or_check_is_not_listed_as_lowered() {
         "",
     );
     check.remove(FREE_RETURN_TESTS);
-    let document = change_show(&check, &[]);
+    let document = change_diff(&check, &[]);
     assert!(names(&document, "checks", "removed", ON_TIME_RETURN), "{document:#}");
     assert_eq!(document["rigor_lowered"], json!([]), "{document:#}");
 }
@@ -584,15 +584,27 @@ fn editing_an_installed_skill_is_class_d() {
     repo.commit_all("install the default process");
     on_branch(&repo);
     repo.replace(SKILL_FILE, "\n", "\nNo stop after the intent.\n");
-    assert_eq!(class(&change_show(&repo, &[])), "D");
+    assert_eq!(class(&change_diff(&repo, &[])), "D");
 }
 
-// behavior: It prints nothing when the change touches no model file and no test
+// behavior-2: For a change that touches no model file and no test the command prints one line
+// behavior: It prints one line when the change touches no model file and no test
 #[test]
-fn a_change_outside_model_and_tests_prints_nothing() {
-    let (_, _, text) = class_of(|repo| repo.append(PRODUCT_FILE, "renewals do not count\n"));
-    text.expect_status(0);
-    assert!(text.stdout.trim().is_empty(), "{}", text.stdout);
+fn a_change_outside_model_and_tests_prints_one_line() {
+    for product_edit in [false, true] {
+        let (_, _, text) = class_of(|repo| {
+            if product_edit {
+                repo.append(PRODUCT_FILE, "renewals do not count\n");
+            }
+        });
+        text.expect_status(0);
+        assert_eq!(text.stdout.lines().count(), 1, "{}", text.stdout);
+        assert!(
+            !text.stdout.trim().is_empty(),
+            "the change prints no summary line"
+        );
+        quiet_class_is_a(&text.stdout);
+    }
 }
 
 // behavior: In `change-1`, `class` is one letter, a Scenario is written `requirement/scenario`, `markers_removed` is a number and `rigor_lowered` is a list
@@ -609,7 +621,7 @@ fn change_document_values_have_their_fixed_forms() {
         "\n#### Scenario: lost-book-is-charged\n- Check: lost-book-is-charged\n  A lost book is charged at its price.\n",
     );
     repo.write("suites/desk-checks/lost-book.test", "# Check: lost-book-is-charged\noutcome: passed\n");
-    let document = change_show(&repo, &[]);
+    let document = change_diff(&repo, &[]);
     assert_eq!(document["class"], "D", "{document:#}");
     assert_eq!(listed(&document, "scenarios", "added"), vec![format!("{LATE_FINE}/lost-book-is-charged")], "{document:#}");
     assert_eq!(listed(&document, "checks", "added"), vec!["lost-book-is-charged".to_string()], "{document:#}");
@@ -617,18 +629,379 @@ fn change_document_values_have_their_fixed_forms() {
     assert_eq!(document["rigor_lowered"], json!([]), "{document:#}");
 }
 
-// behavior: With a change that touches no model file and no test, the text is empty and the document says class `A` with empty lists
+// behavior: With a change that touches no model file and no test, the text is one line and the document says class `A` with empty lists
 #[test]
-fn a_change_outside_model_and_tests_is_an_empty_class_a_document() {
-    let (class, document, text) = class_of(|repo| repo.append(PRODUCT_FILE, "renewals do not count\n"));
+fn a_change_outside_model_and_tests_is_a_class_a_document_with_one_text_line() {
+    let (class, document, text) =
+        class_of(|repo| repo.append(PRODUCT_FILE, "renewals do not count\n"));
     text.expect_status(0);
-    assert_eq!(text.stdout, "", "the text is not empty");
+    assert_eq!(text.stdout.lines().count(), 1, "{}", text.stdout);
+    assert!(
+        !text.stdout.trim().is_empty(),
+        "the change prints no summary line"
+    );
+    quiet_class_is_a(&text.stdout);
     assert_eq!(class, "A", "{document:#}");
     for kind in ["requirements", "scenarios", "checks"] {
         for which in ["added", "changed", "removed"] {
-            assert_eq!(document[kind][which], json!([]), "`{kind}.{which}`: {document:#}");
+            assert_eq!(
+                document[kind][which],
+                json!([]),
+                "`{kind}.{which}`: {document:#}"
+            );
         }
     }
     assert_eq!(document["markers_removed"], 0, "{document:#}");
     assert_eq!(document["rigor_lowered"], json!([]), "{document:#}");
+}
+
+// behavior-2: The command that compares a branch with its target is `azimuth change diff`
+#[test]
+fn change_diff_takes_no_id() {
+    let repo = Repo::sample();
+    repo.append(PRODUCT_FILE, "renewals do not count\n");
+    assert_eq!(change_diff(&repo, &[])["class"], "A");
+    repo.azimuth(&["change", "diff", LOAN_LIMIT])
+        .expect_status(2);
+}
+
+// behavior-2: `azimuth change show` is an unknown command
+#[test]
+fn change_show_is_an_unknown_command() {
+    let repo = Repo::sample();
+    for args in [&["change", "show"][..], &["change", "show", "--json"][..]] {
+        let output = repo.azimuth(args);
+        output.expect_status(2);
+    }
+}
+
+// behavior-2: A changed file with a marker that the target does not have gets no line "tests in this file were not compared"
+// behavior-2: Such a file is absent from `not_compared` in the structured form
+// behavior-2: A changed file with a marker that the target has still gets the line
+#[test]
+fn only_marked_files_present_in_the_target_are_not_compared() {
+    let repo = Repo::sample();
+    let gaining = "suites/desk-checks/unmarked.test";
+    let new = "suites/desk-checks/renewal.test";
+    repo.write(gaining, "outcome: passed\n");
+    repo.commit_all("an unmarked base file");
+    on_branch(&repo);
+    repo.write(
+        new,
+        "# Check: returned-book-frees-a-slot\noutcome: passed\n",
+    );
+    repo.write(gaining, "# Check: sixth-loan-is-refused\noutcome: passed\n");
+    repo.replace(FREE_RETURN_TESTS, "# Check: on-time-return-is-free\n", "");
+    repo.commit_all("add and remove markers on a branch");
+    let doc = change_diff(&repo, &[]);
+    let mut paths: Vec<_> = doc["not_compared"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap())
+        .collect();
+    paths.sort();
+    let mut expected = vec![FREE_RETURN_TESTS, gaining];
+    expected.sort();
+    assert_eq!(paths, expected);
+    assert_eq!(doc["markers_removed"], 1);
+    let out = repo.azimuth(&["change", "diff"]);
+    out.expect_status(0);
+    let lines: Vec<_> = out
+        .stdout
+        .lines()
+        .filter(|line| line.contains("tests in this file were not compared"))
+        .collect();
+    assert_eq!(lines.len(), 2);
+    for file in expected {
+        assert_eq!(lines.iter().filter(|line| line.contains(file)).count(), 1);
+    }
+    assert!(
+        !out.stdout.contains(new),
+        "committed new file was named as not compared: {}",
+        out.stdout
+    );
+}
+
+// behavior-2: In the plain form each added, changed or removed id stands on a line of its own under its kind
+#[test]
+fn plain_diff_gives_every_model_id_its_own_line_under_its_kind() {
+    let repo = Repo::sample();
+    let declaration = |id: &str| {
+        format!("\n### Requirement: {id}\nThe shelf keeps its order.\n\n#### Scenario: {id}-scenario\nThe shelf is read in order.\n")
+    };
+    let verification = |id: &str| {
+        format!("\n### Requirement: {id}\n#### Scenario: {id}-scenario\n- Check: {id}-check\n  The shelf is read in order.\n")
+    };
+    for id in ["catalog-order-holds", "shelf-order-holds"] {
+        repo.append(LENDING_SPEC, &declaration(id));
+        repo.append(LENDING_VERIFICATION, &verification(id));
+    }
+    repo.commit_all("two removable declarations");
+    for id in ["catalog-order-holds", "shelf-order-holds"] {
+        repo.replace(LENDING_SPEC, &declaration(id), "");
+        repo.replace(LENDING_VERIFICATION, &verification(id), "");
+    }
+    for id in ["renewal-order-holds", "return-order-holds"] {
+        repo.append(LENDING_SPEC, &declaration(id));
+        repo.append(LENDING_VERIFICATION, &verification(id));
+    }
+    repo.replace(
+        LENDING_SPEC,
+        "at most five loans at a time",
+        "at most five concurrent loans",
+    );
+    repo.replace(
+        RETURNS_SPEC,
+        "owes a fine for each day it is late",
+        "owes one fine for each day it is late",
+    );
+    repo.replace(
+        LENDING_SPEC,
+        "The desk refuses the loan and the borrower keeps five.",
+        "The desk refuses and the borrower keeps five loans.",
+    );
+    repo.replace(
+        RETURNS_SPEC,
+        "The desk records a fine of three days.",
+        "The desk records three days of fines.",
+    );
+    repo.replace(
+        LENDING_VERIFICATION,
+        "The desk refuses a sixth loan",
+        "The desk turns down a sixth loan",
+    );
+    repo.replace(
+        RETURNS_VERIFICATION,
+        "A return three days late records a fine of three days.",
+        "A return three days late records three days of fines.",
+    );
+    let output = repo.azimuth(&["change", "diff"]);
+    output.expect_status(0);
+    let mut expected = std::collections::BTreeMap::new();
+    for (kind, operation, mut ids) in [
+        (
+            "requirements",
+            "added",
+            vec![
+                "renewal-order-holds".to_string(),
+                "return-order-holds".to_string(),
+            ],
+        ),
+        (
+            "requirements",
+            "removed",
+            vec![
+                "catalog-order-holds".to_string(),
+                "shelf-order-holds".to_string(),
+            ],
+        ),
+        (
+            "requirements",
+            "changed",
+            vec![LOAN_LIMIT.to_string(), LATE_FINE.to_string()],
+        ),
+        (
+            "scenarios",
+            "added",
+            vec![
+                "renewal-order-holds/renewal-order-holds-scenario".to_string(),
+                "return-order-holds/return-order-holds-scenario".to_string(),
+            ],
+        ),
+        (
+            "scenarios",
+            "removed",
+            vec![
+                "catalog-order-holds/catalog-order-holds-scenario".to_string(),
+                "shelf-order-holds/shelf-order-holds-scenario".to_string(),
+            ],
+        ),
+        (
+            "scenarios",
+            "changed",
+            vec![
+                format!("{LOAN_LIMIT}/{SIXTH_LOAN}"),
+                format!("{LATE_FINE}/{LATE_RETURN}"),
+            ],
+        ),
+        (
+            "checks",
+            "added",
+            vec![
+                "renewal-order-holds-check".to_string(),
+                "return-order-holds-check".to_string(),
+            ],
+        ),
+        (
+            "checks",
+            "removed",
+            vec![
+                "catalog-order-holds-check".to_string(),
+                "shelf-order-holds-check".to_string(),
+            ],
+        ),
+        (
+            "checks",
+            "changed",
+            vec![SIXTH_LOAN.to_string(), LATE_RETURN.to_string()],
+        ),
+    ] {
+        ids.sort();
+        expected.insert((kind.to_string(), operation.to_string()), ids);
+    }
+    let mut actual: std::collections::BTreeMap<(String, String), Vec<String>> =
+        std::collections::BTreeMap::new();
+    let mut kind = None;
+    let mut operation = None;
+    for line in output
+        .stdout
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+    {
+        let stripped = line
+            .trim_start_matches(['-', '+', '*', '•'])
+            .trim()
+            .trim_matches('`');
+        let id_line = stripped
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '/');
+        let words: Vec<_> = line
+            .split(|c: char| !c.is_ascii_alphabetic())
+            .filter(|word| !word.is_empty())
+            .map(str::to_lowercase)
+            .collect();
+        let found_kind = words
+            .iter()
+            .find_map(|word| match word.trim_end_matches('s') {
+                "requirement" => Some("requirements"),
+                "scenario" => Some("scenarios"),
+                "check" => Some("checks"),
+                _ => None,
+            });
+        let found_operation = words.iter().find_map(|word| {
+            if word.starts_with("add") || word == "new" {
+                Some("added")
+            } else if word.starts_with("chang")
+                || word.starts_with("modif")
+                || word.starts_with("edit")
+            {
+                Some("changed")
+            } else if word.starts_with("remov") || word.starts_with("delet") {
+                Some("removed")
+            } else {
+                None
+            }
+        });
+        if id_line
+            && (stripped.contains('-')
+                || stripped.contains('/')
+                || (found_kind.is_none() && found_operation.is_none()))
+        {
+            let key = (
+                kind.clone().expect("id has no kind"),
+                operation
+                    .clone()
+                    .expect("id has no operation under its kind"),
+            );
+            actual.entry(key).or_default().push(stripped.to_string());
+            continue;
+        }
+        if let Some(found) = found_kind {
+            kind = Some(found.to_string());
+            operation = None;
+        }
+        if let Some(found) = found_operation {
+            operation = Some(found.to_string());
+        }
+    }
+    for ids in actual.values_mut() {
+        ids.sort();
+    }
+    assert_eq!(
+        actual, expected,
+        "complete plain groups differ:\n{}",
+        output.stdout
+    );
+}
+
+#[test]
+fn the_base_tree_contents_are_read_by_one_git_process() {
+    let measure = |extra_files: usize| {
+        let repo = Repo::sample();
+        let marked: Vec<_> = (0..3)
+            .map(|index| format!("suites/desk-checks/base-proof-{index}.test"))
+            .collect();
+        for file in &marked {
+            repo.write(file, "# Check: sixth-loan-is-refused\noutcome: passed\n");
+        }
+        for index in 0..extra_files {
+            repo.write(
+                &format!("suites/desk-checks/shelf-{index}.txt"),
+                "base contents without markers\n",
+            );
+        }
+        repo.commit_all("several marked base files");
+        on_branch(&repo);
+        for file in &marked {
+            repo.replace(file, "# Check: sixth-loan-is-refused\n", "");
+        }
+        repo.commit_all("remove three base markers");
+        let git = std::process::Command::new("/usr/bin/which")
+            .arg("git")
+            .output()
+            .unwrap();
+        assert!(git.status.success());
+        let git = String::from_utf8(git.stdout).unwrap().trim().to_string();
+        let front = repo.beside("git-front");
+        std::fs::create_dir_all(&front).unwrap();
+        std::fs::copy(binaries_dir().join("git-recorder"), front.join("git")).unwrap();
+        let path = format!(
+            "{}:{}",
+            front.display(),
+            std::env::var("PATH").unwrap_or_default()
+        );
+        let log = repo.beside("git-processes.jsonl");
+        let output = repo.azimuth_with_env(
+            &["change", "diff", "--json"],
+            &[
+                ("PATH", &path),
+                ("REAL_GIT", &git),
+                ("GIT_PROCESS_LOG", log.to_str().unwrap()),
+            ],
+        );
+        output.expect_status(0);
+        let doc = output.json();
+        assert_eq!(doc["markers_removed"], 3);
+        assert_eq!(doc["class"], "D");
+        let invocations: Vec<Vec<String>> = std::fs::read_to_string(log)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert!(!invocations.is_empty());
+        invocations.len()
+    };
+    let small = measure(0);
+    let large = measure(40);
+    assert_eq!(
+        large, small,
+        "git process count grew with the base tree: {small} -> {large}"
+    );
+}
+
+fn quiet_class_is_a(text: &str) {
+    let words: Vec<_> = text
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .collect();
+    for pair in words.windows(2) {
+        if pair[0].eq_ignore_ascii_case("class") {
+            assert!(
+                pair[1].eq_ignore_ascii_case("a"),
+                "quiet change names another class: {text}"
+            );
+        }
+    }
 }

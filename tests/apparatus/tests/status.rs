@@ -277,7 +277,7 @@ fn every_document_names_its_format() {
         (&["status", "--json"][..], "status-1"),
         (&["requirement", "show", LATE_FINE, "--json"][..], "requirement-1"),
         (&["check", "show", LATE_RETURN, "--json"][..], "check-1"),
-        (&["change", "show", "--json"][..], "change-1"),
+        (&["change", "diff", "--json"][..], "change-1"),
         (&["lint", "--json"][..], "lint-1"),
         (&["run", "--json"][..], "run-1"),
     ] {
@@ -320,7 +320,7 @@ fn every_command_of_the_increment_takes_json() {
         &["status", "--json"][..],
         &["requirement", "show", LATE_FINE, "--json"][..],
         &["check", "show", LATE_RETURN, "--json"][..],
-        &["change", "show", "--json"][..],
+        &["change", "diff", "--json"][..],
     ] {
         let output = repo.azimuth(args);
         assert!(output.status == 0 || output.status == 1, "azimuth {args:?}:\n{}", output.text());
@@ -334,7 +334,7 @@ fn every_command_of_the_increment_takes_json() {
 fn reading_commands_answer_with_zero() {
     let repo = known_fail();
     repo.append(PRODUCT_FILE, "renewals do not count\n");
-    for args in [&["status"][..], &["requirement", "show", LATE_FINE][..], &["check", "show", LATE_RETURN][..], &["change", "show"][..]] {
+    for args in [&["status"][..], &["requirement", "show", LATE_FINE][..], &["check", "show", LATE_RETURN][..], &["change", "diff"][..]] {
         repo.azimuth(args).expect_status(0);
     }
 }
@@ -561,7 +561,7 @@ fn no_document_and_no_record_holds_null() {
         &["status", "--json"][..],
         &["requirement", "show", LOAN_LIMIT, "--json"][..],
         &["requirement", "show", LATE_FINE, "--json"][..],
-        &["change", "show", "--json"][..],
+        &["change", "diff", "--json"][..],
         &["lint", "--json"][..],
         &["run", "--lane", "commit", "--json"][..],
     ] {
@@ -631,7 +631,7 @@ fn an_empty_list_is_printed() {
     }
 
     repo.git(&["checkout", "--quiet", "-b", "change"]);
-    let change = printed_json(&repo, &["change", "show", "--json"]);
+    let change = printed_json(&repo, &["change", "diff", "--json"]);
     assert_eq!(change["format"], "change-1", "{change:#}");
     for kind in ["requirements", "scenarios", "checks"] {
         for which in ["added", "changed", "removed"] {
@@ -676,4 +676,27 @@ fn a_finding_about_a_file_or_a_folder_has_no_line() {
     let on_folder: Vec<&serde_json::Value> = findings.iter().filter(|finding| finding["file"] == "suites/desk-checks").collect();
     assert_eq!(on_folder.len(), 1, "{commit:#}");
     assert!(on_folder[0].get("line").is_none(), "{:#}", on_folder[0]);
+}
+
+// behavior-2: In the text of `azimuth status` a Check that is owed because files changed says how many files differ and names none
+#[test]
+fn status_counts_changed_files_on_each_owed_check_line() {
+    let repo = Repo::sample();
+    repo.run_json(&[], 0);
+    repo.append(PRODUCT_FILE, "renewals do not count\n");
+    for count in [1, 3] {
+        if count == 3 {
+            repo.write("desk/shelves.txt", "north\n");
+            repo.write("desk/catalog.txt", "books\n");
+        }
+        let output = repo.azimuth(&["status"]);
+        output.expect_status(0);
+        for check in ALL_CHECKS {
+            assert_owed_file_count(&output.stdout, check, count);
+        }
+        assert_no_file_names(
+            &output.stdout,
+            &[PRODUCT_FILE, "desk/shelves.txt", "desk/catalog.txt"],
+        );
+    }
 }
