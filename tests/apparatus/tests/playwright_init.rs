@@ -98,7 +98,7 @@ fn init_writes_the_playwright_command_and_marker_from_the_runner_table() {
     for suite in suites(&repo) {
         assert_eq!(suite["adapter"].as_str(), Some(COMMAND));
         let marker = suite["marker"].as_str().unwrap();
-        assert!(marker.contains("@Check:<id>"), "{suite:#?}");
+        assert_eq!(marker, "@Check:<id>", "{suite:#?}");
         assert!(!suite.as_table().unwrap().contains_key("marker_key"));
     }
 }
@@ -112,7 +112,13 @@ fn only_a_manifest_dependency_identifies_a_missing_playwright_stack() {
     for section in ["dependencies", "devDependencies"] {
         let mut repo = fresh();
         fake_adapter(&mut repo);
-        // A config alone must not identify a stack.
+        manifest(
+            &repo,
+            "ordinary",
+            r#"{"name":"ordinary-app","description":"uses @playwright/test and @azimuth-sh/playwright","scripts":{"check":"playwright test @playwright/test @azimuth-sh/playwright"}}"#,
+        );
+        answers(&repo, "ordinary", &["must-not-be-discovered"]);
+        // A mention in prose or a command is not a package dependency.
         repo.write("some-tests/playwright.config.js", "export default {};\n");
         let negative = repo.azimuth(&["init"]);
         negative.expect_status(0);
@@ -227,7 +233,9 @@ fn init_does_not_read_manifests_under_node_modules_or_git_ignored_folders() {
         answers(&repo, folder, &["forbidden-suite"]);
     }
     answers(&repo, ".", &[]);
-    repo.azimuth(&["init"]).expect_status(0);
+    let output = repo.azimuth(&["init"]);
+    output.expect_status(0);
+    assert!(!output.text().contains("npm install"), "{}", output.text());
     let calls = starts(&repo);
     assert_eq!(calls.len(), 1, "{calls:#?}");
     assert_eq!(calls[0]["request"]["folder"], ".");
@@ -262,36 +270,32 @@ fn a_manifest_with_an_unstartable_adapter_prints_the_install_line_without_a_suit
 fn lint_uses_the_playwright_tag_form_and_reports_its_absence() {
     let mut repo = fresh();
     fake_adapter(&mut repo);
-    answers(&repo, ".", &["browser-checks"]);
+    answers(&repo, ".", &["playwright/lending", "playwright/returns"]);
     repo.azimuth(&["init"]).expect_status(0);
     let generated = suites(&repo);
-    assert_eq!(generated.len(), 1, "{generated:#?}");
-    let marker = generated[0]["marker"].as_str().unwrap();
+    assert_eq!(generated.len(), 2, "{generated:#?}");
     let sample = Repo::sample();
-    sample.replace(
-        PROJECT_FILE,
-        "marker = \"# Check: <id>\"",
-        &format!("marker = {}", toml::Value::String(marker.to_string())),
-    );
-    for file in [LOAN_LIMIT_TESTS, LATE_FINE_TESTS, FREE_RETURN_TESTS] {
-        let mut text = sample.read(file);
-        for id in ALL_CHECKS {
-            let tag = marker.replace("<id>", id);
-            let tag = if tag.starts_with(['\'', '"']) {
-                tag
-            } else {
-                format!("'{tag}'")
-            };
-            text = text.replace(
-                &format!("# Check: {id}"),
-                &format!("test('desk', {{tag:{tag}}}, async()=>{{}});"),
-            );
-        }
-        sample.write(file, &text);
-    }
+    let mut project = parse_toml(&sample.read(PROJECT_FILE));
+    project.insert("suite".into(), toml::Value::Array(generated.clone()));
+    sample.write(PROJECT_FILE, &toml::to_string(&project).unwrap());
     assert!(sample.lint_findings(0).is_empty());
+    for id in ALL_CHECKS {
+        let path = if [SIXTH_LOAN, RETURNED_BOOK].contains(&id) {
+            "playwright/lending"
+        } else {
+            "playwright/returns"
+        };
+        let suite = generated
+            .iter()
+            .find(|s| s["path"].as_str().unwrap().trim_end_matches('/') == path)
+            .unwrap();
+        assert_eq!(
+            sample.check_show(id)["suite"].as_str(),
+            suite["name"].as_str()
+        );
+    }
     sample.replace(
-        LATE_FINE_TESTS,
+        "playwright/returns/desk.spec.cjs",
         &format!("@Check:{LATE_RETURN}"),
         &format!("@Proof:{LATE_RETURN}"),
     );
@@ -321,7 +325,62 @@ fn run_prints_the_missing_playwright_command_and_the_same_versioned_install_line
     repo.set_env("PATH", &repo.path_without("npx"));
     let output = repo.azimuth(&["run"]);
     output.expect_status(1);
-    assert!(output.text().contains(COMMAND), "{}", output.text());
-    assert_install(&output.text());
+    assert!(output.text().contains("npx"), "{}", output.text());
+    assert!(output.text().contains(&install_line()), "{}", output.text());
     assert!(repo.records().is_empty());
+}
+
+#[test]
+fn a_manifest_with_a_missing_host_prints_the_install_line_without_a_suite() {
+    let mut repo = fresh();
+    repo.set_env("PATH", &repo.path_without_programs(&["dotnet", "npx"]));
+    manifest(
+        &repo,
+        APPLICATION,
+        r#"{"devDependencies":{"@azimuth-sh/playwright":"0.2.0-alpha.2"}}"#,
+    );
+    let output = repo.azimuth(&["init"]);
+    output.expect_status(0);
+    assert_install(&output.text());
+    assert!(suites(&repo).is_empty());
+}
+
+// behavior-2: Arguments on the adapter's command line in the project file reach the adapter as written
+#[test]
+fn the_hosted_adapter_gets_every_written_argument() {
+    for extra in ["", " --config ../desk.config --verbose"] {
+        let mut repo = Repo::sample();
+        let bin = repo.beside("host-recorder");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::copy(binaries_dir().join("stdin-recorder"), bin.join("npx")).unwrap();
+        repo.set_env(
+            "PATH",
+            &format!(
+                "{}:{}",
+                bin.display(),
+                repo.path_without_programs(&["npx", "dotnet"])
+            ),
+        );
+        repo.set_env(
+            "RECORDER_TARGET",
+            binaries_dir().join("text-suite-adapter").to_str().unwrap(),
+        );
+        repo.replace(
+            PROJECT_FILE,
+            "adapter = \"text-suite-adapter\"",
+            &format!("adapter = \"{COMMAND}{extra}\""),
+        );
+        repo.run_json(&[], 0);
+        let calls: Vec<_> = repo
+            .log_entries()
+            .into_iter()
+            .filter(|v| v["program"] == "stdin-recorder")
+            .collect();
+        assert_eq!(calls.len(), 1, "{calls:#?}");
+        let expected: Vec<_> = format!("--no @azimuth-sh/playwright{extra}")
+            .split_whitespace()
+            .map(str::to_string)
+            .collect();
+        assert_eq!(strings_of(&calls[0]["args"]), expected);
+    }
 }

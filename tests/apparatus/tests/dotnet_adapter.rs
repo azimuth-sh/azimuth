@@ -546,13 +546,8 @@ fn init_through_a_recorder() -> (Repo, Vec<Value>) {
     let front = repo.beside("recorder");
     std::fs::create_dir_all(&front).unwrap();
     std::fs::copy(binaries_dir().join("stdin-recorder"), front.join("dotnet")).unwrap();
-    let home = std::env::var("HOME").unwrap_or_default();
-    let path = format!(
-        "{}:{}:{}",
-        front.display(),
-        binaries_dir().display(),
-        std::env::var("PATH").unwrap_or_default()
-    );
+    let home = repo.beside("home").display().to_string();
+    let path = format!("{}:{}", front.display(), repo.path_without("npx"));
     let output = repo.azimuth_with_env(
         &["init"],
         &[
@@ -693,15 +688,9 @@ fn init_with_adapter() -> (Repo, toml::Table) {
         "<Project Sdk=\"Microsoft.NET.Sdk\" />\n",
     );
     repo.commit_all("a project that only looks like a test project");
-    let home = std::env::var("HOME").unwrap_or_default();
-    let path = std::env::var("PATH").unwrap_or_default();
-    let output = repo.azimuth_with_env(
-        &["init"],
-        &[
-            ("HOME", &home),
-            ("PATH", &format!("{}:{path}", binaries_dir().display())),
-        ],
-    );
+    let home = repo.beside("home").display().to_string();
+    let path = repo.path_without("npx");
+    let output = repo.azimuth_with_env(&["init"], &[("HOME", &home), ("PATH", &path)]);
     output.expect_status(0);
     let project = parse_toml(&repo.read(PROJECT_FILE));
     (repo, project)
@@ -929,7 +918,7 @@ fn the_package_carries_a_readme_with_the_marker() {
 /// The install line `azimuth init` prints for the .NET adapter, on a machine without `dotnet`.
 fn printed_install_line() -> String {
     let mut repo = Repo::sample_before_init("main");
-    repo.set_env("PATH", &repo.path_without("dotnet"));
+    repo.set_env("PATH", &repo.path_without_programs(&["dotnet", "npx"]));
     let output = repo.azimuth(&["init"]);
     output.expect_status(0);
     let lines = xunit_install_lines(&output.text());
@@ -1455,13 +1444,13 @@ fn init_with_a_missing_temporary_directory_preserves_the_installed_suite_or_fail
     );
     let missing = repo.beside("missing-temporary-directory");
     assert!(!missing.exists());
-    let home = std::env::var("HOME").unwrap_or_default();
-    let path = std::env::var("PATH").unwrap_or_default();
+    let home = repo.beside("home").display().to_string();
+    let path = repo.path_without("npx");
     let output = repo.azimuth_with_env(
         &["init"],
         &[
             ("HOME", &home),
-            ("PATH", &format!("{}:{path}", binaries_dir().display())),
+            ("PATH", &path),
             ("TMPDIR", missing.to_str().unwrap()),
         ],
     );

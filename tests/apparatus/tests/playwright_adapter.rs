@@ -3,7 +3,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
@@ -16,7 +15,9 @@ const PACKAGE: &str = "@azimuth-sh/playwright";
 const APP: &str = "playwright";
 const SUITE: &str = "playwright/lending";
 const NESTED: &str = "reading-room/application";
-const CLOSED: &str = "http://127.0.0.1:9";
+#[path = "support/http.rs"]
+mod http;
+use http::HttpServer;
 
 struct Packed {
     _temp: tempfile::TempDir,
@@ -26,9 +27,24 @@ struct Packed {
 }
 
 fn npm(dir: &Path, args: &[&str], cache: &Path, registry: &str) -> Output {
+    fs::create_dir_all(cache.parent().unwrap()).unwrap();
+    fs::write(cache.parent().unwrap().join("user.npmrc"), "").unwrap();
+    fs::write(cache.parent().unwrap().join("global.npmrc"), "").unwrap();
     let mut command = Command::new("npm");
     command
         .current_dir(dir)
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("HOME", cache.parent().unwrap())
+        .env(
+            "npm_config_userconfig",
+            cache.parent().unwrap().join("user.npmrc"),
+        )
+        .env(
+            "npm_config_globalconfig",
+            cache.parent().unwrap().join("global.npmrc"),
+        )
+        .env("npm_config_update_notifier", "false")
         .args(args)
         .env("npm_config_cache", cache)
         .env("npm_config_registry", registry)
@@ -46,6 +62,7 @@ fn packed() -> &'static Packed {
             .unwrap();
         let temp = tempfile::tempdir().unwrap();
         let source = root.join("adapters/playwright");
+        let registry = HttpServer::start(|_, _| panic!("npm pack contacted a registry"));
         let output = npm(
             &root,
             &[
@@ -56,7 +73,7 @@ fn packed() -> &'static Packed {
                 temp.path().to_str().unwrap(),
             ],
             &temp.path().join("cache"),
-            CLOSED,
+            &registry.url(),
         );
         output.expect_status(0);
         let listing = output.json();
@@ -87,15 +104,38 @@ fn tar_file(path: &Path, name: &str) -> String {
     String::from_utf8(output.stdout).unwrap()
 }
 
+struct Runner {
+    _temp: tempfile::TempDir,
+    modules: PathBuf,
+}
+
+fn runner() -> &'static Runner {
+    static RUNNER: OnceLock<Runner> = OnceLock::new();
+    RUNNER.get_or_init(|| {
+        let temp = tempfile::tempdir().unwrap();
+        for name in ["package.json", "package-lock.json"] {
+            fs::copy(sample_source().join(APP).join(name), temp.path().join(name)).unwrap();
+        }
+        npm(
+            temp.path(),
+            &["ci", "--no-audit", "--no-fund"],
+            &temp.path().join("cache"),
+            "https://registry.npmjs.org",
+        )
+        .expect_status(0);
+        Runner {
+            modules: temp.path().join("node_modules"),
+            _temp: temp,
+        }
+    })
+}
+
 fn install(repo: &Repo, app: &str) {
-    // Only the sample's runner needs a registry; the adapter's tarball must install offline.
-    npm(
-        &repo.path(app),
-        &["ci", "--no-audit", "--no-fund"],
-        &repo.beside("npm-cache"),
-        "https://registry.npmjs.org",
-    )
-    .expect_status(0);
+    copy_tree(
+        &runner().modules,
+        &repo.path(&format!("{app}/node_modules")),
+    );
+    let registry = HttpServer::start(|_, _| panic!("adapter install contacted a registry"));
     npm(
         &repo.path(app),
         &[
@@ -108,7 +148,7 @@ fn install(repo: &Repo, app: &str) {
             packed().path.to_str().unwrap(),
         ],
         &repo.beside("npm-cache"),
-        CLOSED,
+        &registry.url(),
     )
     .expect_status(0);
     let manifest: Value = serde_json::from_str(&repo.read(&format!("{app}/package.json"))).unwrap();
@@ -118,13 +158,22 @@ fn install(repo: &Repo, app: &str) {
     );
 }
 
-fn port() -> String {
-    TcpListener::bind(("127.0.0.1", 0))
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-        .to_string()
+fn isolate_npm(repo: &mut Repo) {
+    repo.set_env("npm_config_offline", "true");
+    repo.set_env("npm_config_update_notifier", "false");
+    repo.set_env("npm_config_fetch_retries", "0");
+    repo.set_env(
+        "npm_config_userconfig",
+        repo.beside("user.npmrc").to_str().unwrap(),
+    );
+    repo.set_env(
+        "npm_config_globalconfig",
+        repo.beside("global.npmrc").to_str().unwrap(),
+    );
+    repo.set_env(
+        "npm_config_cache",
+        repo.beside("npm-cache").to_str().unwrap(),
+    );
 }
 
 fn sample() -> Repo {
@@ -132,9 +181,8 @@ fn sample() -> Repo {
     packed();
     let mut repo = Repo::sample();
     install(&repo, APP);
-    repo.set_env("LENDING_PORT", &port());
-    repo.set_env("RETURNS_PORT", &port());
-    repo.set_env("npm_config_registry", CLOSED);
+    isolate_npm(&mut repo);
+    repo.set_env("PATH", &repo.path_without("dotnet"));
     repo.set_env("npm_config_fetch_retries", "0");
     repo.set_env(
         "npm_config_cache",
@@ -224,25 +272,52 @@ fn spec(repo: &Repo, text: &str) {
 
 fn core_suites(repo: &Repo) {
     let mut project = parse_toml(&repo.read(PROJECT_FILE));
-    let suites: Vec<_> = [("loans", SUITE), ("returns", "playwright/returns")]
-        .into_iter()
-        .map(|(name, path)| {
-            let mut suite = toml::Table::new();
-            for (k, v) in [
-                ("name", name),
-                ("area", "all"),
-                ("path", path),
-                ("adapter", "npx --no @azimuth-sh/playwright"),
-                ("marker", "@Check:<id>"),
-            ] {
-                suite.insert(k.into(), toml::Value::String(v.into()));
-            }
-            suite.insert("needs".into(), toml::Value::Array(vec![]));
-            toml::Value::Table(suite)
+    repo.remove(PROJECT_FILE);
+    repo.azimuth(&["init"]).expect_status(0);
+    let generated = parse_toml(&repo.read(PROJECT_FILE));
+    let mut suites = generated
+        .get("suite")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let mut paths: Vec<_> = suites
+        .iter()
+        .map(|v| {
+            v["path"]
+                .as_str()
+                .unwrap()
+                .trim_end_matches('/')
+                .to_string()
         })
         .collect();
+    paths.sort();
+    assert_eq!(
+        paths,
+        vec![SUITE, "playwright/returns"],
+        "init did not discover both real suites: {generated:#?}"
+    );
+    for suite in &mut suites {
+        let path = suite["path"].as_str().unwrap().trim_end_matches('/');
+        let name = if path == SUITE { "loans" } else { "returns" };
+        suite["name"] = toml::Value::String(name.into());
+        suite["area"] = toml::Value::String("all".into());
+    }
     project.insert("suite".into(), toml::Value::Array(suites));
     repo.write(PROJECT_FILE, &toml::to_string(&project).unwrap());
+    assert!(
+        repo.lint_findings(0).is_empty(),
+        "the generated form did not assign the sample's ordinary tags"
+    );
+    for id in ALL_CHECKS {
+        assert_eq!(
+            repo.check_show(id)["suite"],
+            if [SIXTH_LOAN, RETURNED_BOOK].contains(&id) {
+                "loans"
+            } else {
+                "returns"
+            }
+        );
+    }
 }
 
 fn no_results(repo: &Repo, document: &Value, checks: &[&str]) {
@@ -336,7 +411,7 @@ test('first attempt fails',{tag:'@Check:first-attempt'},async({},info)=>{
     );
     repo.append(
         "playwright/lending/playwright.config.cjs",
-        "module.exports.projects=[{name:'morning',retries:3},{name:'evening',retries:4}];\n",
+        "module.exports.projects=[{name:'morning',retries:3},{name:'evening',retries:4},{name:'inherited'}];\n",
     );
     let output = start(
         &repo,
@@ -353,6 +428,7 @@ test('first attempt fails',{tag:'@Check:first-attempt'},async({},info)=>{
         attempts,
         vec![
             json!({"retry":0,"project":"evening"}),
+            json!({"retry":0,"project":"inherited"}),
             json!({"retry":0,"project":"morning"})
         ]
     );
@@ -384,6 +460,7 @@ test('unasked loan',{tag:'@KEY:unasked-loan'},async()=>{ran('unasked loan');});
 test('longer id',{tag:'@KEY:direct-loan-extra'},async()=>{ran('longer id');});
 test('annotation only',{annotation:{type:'KEY',description:'direct-loan'}},async()=>{ran('annotation only');});
 test('unmarked loan',async()=>{ran('unmarked loan');});
+test.beforeEach(async({},info)=>{fs.appendFileSync(process.env.EXECUTED+'.selected',JSON.stringify({name:info.title})+'\n');});
 test('other key',{tag:'@OTHER:direct-loan'},async()=>{ran('other key');});
 "#.replace("KEY",key).replace("OTHER",if key=="Check" {"Proof"} else {"Check"}));
         let output = start(
@@ -445,7 +522,16 @@ test('other key',{tag:'@OTHER:direct-loan'},async()=>{ran('other key');});
                 "group second"
             ]
         );
-        let empty = report(&repo, &[], key);
+        let before = fs::read(&journal).unwrap();
+        let selected_before = fs::read(journal.with_extension("jsonl.selected")).unwrap();
+        let empty_output = start(
+            &repo,
+            SUITE,
+            &request(&[], key),
+            &[("EXECUTED", journal.to_str().unwrap())],
+        );
+        empty_output.expect_status(0);
+        let empty = empty_output.json();
         complete_names(
             &empty,
             &[
@@ -463,16 +549,53 @@ test('other key',{tag:'@OTHER:direct-loan'},async()=>{ran('other key');});
             "{empty:#}"
         );
         assert_eq!(
-            read_events(&journal).len(),
-            4,
-            "an empty selection ran tests"
+            fs::read(&journal).unwrap(),
+            before,
+            "an empty selection entered a body"
         );
+        assert_eq!(
+            fs::read(journal.with_extension("jsonl.selected")).unwrap(),
+            selected_before,
+            "an empty selection was given to the runner"
+        );
+        fs::write(&journal, "").unwrap();
+        fs::write(journal.with_extension("jsonl.selected"), "").unwrap();
+        let extra = start(
+            &repo,
+            SUITE,
+            &request(&["extra-loan"], key),
+            &[("EXECUTED", journal.to_str().unwrap())],
+        );
+        extra.expect_status(0);
+        let extra = extra.json();
+        assert_eq!(read_events(&journal), vec![json!({"name":"group second"})]);
+        assert_eq!(
+            read_events(&journal.with_extension("jsonl.selected")),
+            vec![json!({"name":"group second"})]
+        );
+        for entry in tests(&extra) {
+            assert_eq!(
+                entry["outcome"],
+                if entry["checks"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!("extra-loan"))
+                {
+                    "passed"
+                } else {
+                    "not_run"
+                },
+                "{extra:#}"
+            );
+        }
     }
 }
 
 fn read_events(path: &Path) -> Vec<Value> {
-    fs::read_to_string(path)
-        .unwrap_or_default()
+    let text = fs::read_to_string(path).unwrap_or_default();
+    text.rsplit_once('\n')
+        .map(|(complete, _)| complete)
+        .unwrap_or("")
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect()
@@ -487,52 +610,90 @@ fn browser_projects_collapse_to_one_outcome_and_the_sum_of_their_durations() {
     let journal = repo.beside("durations.jsonl");
     repo.append(
         "playwright/lending/playwright.config.cjs",
-        "module.exports.projects=[{name:'north'},{name:'south'}];\n",
+        "module.exports.workers=2;\nmodule.exports.projects=[{name:'north'},{name:'south'}];\n",
     );
+    // At worker exit TestInfo holds the runner's completed duration, including its hooks.
+    repo.write("playwright/lending/duration-hooks.cjs",r#"const fs=require('node:fs');
+module.exports=test=>test.afterEach(async({},info)=>{
+  process.on('exit',()=>fs.appendFileSync(process.env.DURATIONS,JSON.stringify({name:info.title,file:require('node:path').basename(info.file),project:info.project.name,duration_ms:info.duration,status:info.status})+'\n'));
+});
+"#);
     spec(
         &repo,
-        r#"const {test,expect}=require('@playwright/test');
-const fs=require('node:fs');
-for (const name of ['mixed project result','both projects pass']) {
- test(name,{tag:'@Check:project-loan'},async({},info)=>{
-   const start=performance.now();
-   await new Promise(resolve=>setTimeout(resolve,info.project.name==='north'?800:1300));
-   fs.appendFileSync(process.env.DURATIONS,JSON.stringify({name,project:info.project.name,elapsed:performance.now()-start})+'\n');
-   if(name==='mixed project result') expect(info.project.name).toBe('north');
+        r#"const {test,expect}=require('@playwright/test');require('./duration-hooks.cjs')(test);
+for(const [name,id] of [['north fails','north-failure'],['south fails','south-failure'],['both pass','both-pass'],['pass and skip','pass-skip'],['same title','file-alpha']]) {
+ test(name,{tag:'@Check:'+id},async({},info)=>{
+  if(id==='pass-skip') test.skip(info.project.name==='south','the south setting is unavailable');
+  await new Promise(r=>setTimeout(r,info.project.name==='north'?600:2400));
+  if(id==='north-failure') expect(info.project.name).toBe('south');
+  if(id==='south-failure') expect(info.project.name).toBe('north');
  });
 }
 "#,
     );
+    repo.write("playwright/lending/second.spec.cjs",r#"const {test}=require('@playwright/test');require('./duration-hooks.cjs')(test);
+test('same title',{tag:'@Check:file-beta'},async({},info)=>{await new Promise(r=>setTimeout(r,info.project.name==='north'?1000:3500));});
+"#);
+    let ids = [
+        "north-failure",
+        "south-failure",
+        "both-pass",
+        "pass-skip",
+        "file-alpha",
+        "file-beta",
+    ];
     let output = start(
         &repo,
         SUITE,
-        &request(&["project-loan"], "Check"),
+        &request(&ids, "Check"),
         &[("DURATIONS", journal.to_str().unwrap())],
     );
     output.expect_status(0);
     let document = output.json();
-    complete_names(&document, &["mixed project result", "both projects pass"]);
-    assert_eq!(
-        named(&document, "mixed project result")["outcome"],
-        "failed"
-    );
-    assert_eq!(named(&document, "both projects pass")["outcome"], "passed");
+    assert_eq!(tests(&document).len(), 6, "{document:#}");
     let observations = read_events(&journal);
-    assert_eq!(observations.len(), 4, "{observations:#?}");
-    for name in ["mixed project result", "both projects pass"] {
-        let rows: Vec<_> = observations.iter().filter(|r| r["name"] == name).collect();
-        let projects: BTreeSet<_> = rows
+    assert_eq!(observations.len(), 12, "{observations:#?}");
+    for (id, name, file, outcome) in [
+        ("north-failure", "north fails", "desk.spec.cjs", "failed"),
+        ("south-failure", "south fails", "desk.spec.cjs", "failed"),
+        ("both-pass", "both pass", "desk.spec.cjs", "passed"),
+        ("pass-skip", "pass and skip", "desk.spec.cjs", "incomplete"),
+        ("file-alpha", "same title", "desk.spec.cjs", "passed"),
+        ("file-beta", "same title", "second.spec.cjs", "passed"),
+    ] {
+        let entries: Vec<_> = tests(&document)
             .iter()
-            .map(|r| r["project"].as_str().unwrap())
+            .filter(|t| t["checks"] == json!([id]))
             .collect();
-        assert_eq!(projects, BTreeSet::from(["north", "south"]));
-        let sum: f64 = rows.iter().map(|r| r["elapsed"].as_f64().unwrap()).sum();
-        let duration = named(&document, name)["duration_ms"].as_u64().unwrap() as f64;
-        // Runner bookkeeping lies outside the bodies; the lower bound independently excludes
-        // a maximum, a single project's duration and a wall clock across concurrent projects.
-        assert!(
-            duration + 2.0 >= sum && duration <= sum + 4000.0,
-            "{name}: duration={duration}, bodies sum={sum}; {document:#}"
+        assert_eq!(entries.len(), 1, "{document:#}");
+        let entry = entries[0];
+        if outcome == "incomplete" {
+            assert!(
+                    ["failed", "skipped", "not_run"].contains(&entry["outcome"].as_str().unwrap()),
+                "{entry:#}"
+            );
+        } else {
+            assert_eq!(entry["outcome"], outcome, "{entry:#}");
+        }
+        let rows: Vec<_> = observations
+            .iter()
+            .filter(|v| v["name"] == name && v["file"] == file)
+            .collect();
+        assert_eq!(rows.len(), 2, "{observations:#?}");
+        assert_eq!(
+            rows.iter()
+                .map(|v| v["project"].as_str().unwrap())
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from(["north", "south"])
+        );
+        let sum: u64 = rows
+            .iter()
+            .map(|v| v["duration_ms"].as_u64().unwrap())
+            .sum();
+        assert_eq!(
+            entry["duration_ms"].as_u64(),
+            Some(sum),
+            "the duration must sum the runner's completed results: {entry:#}; {rows:#?}"
         );
     }
 }
@@ -543,51 +704,87 @@ for (const name of ['mixed project result','both projects pass']) {
 // behavior-2: A refusal writes the reason to standard error, ends with a status other than 0, and writes no report
 #[test]
 fn unsafe_resolved_configs_are_refused_before_starting_a_test_or_server() {
-    for mode in ["direct", "environment", "absent"] {
+    for mode in [
+        "direct",
+        "environment",
+        "imported",
+        "later-server",
+        "absent",
+    ] {
         let repo = sample();
-        let test_journal = repo.beside("forbidden-test");
-        let server_journal = repo.beside("forbidden-server.jsonl");
+        let test_journal = repo.beside("config-test");
+        let server_journal = repo.beside("config-server.jsonl");
         spec(
             &repo,
-            r#"const {test}=require('@playwright/test');
-test('must not start',{tag:'@Check:unsafe-server'},async()=>require('fs').writeFileSync(process.env.FORBIDDEN_TEST,'ran'));
+            r#"const {test,expect}=require('@playwright/test');
+test('resolved server',{tag:'@Check:resolved-server'},async()=>{
+ const response=await fetch(`http://127.0.0.1:${process.env.DESK_PORT}`);expect(await response.text()).toBe('library desk');
+ require('node:fs').writeFileSync(process.env.CONFIG_TEST,'ran');
+});
 "#,
         );
-        let edit = match mode {
-            "direct" => "module.exports.webServer.reuseExistingServer=true;\n",
-            "environment" => {
-                "module.exports.webServer.reuseExistingServer=process.env.REUSE_DESK==='yes';\n"
-            }
-            _ => "delete module.exports.webServer;\n",
+        let env = [
+            ("CONFIG_TEST", test_journal.to_str().unwrap()),
+            ("SERVER_JOURNAL", server_journal.to_str().unwrap()),
+            ("REUSE_DESK", "no"),
+        ];
+        let original = repo.read("playwright/lending/playwright.config.cjs");
+        let edit=match mode {
+            "environment"=>"module.exports.webServer.reuseExistingServer=process.env.REUSE_DESK==='yes';\n",
+            "imported"=>"module.exports.webServer.reuseExistingServer=require('./reuse-setting.cjs').reuse;\n",
+            "later-server"=>"module.exports.webServer=[module.exports.webServer,{...module.exports.webServer,reuseExistingServer:process.env.REUSE_DESK==='yes'}];\n",
+            _=>"",
         };
+        repo.write(
+            "playwright/lending/reuse-setting.cjs",
+            "module.exports={reuse:process.env.REUSE_DESK==='yes'};\n",
+        );
         repo.append("playwright/lending/playwright.config.cjs", edit);
+        let safe = start(&repo, SUITE, &request(&["resolved-server"], "Check"), &env);
+        safe.expect_status(0);
+        assert_eq!(named(&safe.json(), "resolved server")["outcome"], "passed");
+        assert_eq!(fs::read_to_string(&test_journal).unwrap(), "ran");
+        fs::remove_file(&test_journal).unwrap();
+        fs::remove_file(&server_journal).unwrap();
+        if mode == "direct" {
+            repo.append(
+                "playwright/lending/playwright.config.cjs",
+                "module.exports.webServer.reuseExistingServer=true;\n",
+            );
+        }
+        if mode == "absent" {
+            repo.write(
+                "playwright/lending/playwright.config.cjs",
+                "module.exports={testMatch:'*.spec.cjs',workers:1};\n",
+            );
+        }
+        let before = repo.read("playwright/lending/playwright.config.cjs");
+        let unsafe_env = [
+            ("CONFIG_TEST", test_journal.to_str().unwrap()),
+            ("SERVER_JOURNAL", server_journal.to_str().unwrap()),
+            ("REUSE_DESK", "yes"),
+        ];
         let output = start(
             &repo,
             SUITE,
-            &request(&["unsafe-server"], "Check"),
-            &[
-                ("REUSE_DESK", "yes"),
-                ("FORBIDDEN_TEST", test_journal.to_str().unwrap()),
-                ("SERVER_JOURNAL", server_journal.to_str().unwrap()),
-            ],
+            &request(&["resolved-server"], "Check"),
+            &unsafe_env,
         );
         assert_ne!(output.status, 0, "{mode}: {}", output.text());
+        assert!(output.stdout.is_empty(), "{mode}: {}", output.text());
         assert!(
-            output.stdout.is_empty(),
-            "refusal wrote stdout: {}",
-            output.text()
-        );
-        assert!(
-            output.stderr.contains(if mode == "absent" {
-                "webServer"
-            } else {
-                "reuseExistingServer"
-            }),
-            "{mode}: {}",
-            output.text()
+            !output.stderr.trim().is_empty(),
+            "a refusal must explain its cause: {mode}"
         );
         assert!(!test_journal.exists(), "{mode}: a test ran");
-        assert!(!server_journal.exists(), "{mode}: the server started");
+        assert!(!server_journal.exists(), "{mode}: a server started");
+        assert_eq!(
+            repo.read("playwright/lending/playwright.config.cjs"),
+            before
+        );
+        if ["environment", "imported", "later-server"].contains(&mode) {
+            assert_eq!(before, original + edit);
+        }
     }
 }
 
@@ -623,45 +820,49 @@ fn a_refused_launch_is_crashed_and_leaves_its_checks_without_results() {
 #[test]
 fn an_already_listening_server_is_not_used() {
     let repo = sample();
-    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-    let port = listener.local_addr().unwrap().port().to_string();
-    let witness = repo.beside("occupied-test");
+    let witness = repo.beside("server-body");
     spec(
         &repo,
-        r#"const {test}=require('@playwright/test');
-test('occupied port',{tag:'@Check:occupied'},async()=>require('fs').writeFileSync(process.env.FORBIDDEN_TEST,'ran'));
+        r#"const {test,expect}=require('@playwright/test');
+test('server answer',{tag:'@Check:occupied'},async()=>{
+ require('node:fs').writeFileSync(process.env.SERVER_BODY,'ran');
+ const response=await fetch(`http://127.0.0.1:${process.env.DESK_PORT}`);expect(await response.text()).toBe('library desk');
+});
 "#,
     );
-    let output = start(
-        &repo,
-        SUITE,
-        &request(&["occupied"], "Check"),
-        &[
-            ("LENDING_PORT", &port),
-            ("FORBIDDEN_TEST", witness.to_str().unwrap()),
-        ],
+    let env = [("SERVER_BODY", witness.to_str().unwrap())];
+    let free = start(&repo, SUITE, &request(&["occupied"], "Check"), &env);
+    free.expect_status(0);
+    assert_eq!(named(&free.json(), "server answer")["outcome"], "passed");
+    assert_eq!(fs::read_to_string(&witness).unwrap(), "ran");
+    fs::remove_file(&witness).unwrap();
+    let old = HttpServer::start(|_, _| ("text/plain".into(), b"old application".to_vec()));
+    repo.append(
+        "playwright/lending/playwright.config.cjs",
+        &format!(
+            "delete module.exports.webServer.wait;module.exports.webServer.url={};\n",
+            json!(old.url())
+        ),
     );
+    let output = start(&repo, SUITE, &request(&["occupied"], "Check"), &env);
+    assert!(!witness.exists(), "a test ran against the old application");
     assert!(
-        !witness.exists(),
-        "a test ran against the pre-existing listener"
+        !old.requests().is_empty(),
+        "the runner never encountered the occupied server: {}",
+        output.text()
     );
-    assert!(!output.stderr.trim().is_empty(), "{}", output.text());
-    // Startup trouble may be a report or a crashed launch; neither may manufacture a pass.
     if output.status == 0 {
-        let document = output.json();
-        assert!(
-            tests(&document).iter().all(|t| t["outcome"] != "passed"),
-            "{document:#}"
-        );
+        assert!(tests(&output.json())
+            .iter()
+            .all(|t| t["outcome"] != "passed"));
     }
-    assert_eq!(listener.local_addr().unwrap().port().to_string(), port);
 }
 
 // behavior-2: When the runner cannot list the suite's tests, the report holds `"build": "failed"` and no tests
 #[test]
 fn an_unlistable_suite_reports_a_failed_build_and_no_tests() {
     let repo = sample();
-    spec(&repo, "const syntax = ;\n");
+    repo.write("playwright/lending/broken.spec.cjs", "const syntax = ;\n");
     let document = report(&repo, &[SIXTH_LOAN], "Check");
     assert_eq!(document["build"], "failed");
     assert_eq!(tests(&document), &[] as &[Value]);
@@ -672,8 +873,15 @@ fn an_unlistable_suite_reports_a_failed_build_and_no_tests() {
 fn an_unlistable_suite_leaves_every_check_owed_while_another_suite_passes() {
     let repo = sample();
     core_suites(&repo);
-    spec(&repo, "const syntax = ;\n");
+    repo.write("playwright/lending/broken.spec.cjs", "const syntax = ;\n");
     let document = repo.run_json(&[], 1);
+    let loans = document["suites"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|v| v["name"] == "loans")
+        .unwrap();
+    assert_eq!(loans["launch"], "build failed", "{document:#}");
     no_results(&repo, &document, &[SIXTH_LOAN, RETURNED_BOOK]);
     for id in [LATE_RETURN, ON_TIME_RETURN] {
         assert_eq!(state_of(&document, id), "passed", "{document:#}");
@@ -809,11 +1017,16 @@ fn discover_lists_every_config_folder_under_the_requested_application() {
         "export default {};\n",
     );
     repo.write("playwright/not-a-suite/notes.txt", "no config here\n");
+    repo.write(
+        "playwright/catalog/playwright.config.js",
+        "module.exports = {};\n",
+    );
     for (folder, expected) in [
         (
             APP,
             vec![
                 "playwright/annex/deep",
+                "playwright/catalog",
                 "playwright/lending",
                 "playwright/returns",
             ],
@@ -822,7 +1035,7 @@ fn discover_lists_every_config_folder_under_the_requested_application() {
     ] {
         let output = start(
             &repo,
-            APP,
+            folder,
             &json!({"format":"adapter-request-1","verb":"discover","folder":folder}),
             &[],
         );
@@ -854,7 +1067,7 @@ fn init_finds_an_adapter_in_the_nested_application_that_npx_cannot_find_from_roo
     repo.remove("dotnet");
     repo.remove(APP);
     install(&repo, NESTED);
-    repo.set_env("npm_config_registry", CLOSED);
+    isolate_npm(&mut repo);
     repo.set_env("npm_config_fetch_retries", "0");
     repo.set_env(
         "npm_config_cache",
@@ -902,28 +1115,72 @@ fn init_finds_an_adapter_in_the_nested_application_that_npx_cannot_find_from_roo
 #[test]
 fn a_missing_adapter_through_real_npx_crashes_without_downloading_a_package() {
     let mut repo = Repo::sample();
+    let offer = repo.beside("registry-offer");
+    fs::create_dir_all(offer.join("package")).unwrap();
+    fs::write(
+        offer.join("package/package.json"),
+        json!({"name":PACKAGE,"version":"0.0.1","bin":{"offered-adapter":"run.cjs"}}).to_string(),
+    )
+    .unwrap();
+    fs::write(
+        offer.join("package/run.cjs"),
+        "#!/usr/bin/env node\nrequire('node:fs').writeFileSync(process.env.EXECUTED,'executed');\n",
+    )
+    .unwrap();
+    set_mode(&offer.join("package/run.cjs"), 0o755);
+    let tarball = offer.join("offered.tgz");
+    assert!(Command::new("tar")
+        .args([
+            "-czf",
+            tarball.to_str().unwrap(),
+            "-C",
+            offer.to_str().unwrap(),
+            "package"
+        ])
+        .status()
+        .unwrap()
+        .success());
+    let bytes = fs::read(tarball).unwrap();
+    let registry = HttpServer::start(move |path, address| {
+        if path.ends_with(".tgz") {
+            return ("application/octet-stream".into(), bytes.clone());
+        }
+        ("application/json".into(),json!({"name":PACKAGE,"dist-tags":{"latest":"0.0.1"},"versions":{"0.0.1":{"name":PACKAGE,"version":"0.0.1","bin":{"offered-adapter":"run.cjs"},"dist":{"tarball":format!("http://{address}/offered.tgz")}}}}).to_string().into_bytes())
+    });
+    isolate_npm(&mut repo);
+    repo.set_env("npm_config_offline", "false");
+    repo.set_env("npm_config_registry", &registry.url());
+    let witness = repo.beside("must-not-execute");
+    repo.set_env("EXECUTED", witness.to_str().unwrap());
     repo.replace(
         PROJECT_FILE,
         "adapter = \"text-suite-adapter\"",
         "adapter = \"npx --no @azimuth-sh/playwright\"",
     );
-    repo.set_env("npm_config_registry", CLOSED);
-    repo.set_env("npm_config_fetch_retries", "0");
-    let cache = repo.beside("empty-npx-cache");
-    repo.set_env("npm_config_cache", cache.to_str().unwrap());
     let output = repo.azimuth(&["run", "--json"]);
     output.expect_status(1);
     let document = output.json();
     assert_eq!(document["suites"][0]["launch"], "crashed");
     no_results(&repo, &document, &ALL_CHECKS);
-    assert!(!output.stderr.trim().is_empty());
-    for path in files_under(&cache) {
-        let relative = path.strip_prefix(&cache).unwrap().to_string_lossy();
-        assert!(
-            relative.starts_with("_logs/") || relative == "_update-notifier-last-checked",
-            "npx downloaded a package: {relative}"
-        );
-    }
+    let paths: Vec<_> = registry
+        .requests()
+        .iter()
+        .map(|p| p.replace("%2f", "/").replace("%2F", "/"))
+        .collect();
+    assert_eq!(
+        paths,
+        vec!["/@azimuth-sh/playwright"],
+        "the registry must answer metadata, not a tarball request"
+    );
+    assert!(
+        !witness.exists(),
+        "npx executed a package from the registry"
+    );
+    assert!(
+        output.stderr.contains("@azimuth-sh/playwright"),
+        "the host's diagnostic was lost: {}",
+        output.text()
+    );
     assert!(!repo.path("node_modules").exists());
 }
 
@@ -941,24 +1198,16 @@ fn the_packed_package_names_its_origins_and_carries_a_readme() {
             package.manifest
         );
     }
-    assert!(
-        package.manifest["license"]
-            .as_str()
-            .is_some_and(|v| !v.trim().is_empty()),
-        "the package names no license: {}",
-        package.manifest
-    );
+    assert_eq!(package.manifest["license"], "Apache-2.0");
     let homepage = package.manifest["homepage"].as_str().unwrap();
     assert_eq!(homepage.trim_end_matches('/'), "https://azimuth.sh");
     let repository = package.manifest["repository"]
         .as_str()
         .or_else(|| package.manifest["repository"]["url"].as_str())
         .unwrap();
-    assert!(
-        repository
-            .trim_end_matches('/')
-            .trim_end_matches(".git")
-            .ends_with("github.com/azimuth-sh/azimuth"),
+    assert_eq!(
+        repository_origin(repository),
+        ("github.com".into(), "azimuth-sh".into(), "azimuth".into()),
         "{repository}"
     );
     let readmes: Vec<_> = package
@@ -972,21 +1221,196 @@ fn the_packed_package_names_its_origins_and_carries_a_readme() {
         })
         .collect();
     assert!(!readmes.is_empty(), "{:?}", package.entries);
-    assert!(readmes
+    let readme = readmes
         .iter()
-        .any(|name| !tar_file(&package.path, &format!("package/{name}"))
-            .trim()
-            .is_empty()));
+        .map(|name| tar_file(&package.path, &format!("package/{name}")))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        readme.contains("npm install --save-dev --save-exact @azimuth-sh/playwright@<version>"),
+        "{readme}"
+    );
+    assert!(
+        readme.contains("tag")
+            && (readme.contains("@Check:") || readme.contains("@<marker_key>:<id>")),
+        "the readme must explain the marking form: {readme}"
+    );
+}
+
+fn repository_origin(repository: &str) -> (String, String, String) {
+    let value = repository.strip_prefix("git+").unwrap_or(repository);
+    let (authority, path) = if let Some((_, rest)) = value.split_once("://") {
+        rest.split_once('/').unwrap()
+    } else {
+        value.split_once(':').unwrap()
+    };
+    let host = authority
+        .rsplit('@')
+        .next()
+        .unwrap()
+        .split(':')
+        .next()
+        .unwrap()
+        .to_lowercase();
+    let path = path.trim_matches('/').trim_end_matches(".git");
+    let parts: Vec<_> = path.split('/').collect();
+    assert_eq!(
+        parts.len(),
+        2,
+        "repository must name an owner and project: {repository}"
+    );
+    (host, parts[0].to_string(), parts[1].to_string())
+}
+
+fn entry_under(modules: &Path) -> PathBuf {
+    let bin = &packed().manifest["bin"];
+    let relative = bin
+        .as_str()
+        .or_else(|| {
+            bin.as_object()
+                .and_then(|v| v.values().next())
+                .and_then(Value::as_str)
+        })
+        .unwrap();
+    modules.join("@azimuth-sh/playwright").join(relative)
+}
+
+fn run_entry(repo: &Repo, entry: &Path, request: &Value) -> Output {
+    let environment = repo.azimuth_command(&[]);
+    let mut command = Command::new(entry);
+    command
+        .env_clear()
+        .envs(
+            environment
+                .get_envs()
+                .filter_map(|(k, v)| v.map(|v| (k, v))),
+        )
+        .current_dir(repo.path(SUITE));
+    run_with_time_limit(
+        command,
+        Duration::from_secs(120),
+        Some(&request.to_string()),
+    )
+}
+
+// behavior-2: Started from a copy outside the application's installation, the adapter ends with a failure and says that the package is not installed in this application
+#[test]
+fn a_copy_outside_the_application_refuses_even_with_all_its_dependencies() {
+    let repo = sample();
+    let inside = report(&repo, &[SIXTH_LOAN, RETURNED_BOOK], "Check");
+    assert!(tests(&inside).iter().all(|t| t["outcome"] == "passed"));
+    let outside = repo.beside("detached/node_modules");
+    copy_tree(&repo.path("playwright/node_modules"), &outside);
+    let output = run_entry(
+        &repo,
+        &entry_under(&outside),
+        &request(&[SIXTH_LOAN], "Check"),
+    );
+    assert_ne!(output.status, 0, "{}", output.text());
+    assert!(output.stdout.is_empty());
+    let message = output.stderr.to_lowercase();
+    assert!(
+        message.contains("not installed") && message.contains("application"),
+        "{}",
+        output.text()
+    );
+    core_suites(&repo);
+    let mut project = parse_toml(&repo.read(PROJECT_FILE));
+    for suite in project["suite"].as_array_mut().unwrap() {
+        if suite["name"].as_str() == Some("loans") {
+            suite["adapter"] = toml::Value::String(entry_under(&outside).display().to_string());
+        }
+    }
+    repo.write(PROJECT_FILE, &toml::to_string(&project).unwrap());
+    let document = repo.run_json(&[], 1);
+    assert_eq!(
+        document["suites"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["name"] == "loans")
+            .unwrap()["launch"],
+        "crashed"
+    );
+    no_results(&repo, &document, &[SIXTH_LOAN, RETURNED_BOOK]);
+}
+
+// behavior-2: It runs from a `node_modules` folder of the folder named in the request or of a folder above it
+#[test]
+fn the_adapter_runs_from_the_request_folder_installation_and_an_ancestor() {
+    let repo = sample();
+    let request = request(&[SIXTH_LOAN, RETURNED_BOOK], "Check");
+    for modules in [
+        repo.path("playwright/node_modules"),
+        repo.path("playwright/lending/node_modules"),
+    ] {
+        if !modules.exists() {
+            copy_tree(&repo.path("playwright/node_modules"), &modules);
+        }
+        let output = run_entry(&repo, &entry_under(&modules), &request);
+        output.expect_status(0);
+        let document = output.json();
+        complete_names(&document, &["refuses sixth loan", "lends after return"]);
+        assert!(
+            tests(&document).iter().all(|t| t["outcome"] == "passed"),
+            "{document:#}"
+        );
+    }
+}
+
+#[test]
+fn init_with_a_real_npx_host_and_missing_package_stays_offline() {
+    let mut repo = Repo::sample_before_init("main");
+    repo.remove("dotnet");
+    isolate_npm(&mut repo);
+    let registry = HttpServer::start(|_, _| panic!("offline init contacted a registry"));
+    repo.set_env("npm_config_registry", &registry.url());
+    let front = repo.beside("npx-recorder");
+    fs::create_dir_all(&front).unwrap();
+    fs::copy(binaries_dir().join("stdin-recorder"), front.join("npx")).unwrap();
+    let target = Command::new("which").arg("npx").output().unwrap();
+    repo.set_env(
+        "RECORDER_TARGET",
+        String::from_utf8(target.stdout).unwrap().trim(),
+    );
+    repo.set_env(
+        "PATH",
+        &format!(
+            "{}:{}",
+            front.display(),
+            repo.path_without_programs(&["dotnet", "npx"])
+        ),
+    );
+    let output = repo.azimuth(&["init"]);
+    output.expect_status(0);
+    let calls: Vec<_> = repo
+        .log_entries()
+        .into_iter()
+        .filter(|v| v["program"] == "stdin-recorder")
+        .collect();
+    assert_eq!(
+        calls.len(),
+        1,
+        "a real installed npx host was not asked: {calls:#?}"
+    );
+    assert!(registry.requests().is_empty());
+    assert!(
+        output.text().contains(&format!(
+            "npm install --save-dev --save-exact {PACKAGE}@{}",
+            cli_version()
+        )),
+        "{}",
+        output.text()
+    );
+    assert!(parse_toml(&repo.read(PROJECT_FILE)).get("suite").is_none());
 }
 
 // behavior-2: An adapter that receives SIGTERM stops its runner and exits, and writes no report
 #[test]
-fn sigterm_stops_the_runner_and_its_server_politely_without_a_report() {
+fn the_core_timeout_gives_the_real_runner_and_server_a_polite_stop_within_the_grace() {
     use azimuth_tests::process::{processes, Process};
-    use std::io::Write;
     use std::process::{Child, Stdio};
     use std::time::Instant;
-
     struct Running {
         child: Child,
         owned: BTreeMap<u32, Process>,
@@ -998,11 +1422,11 @@ fn sigterm_stops_the_runner_and_its_server_politely_without_a_report() {
             if self.owned.is_empty() {
                 descendants.insert(self.child.id());
             }
-            for p in self.owned.values() {
-                if table.get(&p.pid).is_some_and(|now| {
-                    now.running() && now.birth == p.birth && now.command == p.command
+            for old in self.owned.values() {
+                if table.get(&old.pid).is_some_and(|now| {
+                    now.running() && now.birth == old.birth && now.command == old.command
                 }) {
-                    descendants.insert(p.pid);
+                    descendants.insert(old.pid);
                 }
             }
             loop {
@@ -1035,150 +1459,173 @@ fn sigterm_stops_the_runner_and_its_server_politely_without_a_report() {
             let _ = self.child.wait();
         }
     }
-
-    let repo = sample();
-    let runner_journal = repo.beside("runner-stop.jsonl");
-    let server_journal = repo.beside("server-stop.jsonl");
-    let worker_journal = repo.beside("worker-stop.jsonl");
-    repo.write("playwright/lending/stop-setup.cjs",r#"const fs=require('node:fs');
-module.exports=async()=>fs.appendFileSync(process.env.RUNNER_JOURNAL,JSON.stringify({event:'started',pid:process.pid,time_ms:Date.now()})+'\n');
-"#);
-    repo.write("playwright/lending/stop-teardown.cjs",r#"const fs=require('node:fs');
-module.exports=async()=>{
- const event=name=>fs.appendFileSync(process.env.RUNNER_JOURNAL,JSON.stringify({event:name,pid:process.pid,time_ms:Date.now()})+'\n');
- event('stopping'); await new Promise(resolve=>setTimeout(resolve,500)); event('cleaned');
+    let mut repo = sample();
+    core_suites(&repo);
+    processes().unwrap_or_else(|error| {
+        panic!("process supervision unavailable before starting the CLI: {error}")
+    });
+    let mut project = parse_toml(&repo.read(PROJECT_FILE));
+    for suite in project["suite"].as_array_mut().unwrap() {
+        if suite["name"].as_str() == Some("loans") {
+            suite
+                .as_table_mut()
+                .unwrap()
+                .insert("time_limit_minutes".into(), toml::Value::Integer(1));
+        }
+    }
+    repo.write(PROJECT_FILE, &toml::to_string(&project).unwrap());
+    let runner_journal = repo.beside("timeout-runner.jsonl");
+    let server_journal = repo.beside("timeout-server.jsonl");
+    let observer_journal = repo.beside("timeout-observer.jsonl");
+    repo.set_env("RUNNER_JOURNAL", runner_journal.to_str().unwrap());
+    repo.set_env("LOAN_SERVER_JOURNAL", server_journal.to_str().unwrap());
+    repo.set_env("GROUP_JOURNAL", observer_journal.to_str().unwrap());
+    let target = Command::new("which").arg("npx").output().unwrap();
+    repo.set_env(
+        "GROUP_TARGET",
+        String::from_utf8(target.stdout).unwrap().trim(),
+    );
+    let host = repo.beside("group-host");
+    fs::create_dir_all(&host).unwrap();
+    fs::copy(
+        env!("CARGO_BIN_EXE_group-signal-recorder"),
+        host.join("npx"),
+    )
+    .unwrap();
+    repo.set_env(
+        "PATH",
+        &format!(
+            "{}:{}",
+            host.display(),
+            repo.path_without_programs(&["npx", "dotnet"])
+        ),
+    );
+    let worker_journal = repo.beside("hanging-test.jsonl");
+    repo.set_env("WORKER_JOURNAL", worker_journal.to_str().unwrap());
+    repo.write("playwright/lending/timeout-setup.cjs","module.exports=async()=>require('node:fs').appendFileSync(process.env.RUNNER_JOURNAL,JSON.stringify({event:'started',pid:process.pid,time_ms:Date.now()})+'\\n');\n");
+    repo.write("playwright/lending/timeout-teardown.cjs",r#"module.exports=async()=>{
+ const event=name=>require('node:fs').appendFileSync(process.env.RUNNER_JOURNAL,JSON.stringify({event:name,pid:process.pid,time_ms:Date.now()})+'\n');
+ event('teardown');await new Promise(r=>setTimeout(r,500));event('cleaned');
 };
 "#);
-    repo.append("playwright/lending/playwright.config.cjs","module.exports.globalSetup='./stop-setup.cjs';\nmodule.exports.globalTeardown='./stop-teardown.cjs';\nmodule.exports.timeout=120000;\n");
-    spec(
-        &repo,
-        r#"const {test}=require('@playwright/test');
-test('wait for a polite stop',{tag:'@Check:polite-stop'},async()=>{
+    repo.append("playwright/lending/playwright.config.cjs","module.exports.webServer.env={SERVER_JOURNAL:process.env.LOAN_SERVER_JOURNAL};\nmodule.exports.globalSetup='./timeout-setup.cjs';\nmodule.exports.globalTeardown='./timeout-teardown.cjs';\nmodule.exports.timeout=180000;\n");
+    repo.append("playwright/lending/desk.spec.cjs",r#"
+test('wait for the launch stop', {tag:'@Check:sixth-loan-is-refused'},async()=>{
  require('node:fs').appendFileSync(process.env.WORKER_JOURNAL,JSON.stringify({event:'started',pid:process.pid,time_ms:Date.now()})+'\n');
  await new Promise(()=>{});
 });
-"#,
-    );
-    let bin = &packed().manifest["bin"];
-    let relative = bin
-        .as_str()
-        .or_else(|| {
-            bin.as_object()
-                .and_then(|v| v.values().next())
-                .and_then(Value::as_str)
-        })
-        .unwrap();
-    let entry = repo
-        .path("playwright/node_modules/@azimuth-sh/playwright")
-        .join(relative)
-        .canonicalize()
-        .unwrap();
-    let stdout = repo.beside("adapter-stop.stdout");
-    let stderr = repo.beside("adapter-stop.stderr");
-    let environment = repo.azimuth_command(&[]);
-    let child = Command::new(&entry)
-        .env_clear()
-        .envs(
-            environment
-                .get_envs()
-                .filter_map(|(k, v)| v.map(|v| (k, v))),
-        )
-        .env("RUNNER_JOURNAL", &runner_journal)
-        .env("SERVER_JOURNAL", &server_journal)
-        .env("WORKER_JOURNAL", &worker_journal)
-        .current_dir(repo.path(SUITE))
-        .stdin(Stdio::piped())
-        .stdout(fs::File::create(&stdout).unwrap())
-        .stderr(fs::File::create(&stderr).unwrap())
+"#);
+    assert!(repo.lint_findings(0).is_empty());
+    let stdout = repo.beside("timeout.stdout");
+    let stderr = repo.beside("timeout.stderr");
+    let child = repo
+        .azimuth_command(&["run", "--json"])
+        .stdout(Stdio::from(fs::File::create(&stdout).unwrap()))
+        .stderr(Stdio::from(fs::File::create(&stderr).unwrap()))
         .spawn()
         .unwrap();
     let mut running = Running {
         child,
         owned: BTreeMap::new(),
     };
-    running
-        .child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(request(&["polite-stop"], "Check").to_string().as_bytes())
-        .unwrap();
     let watchdog = Instant::now();
     while read_events(&worker_journal).is_empty() {
         running.observe();
         assert!(
             running.child.try_wait().unwrap().is_none(),
-            "adapter exited before the test: {}",
+            "CLI exited before the hanging test: {}",
             fs::read_to_string(&stderr).unwrap()
         );
         assert!(
             watchdog.elapsed() < Duration::from_secs(120),
-            "test-start watchdog expired: {}",
-            fs::read_to_string(&stderr).unwrap()
+            "runner readiness watchdog expired"
         );
         std::thread::sleep(Duration::from_millis(30));
     }
     let table = running.observe();
     for journal in [&runner_journal, &server_journal, &worker_journal] {
-        let events = read_events(journal);
-        assert_eq!(events[0]["event"], "started", "{events:#?}");
-        let pid = events[0]["pid"].as_u64().unwrap() as u32;
+        let pid = read_events(journal)[0]["pid"].as_u64().unwrap() as u32;
         assert!(
-            running.owned.contains_key(&pid),
-            "journaled process is not descended from the adapter: {events:#?}"
+            running.owned.contains_key(&pid) && table[&pid].running(),
+            "unowned journal PID {pid}"
         );
-        assert!(table[&pid].running());
     }
-    let adapter = &table[&running.child.id()];
-    assert!(
-        adapter
-            .command
-            .split_whitespace()
-            .any(|arg| arg == entry.to_str().unwrap()),
-        "{adapter:#?}"
-    );
-    assert!(adapter.signal_if_same("-TERM"));
-    let watchdog = Instant::now();
-    loop {
-        let table = running.observe();
-        let survivors: Vec<_> = running
-            .owned
-            .values()
-            .filter(|old| {
-                table.get(&old.pid).is_some_and(|now| {
-                    now.running() && now.birth == old.birth && now.command == old.command
-                })
-            })
-            .collect();
-        if running.child.try_wait().unwrap().is_some() && survivors.is_empty() {
-            break;
+    let status = loop {
+        running.observe();
+        if let Some(status) = running.child.try_wait().unwrap() {
+            break status;
         }
         assert!(
-            watchdog.elapsed() < Duration::from_secs(30),
-            "owned processes survived the polite stop: {survivors:#?}\n{}",
+            watchdog.elapsed() < Duration::from_secs(145),
+            "core timeout watchdog expired: {}",
             fs::read_to_string(&stderr).unwrap()
         );
         std::thread::sleep(Duration::from_millis(30));
-    }
+    };
+    assert_eq!(status.code(), Some(1));
+    let document: Value = serde_json::from_str(&fs::read_to_string(stdout).unwrap()).unwrap();
     assert_eq!(
-        fs::read_to_string(&stdout).unwrap(),
-        "",
-        "stopped adapter wrote a report"
+        document["suites"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["name"] == "loans")
+            .unwrap()["launch"],
+        "timed out"
     );
-    for (journal, began) in [(&runner_journal, "stopping"), (&server_journal, "SIGTERM")] {
+    no_results(&repo, &document, &[SIXTH_LOAN, RETURNED_BOOK]);
+    let observer = read_events(&observer_journal);
+    let term = observer
+        .iter()
+        .find(|e| {
+            e["event"] == "SIGTERM" && e["folder"].as_str().is_some_and(|f| f.ends_with(SUITE))
+        })
+        .expect("the core did not signal the actual adapter group")["time_ms"]
+        .as_u64()
+        .unwrap();
+    for (journal, event) in [(&runner_journal, "cleaned"), (&server_journal, "exited")] {
         let events = read_events(journal);
-        let began = events
-            .iter()
-            .find(|v| v["event"] == began)
-            .unwrap_or_else(|| panic!("no polite-stop event: {events:#?}"));
-        let cleaned = events
-            .iter()
-            .find(|v| v["event"] == "cleaned")
-            .unwrap_or_else(|| panic!("no cleanup witness: {events:#?}"));
-        let elapsed = cleaned["time_ms"].as_u64().unwrap() - began["time_ms"].as_u64().unwrap();
+        let cleaned=events.iter().find(|e|e["event"]==event).unwrap_or_else(||panic!("the polite stop did not finish {event}; raw group TERM also failed this measurement: {events:#?}"));
         assert!(
-            (400..30000).contains(&elapsed),
-            "cleanup did not complete its delay: {events:#?}"
+            cleaned["time_ms"].as_u64().unwrap() >= term
+                && cleaned["time_ms"].as_u64().unwrap() - term < 10_000,
+            "cleanup exceeded the fixed grace: {events:#?}"
         );
     }
+    let table = running.observe();
+    let alive: Vec<_> = running
+        .owned
+        .values()
+        .filter(|old| {
+            table.get(&old.pid).is_some_and(|now| {
+                now.running() && now.birth == old.birth && now.command == old.command
+            })
+        })
+        .collect();
+    assert!(
+        alive.is_empty(),
+        "owned runner/server processes survived the core's timeout: {alive:#?}"
+    );
+}
+
+#[test]
+fn the_locked_runner_uses_the_sample_server_without_a_browser() {
+    let mut repo = Repo::sample();
+    copy_tree(&runner().modules, &repo.path("playwright/node_modules"));
+    isolate_npm(&mut repo);
+    let environment = repo.azimuth_command(&[]);
+    let mut command = Command::new("node");
+    command
+        .env_clear()
+        .envs(
+            environment
+                .get_envs()
+                .filter_map(|(k, v)| v.map(|v| (k, v))),
+        )
+        .arg(repo.path("playwright/node_modules/@playwright/test/cli.js"))
+        .args(["test", "--retries=0", "--reporter=json"])
+        .current_dir(repo.path(SUITE));
+    let output = run_with_time_limit(command, Duration::from_secs(120), None);
+    output.expect_status(0);
+    assert_eq!(output.json()["stats"]["expected"], 2, "{}", output.text());
 }

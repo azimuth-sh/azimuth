@@ -590,12 +590,14 @@ pub fn copy_tree(from: &Path, to: &Path) {
     for entry in fs::read_dir(from).unwrap_or_else(|e| panic!("read {}: {e}", from.display())) {
         let entry = entry.unwrap();
         let name = entry.file_name();
-        // Build output of the xUnit project may sit in the source folder after a local `dotnet test`.
-        if name == "bin" || name == "obj" || name == ".DS_Store" {
+        // Intermediate output is never source; a `bin` folder can hold a package's commands.
+        if name == "obj" || name == ".DS_Store" {
             continue;
         }
         let target = to.join(&name);
-        if entry.file_type().unwrap().is_dir() {
+        if entry.file_type().unwrap().is_symlink() {
+            std::os::unix::fs::symlink(fs::read_link(entry.path()).unwrap(), &target).unwrap();
+        } else if entry.file_type().unwrap().is_dir() {
             copy_tree(&entry.path(), &target);
         } else {
             fs::copy(entry.path(), &target).unwrap();
@@ -1049,20 +1051,21 @@ impl Repo {
     pub fn path_without_programs(&self, programs: &[&str]) -> String {
         let under = self.beside(&format!("path-without-{}", programs.join("-")));
         let _ = fs::remove_dir_all(&under);
-        let mut path = std::env::var_os("PATH").unwrap_or_default();
+        let mut dirs = vec![binaries_dir()];
+        dirs.extend(std::env::split_paths(
+            &std::env::var_os("PATH").unwrap_or_default(),
+        ));
+        let mut path = std::env::join_paths(dirs).unwrap();
         for (index, program) in programs.iter().enumerate() {
             path = path_hiding(program, &path, &under.join(index.to_string())).into();
         }
-        format!("{}:{}", binaries_dir().display(), path.to_string_lossy())
+        path.to_string_lossy().to_string()
     }
 
     /// The machine's PATH, with the apparatus first and one program hidden; the stand-in
     /// folders live in this repository's temporary folder.
     pub fn path_without(&self, program: &str) -> String {
-        let under = self.beside(&format!("path-without-{program}"));
-        let _ = fs::remove_dir_all(&under);
-        let hidden = path_hiding(program, &std::env::var_os("PATH").unwrap_or_default(), &under);
-        format!("{}:{hidden}", binaries_dir().display())
+        self.path_without_programs(&[program])
     }
 }
 

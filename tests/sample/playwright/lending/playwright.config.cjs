@@ -4,9 +4,8 @@ module.exports = {
   retries: 2,
   webServer: {
     command: 'node ../server.cjs',
-    port: Number(process.env.LENDING_PORT),
+    wait: { stdout: /DESK_READY (?<desk_port>\d+)/ },
     reuseExistingServer: false,
     gracefulShutdown: { signal: 'SIGTERM', timeout: 10000 },
-    env: { SERVER_PORT: process.env.LENDING_PORT },
   },
 };

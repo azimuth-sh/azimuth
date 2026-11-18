@@ -8,6 +8,8 @@ use azimuth_tests::*;
 /// The sample before Azimuth, on a machine where `dotnet` and so the .NET adapter are absent.
 fn fresh(branch: &str) -> Repo {
     let mut repo = Repo::sample_before_init(branch);
+    repo.remove("playwright");
+    repo.remove("reading-room");
     repo.set_env("PATH", &repo.path_without_programs(&["dotnet", "npx"]));
     repo
 }
