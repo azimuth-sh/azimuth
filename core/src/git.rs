@@ -27,8 +27,13 @@ pub struct Entry {
 #[derive(Debug)]
 pub enum WorkingChange {
     /// Edited or new, with the mode git would store.
-    Present { path: String, mode: String },
-    Deleted { path: String },
+    Present {
+        path: String,
+        mode: String,
+    },
+    Deleted {
+        path: String,
+    },
 }
 
 impl Git {
@@ -48,6 +53,18 @@ impl Git {
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    pub fn ignores(&self, path: &str) -> Result<bool, String> {
+        let output = self
+            .command(&["check-ignore", "--quiet", "--no-index", "--", path])
+            .output()
+            .map_err(|error| format!("git check-ignore: {error}"))?;
+        match output.status.code() {
+            Some(0) => Ok(true),
+            Some(1) => Ok(false),
+            _ => Err(format!("git check-ignore: {}", String::from_utf8_lossy(&output.stderr).trim())),
+        }
     }
 
     fn command(&self, args: &[&str]) -> Command {
@@ -98,7 +115,9 @@ impl Git {
     pub fn head_tree(&self) -> Result<String, String> {
         match self.text(&["rev-parse", "--verify", "--quiet", "HEAD^{tree}"]) {
             Ok(tree) if !tree.is_empty() => Ok(tree),
-            _ => self.output(&["hash-object", "-t", "tree", "--stdin"], Some(b"")).map(|bytes| String::from_utf8_lossy(&bytes).trim().to_string()),
+            _ => self
+                .output(&["hash-object", "-t", "tree", "--stdin"], Some(b""))
+                .map(|bytes| String::from_utf8_lossy(&bytes).trim().to_string()),
         }
     }
 
@@ -180,7 +199,17 @@ impl Git {
                 continue;
             }
             let (kind, rest) = record.split_at(1);
-            let fields: Vec<&str> = rest.trim_start().splitn(match kind { "1" => 8, "u" => 10, _ => 0 }, ' ').collect();
+            let fields: Vec<&str> = rest
+                .trim_start()
+                .splitn(
+                    match kind {
+                        "1" => 8,
+                        "u" => 10,
+                        _ => 0,
+                    },
+                    ' ',
+                )
+                .collect();
             let (head_mode, worktree_mode, path) = match (kind, fields.as_slice()) {
                 ("1", [_xy, _sub, head, _index, worktree, _hh, _hi, path]) => (*head, *worktree, *path),
                 ("u", [_xy, _sub, _m1, _m2, _m3, worktree, _h1, _h2, _h3, path]) => ("100644", *worktree, *path),
@@ -222,11 +251,7 @@ impl Git {
     /// Tracked paths at or below a folder of the working tree.
     pub fn tracked_under(&self, folder: &str) -> Result<Vec<String>, String> {
         let bytes = self.output(&["ls-files", "-z", "--", folder], None)?;
-        Ok(bytes
-            .split(|byte| *byte == 0)
-            .filter(|path| !path.is_empty())
-            .map(|path| String::from_utf8_lossy(path).to_string())
-            .collect())
+        Ok(bytes.split(|byte| *byte == 0).filter(|path| !path.is_empty()).map(|path| String::from_utf8_lossy(path).to_string()).collect())
     }
 }
 

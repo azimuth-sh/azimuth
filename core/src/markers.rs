@@ -42,7 +42,7 @@ impl<'a> MarkerForm<'a> {
             if end > 0 {
                 ids.push(after[..end].to_string());
             }
-            rest = &after[end..];
+            rest = &after[end + self.suffix.len()..];
         }
         ids
     }

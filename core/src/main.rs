@@ -15,8 +15,8 @@ mod model;
 mod output;
 mod project;
 mod reading;
-mod runners;
 mod result;
+mod runners;
 mod skills;
 mod source;
 mod state;
@@ -32,6 +32,10 @@ use commands::run::Selection;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn main() {
+    if let Err(error) = launch::install_stop_handlers() {
+        eprintln!("azimuth: install stop handlers: {error}");
+        std::process::exit(output::status::COULD_NOT);
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     let status = match cli::parse(&args) {
         Ok(command) => dispatch(command),
@@ -40,6 +44,7 @@ fn main() {
             output::status::COULD_NOT
         }
     };
+    launch::exit_if_stopped();
     std::process::exit(status);
 }
 

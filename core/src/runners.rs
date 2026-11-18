@@ -73,5 +73,5 @@ impl Runner {
 /// The install line of a known adapter command.
 pub fn install_line(adapter: &str) -> Option<String> {
     let words: Vec<&str> = adapter.split(' ').filter(|word| !word.is_empty()).collect();
-    RUNNERS.iter().find(|runner| runner.adapter.split(' ').eq(words.iter().copied())).map(Runner::install_line)
+    RUNNERS.iter().find(|runner| words.starts_with(&runner.adapter.split(' ').collect::<Vec<_>>())).map(Runner::install_line)
 }

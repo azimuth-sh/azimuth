@@ -156,8 +156,7 @@ impl Reader {
         };
         let areas: Vec<String> = self.entries(table, "area").iter().map(|(index, entry)| self.area(entry, *index)).collect();
         let suites: Vec<Suite> = self.entries(table, "suite").iter().map(|(index, entry)| self.suite(entry, *index)).collect();
-        let facilities: Vec<Facility> =
-            self.entries(table, "facility").iter().map(|(index, entry)| self.facility(entry, *index)).collect();
+        let facilities: Vec<Facility> = self.entries(table, "facility").iter().map(|(index, entry)| self.facility(entry, *index)).collect();
         self.refuse_duplicates("area", areas.iter().map(String::as_str));
         self.refuse_duplicates("suite", suites.iter().map(|suite| suite.name.as_str()));
         self.refuse_duplicates("facility", facilities.iter().map(|facility| facility.name.as_str()));
@@ -217,8 +216,15 @@ impl Reader {
         if !marker.is_empty() && marker.matches("<id>").count() != 1 {
             self.error(place, Some("marker"), format!("the marker form `{marker}` must hold `<id>` once, where the Check id stands"));
         }
+        if marker.starts_with("<id>") {
+            self.error(place, Some("marker"), "the marker form must have text before `<id>` so a marker has a beginning".to_string());
+        }
         if path.starts_with('/') || path.split('/').any(|part| part == "..") {
-            self.error(place, Some("path"), format!("the suite path `{path}` must be a folder inside the repository, written from its root"));
+            self.error(
+                place,
+                Some("path"),
+                format!("the suite path `{path}` must be a folder inside the repository, written from its root"),
+            );
         }
         let marker_key = match table.get("marker_key") {
             None => None,
@@ -334,11 +340,8 @@ fn is_exact_version(version: &str) -> bool {
     };
     let numbers: Vec<&str> = core.split('.').collect();
     let numbers_ok = numbers.len() == 3 && numbers.iter().all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()));
-    let rest_ok = rest
-        .chars()
-        .skip(1)
-        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '+')
-        && (rest.is_empty() || rest.len() > 1);
+    let rest_ok =
+        rest.chars().skip(1).all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '+') && (rest.is_empty() || rest.len() > 1);
     numbers_ok && rest_ok
 }
 

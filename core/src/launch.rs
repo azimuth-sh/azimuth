@@ -9,7 +9,7 @@ use std::os::unix::fs::FileExt;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
@@ -21,7 +21,30 @@ use crate::store;
 /// A proof that runs longer counts as hung. The number is fixed in the first increment.
 const PROOF_TIME_LIMIT: Duration = Duration::from_secs(10);
 const STOP_GRACE: Duration = Duration::from_secs(10);
+static STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+extern "C" fn request_stop(_: i32) {
+    // Shutdown uses normal control flow; a signal handler must not touch process or file state.
+    STOP_REQUESTED.store(true, Ordering::Relaxed);
+}
+
+pub fn install_stop_handlers() -> std::io::Result<()> {
+    for number in [2, 15] {
+        if unsafe { signal(number, request_stop) } == usize::MAX {
+            return Err(std::io::Error::last_os_error());
+        }
+    }
+    Ok(())
+}
+
+pub fn exit_if_stopped() {
+    if STOP_REQUESTED.load(Ordering::Relaxed) {
+        std::process::exit(1);
+    }
+}
+
 unsafe extern "C" {
+    fn signal(number: i32, handler: extern "C" fn(i32)) -> usize;
     fn kill(pid: i32, signal: i32) -> i32;
     fn fcntl(fd: i32, command: i32, ...) -> i32;
     fn waitid(kind: i32, pid: u32, info: *mut std::ffi::c_void, options: i32) -> i32;
@@ -122,6 +145,7 @@ fn split_command(line: &str) -> Vec<String> {
 /// Proves one facility by its proof command, started at the root of the repository. The error
 /// says why the suite cannot run here.
 pub fn prove(project: &Project, facility: &str, root: &Path) -> Result<(), String> {
+    exit_if_stopped();
     let Some(definition) = project.facility(facility) else {
         return Err(format!("the facility `{facility}` has no definition in the project file"));
     };
@@ -188,6 +212,10 @@ impl Running<'_> {
 
     fn wait_with_limit(mut self, limit: Duration, files: &[&File]) -> std::io::Result<Waited> {
         loop {
+            if STOP_REQUESTED.load(Ordering::Relaxed) {
+                let _ = self.stop(files);
+                std::process::exit(1);
+            }
             match self.poll_exit(files) {
                 Ok(Some(completed)) => return Ok(Waited::Exited(completed)),
                 Ok(None) => {}
@@ -204,6 +232,10 @@ impl Running<'_> {
 
     fn wait_until_exit(mut self, files: &[&File]) -> std::io::Result<Completed> {
         loop {
+            if STOP_REQUESTED.load(Ordering::Relaxed) {
+                let _ = self.stop(files);
+                std::process::exit(1);
+            }
             match self.poll_exit(files) {
                 Ok(Some(completed)) => return Ok(completed),
                 Ok(None) => self.deliver_request(),
@@ -270,9 +302,12 @@ pub fn run_suite(root: &Path, suite: &Suite, checks: &[String]) -> Result<(Launc
     let request = request.to_string();
     let limit = Duration::from_secs(suite.time_limit_minutes.saturating_mul(60));
     eprintln!("suite {}: launch starting", suite.name);
-    let waited = spawn_adapter(&root.join(&suite.path), &suite.adapter, request.as_bytes(), stdout, Stdio::from(stderr)).and_then(|running| {
-        running.wait_with_limit(limit, &[&report, &output.file]).map_err(|error| Started::Crashed(format!("wait for the adapter: {error}")))
-    });
+    let waited =
+        spawn_adapter(&root.join(&suite.path), &suite.adapter, request.as_bytes(), stdout, Stdio::from(stderr)).and_then(|running| {
+            running
+                .wait_with_limit(limit, &[&report, &output.file])
+                .map_err(|error| Started::Crashed(format!("wait for the adapter: {error}")))
+        });
     let mut output_length = 0;
     let (launch, duration_ms) = match waited {
         Ok(Waited::Exited(completed)) => {
@@ -430,6 +465,7 @@ pub fn start_adapter(dir: &Path, command: &str, request: &Value) -> Result<Strin
 }
 
 fn spawn_adapter<'a>(dir: &Path, command: &str, request: &'a [u8], stdout: File, stderr: Stdio) -> Result<Running<'a>, Started> {
+    exit_if_stopped();
     let words = split_command(command);
     let Some((program, args)) = words.split_first() else {
         return Err(Started::No("the command is empty".to_string()));
@@ -542,7 +578,10 @@ pub fn judge<'r>(
         let tests: Vec<&ReportedTest> = report.tests.iter().filter(|test| test.checks.contains(check)).collect();
         let markers = markers_in_suite.get(check).copied().unwrap_or(0);
         let verdict = if markers > tests.len() {
-            Verdict::Mismatch(format!("a marker in source matches no listed test: {markers} marker lines and {} listed tests carry this Check", tests.len()))
+            Verdict::Mismatch(format!(
+                "a marker in source matches no listed test: {markers} marker lines and {} listed tests carry this Check",
+                tests.len()
+            ))
         } else if tests.iter().any(|test| test.outcome == "failed") {
             Verdict::Failed(tests)
         } else if tests.iter().all(|test| test.outcome == "passed") {

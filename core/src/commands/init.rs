@@ -3,7 +3,7 @@
 //! own ignore file. It never changes a file that exists, needs no account and no network, and
 //! writes no model and no process.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use serde_json::{json, Value};
@@ -47,24 +47,35 @@ pub fn run() -> i32 {
         };
         let mut suites = Vec::new();
         for runner in &RUNNERS {
-            let manifests: Vec<String> = tree
+            let applications: BTreeMap<String, bool> = tree
                 .files
                 .keys()
                 .filter(|path| path.rsplit('/').next() == Some("package.json"))
                 .filter(|path| !path.split('/').any(|part| part == "node_modules"))
                 .filter_map(|path| {
                     let text = std::fs::read_to_string(root.join(path)).ok()?;
-                    runner.lists_adapter(path, &text).then(|| path.rsplit_once('/').map_or(".", |(folder, _)| folder).to_string())
+                    let declares_adapter = runner.lists_adapter(path, &text);
+                    (declares_adapter || runner.recognizes(path, &text))
+                        .then(|| (path.rsplit_once('/').map_or(".", |(folder, _)| folder).to_string(), declares_adapter))
                 })
                 .collect();
             let mut folders = BTreeSet::from([".".to_string()]);
-            folders.extend(manifests.iter().cloned());
+            folders.extend(applications.iter().filter(|(_, declares_adapter)| **declares_adapter).map(|(folder, _)| folder.clone()));
             let mut found = BTreeSet::new();
-            let mut missing = None;
+            let mut missing = BTreeMap::new();
+            let mut root_failure = None;
             for folder in folders {
                 match discover(root, &folder, runner) {
                     Ok(paths) => {
                         for path in paths {
+                            let Some(path) = discovered_folder(root, &folder, &path) else {
+                                continue;
+                            };
+                            match git.ignores(&path) {
+                                Ok(true) => continue,
+                                Ok(false) => {}
+                                Err(message) => return output::could_not(&message),
+                            }
                             if !found.insert(path.clone()) {
                                 continue;
                             }
@@ -74,17 +85,36 @@ pub fn run() -> i32 {
                     }
                     Err(Started::Preparation(message)) => return output::could_not(&message),
                     Err(Started::No(why) | Started::Crashed(why)) => {
-                        if manifests.contains(&folder) || (folder == "." && manifests.is_empty() && stack_exists(root, &tree, runner)) {
-                            missing = Some(why);
+                        if folder == "." {
+                            root_failure = Some(why.clone());
+                        }
+                        if applications.get(&folder) == Some(&true)
+                            || (folder == "." && applications.is_empty() && stack_exists(root, &tree, runner))
+                        {
+                            missing.insert(folder, why);
                         }
                     }
                 }
             }
-            if let Some(why) = missing {
+            if let Some(why) = root_failure {
+                for (folder, declares_adapter) in &applications {
+                    if !declares_adapter {
+                        missing.insert(folder.clone(), why.clone());
+                    }
+                }
+            }
+            for (folder, why) in missing {
                 // The line stands alone, so it can be copied whole without a full stop.
+                let omitted = if found.is_empty() {
+                    "The suites of this stack are not in the project file; add them by hand."
+                } else {
+                    "The suites of this application are not in the project file; add them by hand."
+                };
                 println!(
-                    "{}: the adapter `{}` is not installed here ({why}). Install it with this line:\n  {}\nThe suites of this stack are not in the project file; add them by hand.",
-                    runner.stack, runner.adapter, runner.install_line()
+                    "{} at {folder}: the adapter `{}` is not installed here ({why}). Install it with this line:\n  {}\n{omitted}",
+                    runner.stack,
+                    runner.adapter,
+                    runner.install_line()
                 );
             }
         }
@@ -169,14 +199,33 @@ fn discovered_paths(stdout: &str) -> Result<Vec<String>, String> {
         .collect()
 }
 
-/// A suite is named after its folder, and after its whole path where two folders share a name.
+fn discovered_folder(root: &Path, asked: &str, reported: &str) -> Option<String> {
+    if reported.is_empty() || Path::new(reported).is_absolute() || reported.split('/').any(|part| part == "..") {
+        return None;
+    }
+    let parts: Vec<_> = reported.split('/').filter(|part| !part.is_empty() && *part != ".").collect();
+    let path = if parts.is_empty() { ".".to_string() } else { parts.join("/") };
+    if asked != "." && path != asked && !path.starts_with(&format!("{asked}/")) {
+        return None;
+    }
+    if !root.join(&path).is_dir() {
+        return None;
+    }
+    let physical = root.join(&path).canonicalize().ok()?;
+    if !physical.starts_with(root.join(asked).canonicalize().ok()?) {
+        return None;
+    }
+    Some(path)
+}
+
 fn suite_name(path: &str, suites: &[DiscoveredSuite]) -> String {
     let last = path.rsplit('/').next().unwrap_or(path).to_string();
-    if suites.iter().any(|suite| suite.name == last) {
-        path.to_string()
-    } else {
-        last
+    for name in [last, path.to_string()] {
+        if !suites.iter().any(|suite| suite.name == name) {
+            return name;
+        }
     }
+    (2..).map(|number| format!("{path}-{number}")).find(|name| !suites.iter().any(|suite| &suite.name == name)).unwrap()
 }
 
 fn quoted(text: &str) -> String {
