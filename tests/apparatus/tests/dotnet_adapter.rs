@@ -7,8 +7,10 @@
 //! team pins it, so no registry is involved. Until that folder holds the adapter, every test here
 //! fails at the pack.
 
+use azimuth_tests::process::{processes, Process};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command};
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -1010,60 +1012,10 @@ fn sigterm_during_build_gives_the_build_tree_a_polite_stop() {
 }
 
 fn assert_real_adapter_stops_politely(during_build: bool) {
-    use azimuth_tests::process::{processes, Process};
-    use std::collections::BTreeMap;
     use std::io::Write;
-    use std::process::{Child, Stdio};
+    use std::process::Stdio;
     use std::time::Instant;
 
-    struct RunningAdapter {
-        child: Child,
-        owned: BTreeMap<u32, Process>,
-    }
-    impl RunningAdapter {
-        fn observe(&mut self) -> BTreeMap<u32, Process> {
-            let table = processes().unwrap_or_else(|error| panic!("{error}"));
-            let mut descendants = std::collections::BTreeSet::new();
-            if self.owned.is_empty() {
-                descendants.insert(self.child.id());
-            }
-            for p in self.owned.values() {
-                if table.get(&p.pid).is_some_and(|now| {
-                    now.running() && now.birth == p.birth && now.command == p.command
-                }) {
-                    descendants.insert(p.pid);
-                }
-            }
-            loop {
-                let before = descendants.len();
-                for p in table.values() {
-                    if descendants.contains(&p.parent) {
-                        descendants.insert(p.pid);
-                    }
-                }
-                if before == descendants.len() {
-                    break;
-                }
-            }
-            for pid in descendants {
-                if let Some(p) = table.get(&pid) {
-                    self.owned.insert(pid, p.clone());
-                }
-            }
-            table
-        }
-    }
-    impl Drop for RunningAdapter {
-        fn drop(&mut self) {
-            for p in self.owned.values() {
-                p.signal_if_same("-KILL");
-            }
-            if matches!(self.child.try_wait(), Ok(None)) {
-                let _ = self.child.kill();
-            }
-            let _ = self.child.wait();
-        }
-    }
     let repo = sample();
     let journal = repo.beside("hanging-test.pid");
     let witness = repo.beside("polite-stop.witness");
@@ -1115,30 +1067,7 @@ public class StopTests {
 }
 "#,
     );
-    // Resolve the installed tool's declared entry point, so this owned process is the adapter
-    // itself, without guessing among host processes whose command happens to name the tool.
-    let settings: Vec<_> = files_under(&repo.beside("nuget-packages"))
-        .into_iter()
-        .filter(|path| {
-            path.file_name()
-                .is_some_and(|name| name == "DotnetToolSettings.xml")
-        })
-        .collect();
-    assert_eq!(settings.len(), 1);
-    let xml = std::fs::read_to_string(&settings[0]).unwrap();
-    let tag = opening_tag(&xml, "Command").unwrap();
-    let attribute = |name: &str| {
-        tag.split(&format!("{name}=\""))
-            .nth(1)
-            .unwrap()
-            .split('"')
-            .next()
-            .unwrap()
-            .to_string()
-    };
-    assert_eq!(attribute("Name"), ADAPTER);
-    let entry = settings[0].parent().unwrap().join(attribute("EntryPoint"));
-    assert!(entry.is_file());
+    let entry = installed_adapter_entry(&repo);
     let stdout = repo.beside("stop.stdout");
     let stderr = repo.beside("stop.stderr");
     let child = Command::new("dotnet")
@@ -1253,4 +1182,306 @@ public class StopTests {
         "polite stop\n",
         "runner tree exited without its polite-stop witness (during_build={during_build})"
     );
+}
+
+struct RunningAdapter {
+    child: Child,
+    owned: BTreeMap<u32, Process>,
+}
+impl RunningAdapter {
+    fn observe(&mut self) -> BTreeMap<u32, Process> {
+        let table = processes().unwrap_or_else(|error| panic!("{error}"));
+        let mut descendants = std::collections::BTreeSet::new();
+        if self.owned.is_empty() {
+            descendants.insert(self.child.id());
+        }
+        for p in self.owned.values() {
+            if table.get(&p.pid).is_some_and(|now| {
+                now.running() && now.birth == p.birth && now.command == p.command
+            }) {
+                descendants.insert(p.pid);
+            }
+        }
+        loop {
+            let before = descendants.len();
+            for p in table.values() {
+                if descendants.contains(&p.parent) {
+                    descendants.insert(p.pid);
+                }
+            }
+            if before == descendants.len() {
+                break;
+            }
+        }
+        for pid in descendants {
+            if let Some(p) = table.get(&pid) {
+                self.owned.insert(pid, p.clone());
+            }
+        }
+        table
+    }
+}
+impl Drop for RunningAdapter {
+    fn drop(&mut self) {
+        for p in self.owned.values() {
+            p.signal_if_same("-KILL");
+        }
+        if matches!(self.child.try_wait(), Ok(None)) {
+            let _ = self.child.kill();
+        }
+        let _ = self.child.wait();
+    }
+}
+
+fn installed_adapter_entry(repo: &Repo) -> PathBuf {
+    // Resolve the installed tool's declared entry point, so this owned process is the adapter
+    // itself, without guessing among host processes whose command happens to name the tool.
+    let settings: Vec<_> = files_under(&repo.beside("nuget-packages"))
+        .into_iter()
+        .filter(|path| {
+            path.file_name()
+                .is_some_and(|name| name == "DotnetToolSettings.xml")
+        })
+        .collect();
+    assert_eq!(settings.len(), 1);
+    let xml = std::fs::read_to_string(&settings[0]).unwrap();
+    let tag = opening_tag(&xml, "Command").unwrap();
+    let attribute = |name: &str| {
+        tag.split(&format!("{name}=\""))
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap()
+            .to_string()
+    };
+    assert_eq!(attribute("Name"), ADAPTER);
+    let entry = settings[0].parent().unwrap().join(attribute("EntryPoint"));
+    assert!(entry.is_file());
+    entry
+}
+
+#[test]
+fn a_resistant_runner_child_does_not_withhold_the_stop_from_its_sibling() {
+    let observed: Vec<_> = [false, true]
+        .into_iter()
+        .map(assert_sibling_receives_stop)
+        .collect();
+    assert_eq!(observed, vec![true, true], "a resistant process prevented a sibling receiving the polite stop (both child creation orders)");
+}
+fn assert_sibling_receives_stop(reverse: bool) -> bool {
+    use std::io::Write;
+    use std::process::Stdio;
+    use std::time::Instant;
+    let repo = sample();
+    let token = repo.beside("sibling-token");
+    let pid_file = repo.beside("sibling-test.pid");
+    let witness = repo.beside("sibling-stop.witness");
+    repo.write("dotnet/LibraryDesk.Tests/SiblingStopTests.cs", r#"
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Threading;
+using Xunit;
+namespace LibraryDesk.Tests;
+public class SiblingStopTests {
+    [Fact]
+    [Trait("Check", "runner-stops-its-siblings")]
+    public void Keeps_siblings_alive_until_the_adapter_is_asked_to_stop() {
+        var token = Environment.GetEnvironmentVariable("SIBLING_TOKEN")!;
+        var helper = Environment.GetEnvironmentVariable("SIBLING_HELPER")!;
+        using var term = PosixSignalRegistration.Create(PosixSignal.SIGTERM, context => context.Cancel = true);
+        var roles = Environment.GetEnvironmentVariable("SIBLING_REVERSE") == "yes"
+            ? new[] { "witness-leaf", "resistant-leaf" } : new[] { "resistant-leaf", "witness-leaf" };
+        var children = new List<Process>();
+        foreach (var role in roles) {
+            var start = new ProcessStartInfo(helper) { UseShellExecute = false };
+            start.ArgumentList.Add(role); start.ArgumentList.Add(token);
+            children.Add(Process.Start(start)!);
+        }
+        foreach (var role in roles) {
+            while (!File.Exists(Path.ChangeExtension(token, role + ".ready"))) Thread.Sleep(10);
+        }
+        var pid = Environment.GetEnvironmentVariable("STOP_TEST_PID")!;
+        File.WriteAllText(pid + ".tmp", Environment.ProcessId.ToString());
+        File.Move(pid + ".tmp", pid);
+        while (!File.Exists(Path.ChangeExtension(token, "stop"))) {
+            foreach (var child in children) { if (child.HasExited) child.WaitForExit(); }
+            Thread.Sleep(10);
+        }
+        foreach (var child in children) child.WaitForExit();
+    }
+}
+"#);
+    let entry = installed_adapter_entry(&repo);
+    let stdout = repo.beside("sibling.stdout");
+    let stderr = repo.beside("sibling.stderr");
+    let child = Command::new("dotnet")
+        .arg(&entry)
+        .current_dir(repo.path(DOTNET_SUITE))
+        .envs(own_folders(&repo))
+        .env("STOP_TEST_PID", &pid_file)
+        .env("STOP_WITNESS", &witness)
+        .env("SIBLING_TOKEN", &token)
+        .env("SIBLING_HELPER", binaries_dir().join("process-tree"))
+        .env("SIBLING_REVERSE", if reverse { "yes" } else { "no" })
+        .env("TREE_MODE", "split-stop")
+        .env("TREE_LOG", repo.beside("siblings.jsonl"))
+        .env("UseSharedCompilation", "false")
+        .env("MSBUILDDISABLENODEREUSE", "1")
+        .env("DOTNET_CLI_USE_MSBUILD_SERVER", "0")
+        .stdin(Stdio::piped())
+        .stdout(std::fs::File::create(&stdout).unwrap())
+        .stderr(std::fs::File::create(&stderr).unwrap())
+        .spawn()
+        .unwrap();
+    let mut run = RunningAdapter {
+        child,
+        owned: BTreeMap::new(),
+    };
+    run.child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(
+            run_request(&["runner-stops-its-siblings"])
+                .to_string()
+                .as_bytes(),
+        )
+        .unwrap();
+    let began = Instant::now();
+    while !pid_file.exists() && began.elapsed() < Duration::from_secs(180) {
+        run.observe();
+        if run.child.try_wait().unwrap().is_some() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert!(
+        pid_file.exists(),
+        "real marked sibling test did not start:\n{}\n{}",
+        std::fs::read_to_string(stdout).unwrap(),
+        std::fs::read_to_string(stderr).unwrap()
+    );
+    let table = run.observe();
+    let leaves: Vec<_> = ["resistant-leaf", "witness-leaf"]
+        .into_iter()
+        .map(|role| {
+            let pid: u32 = std::fs::read_to_string(token.with_extension(format!("{role}.ready")))
+                .unwrap()
+                .parse()
+                .unwrap();
+            assert!(run.owned.contains_key(&pid));
+            let process = table[&pid].clone();
+            assert!(process.running());
+            assert!(process.command.split_whitespace().any(|arg| arg == role));
+            assert!(process
+                .command
+                .split_whitespace()
+                .any(|arg| arg == token.to_str().unwrap()));
+            process
+        })
+        .collect();
+    let adapter = table[&run.child.id()].clone();
+    assert!(adapter
+        .command
+        .split_whitespace()
+        .any(|arg| arg == entry.to_str().unwrap()));
+    assert!(adapter.signal_if_same("-TERM"));
+    let asked = Instant::now();
+    let log = repo.beside("siblings.jsonl");
+    let resistant_received = || {
+        std::fs::read_to_string(&log)
+            .unwrap_or_default()
+            .lines()
+            .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+            .any(|event| event["role"] == "resistant-leaf" && event["event"] == "SIGTERM")
+    };
+    while (!witness.exists() || !resistant_received()) && asked.elapsed() < Duration::from_secs(15)
+    {
+        run.observe();
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    let received = std::fs::read_to_string(&witness).unwrap_or_default() == "polite sibling stop\n"
+        && resistant_received();
+    if resistant_received() {
+        let table = run.observe();
+        assert!(
+            table
+                .get(&leaves[0].pid)
+                .is_some_and(|process| process.running()
+                    && process.birth == leaves[0].birth
+                    && process.command == leaves[0].command),
+            "the resistant fixture did not survive its recorded polite stop"
+        );
+    }
+    // Neither cleanup signal is inferred from a stale PID or from another process's identity.
+    for leaf in &leaves {
+        leaf.signal_if_same("-KILL");
+    }
+    std::fs::write(token.with_extension("stop"), "").unwrap();
+    let owned: Vec<_> = run.owned.values().cloned().collect();
+    drop(run);
+    let cleanup = Instant::now();
+    loop {
+        let table = processes().unwrap_or_else(|error| panic!("{error}"));
+        let alive = owned.iter().any(|old| {
+            table.get(&old.pid).is_some_and(|now| {
+                now.running() && now.birth == old.birth && now.command == old.command
+            })
+        });
+        if !alive {
+            break;
+        }
+        assert!(
+            cleanup.elapsed() < Duration::from_secs(10),
+            "real adapter fixture left an owned process behind"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    received
+}
+
+#[test]
+fn init_with_a_missing_temporary_directory_preserves_the_installed_suite_or_fails() {
+    let mut repo = Repo::sample_before_init("main");
+    pin_adapter(&mut repo);
+    let discovered = Answer::of(&start_adapter(&repo, &discover_request()));
+    assert_eq!(
+        discovered_paths(&discovered),
+        vec![DOTNET_SUITE.to_string()]
+    );
+    let missing = repo.beside("missing-temporary-directory");
+    assert!(!missing.exists());
+    let home = std::env::var("HOME").unwrap_or_default();
+    let path = std::env::var("PATH").unwrap_or_default();
+    let output = repo.azimuth_with_env(
+        &["init"],
+        &[
+            ("HOME", &home),
+            ("PATH", &format!("{}:{path}", binaries_dir().display())),
+            ("TMPDIR", missing.to_str().unwrap()),
+        ],
+    );
+    match output.status {
+        2 => assert!(
+            !output.stderr.trim().is_empty(),
+            "init's command error has no standard-error message"
+        ),
+        0 => {
+            let project = parse_toml(&repo.read(PROJECT_FILE));
+            let paths: Vec<_> = suites(&project)
+                .iter()
+                .map(|suite| suite["path"].as_str().unwrap().to_string())
+                .collect();
+            assert_eq!(
+                paths,
+                vec![DOTNET_SUITE.to_string()],
+                "init silently omitted an installed suite after a local temporary-file failure"
+            );
+        }
+        _ => panic!("init must work or end with status 2:\n{}", output.text()),
+    }
 }

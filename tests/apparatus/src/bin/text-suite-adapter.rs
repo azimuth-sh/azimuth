@@ -388,7 +388,8 @@ fn output_checkpoint(phase: &str, payload: bool) {
     fs::create_dir_all(&folder).unwrap();
     if payload {
         let suite = folder.file_name().unwrap().to_str().unwrap();
-        eprintln!("AZIMUTH-OUTPUT-{suite}-{phase}-731");
+        let tag = std::env::var("TEXT_ADAPTER_OUTPUT_TAG").unwrap_or_else(|_| "731".to_string());
+        eprintln!("AZIMUTH-OUTPUT-{suite}-{phase}-{tag}");
         std::io::stderr().flush().unwrap();
     }
     let ready = folder.join(format!("{phase}.ready"));
@@ -396,6 +397,12 @@ fn output_checkpoint(phase: &str, payload: bool) {
     fs::write(&temporary, std::process::id().to_string()).unwrap();
     fs::rename(temporary, ready).unwrap();
     while !folder.join(format!("{phase}.release")).exists() {
+        if std::env::args()
+            .nth(1)
+            .is_some_and(|token| Path::new(&token).with_extension("stop").exists())
+        {
+            std::process::exit(0);
+        }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
 }

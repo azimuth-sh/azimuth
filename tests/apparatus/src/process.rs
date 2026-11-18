@@ -64,19 +64,22 @@ impl Process {
         !self.state.starts_with('Z')
     }
     pub fn signal_if_same(&self, signal: &str) -> bool {
-        let Ok(now) = processes() else {
-            return false;
-        };
+        self.try_signal_if_same(signal)
+            .unwrap_or_else(|error| panic!("cannot verify process before signaling: {error}"))
+    }
+    pub fn try_signal_if_same(&self, signal: &str) -> Result<bool, String> {
+        let now = processes()?;
         if !now
             .get(&self.pid)
             .is_some_and(|p| p.running() && p.birth == self.birth && p.command == self.command)
         {
-            return false;
+            return Ok(false);
         }
         Command::new("/bin/kill")
             .args([signal, &self.pid.to_string()])
             .output()
-            .is_ok_and(|output| output.status.success())
+            .map(|output| output.status.success())
+            .map_err(|error| error.to_string())
     }
 }
 

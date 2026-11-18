@@ -18,18 +18,69 @@ pub struct LiveRun {
     observed: BTreeSet<u32>,
     witnessed_alive: BTreeSet<u32>,
     cleanup_tokens: Vec<String>,
+    stderr_reader: Option<std::thread::JoinHandle<()>>,
 }
 impl LiveRun {
     pub fn start(repo: &Repo, args: &[&str], name: &str) -> Self {
+        Self::start_inner(repo, args, name, false)
+    }
+    pub fn start_with_replay_gate(repo: &Repo, args: &[&str], name: &str) -> Self {
+        Self::start_inner(repo, args, name, true)
+    }
+    fn start_inner(repo: &Repo, args: &[&str], name: &str, replay_gate: bool) -> Self {
+        // A denied inspection must fail before we create any process needing that supervision.
+        processes().unwrap_or_else(|error| panic!("process supervision unavailable: {error}"));
         let stdout = repo.beside(&format!("{name}.stdout"));
         let stderr = repo.beside(&format!("{name}.stderr"));
-        let child = repo
+        let stderr_file = fs::File::create(&stderr).unwrap();
+        let mut child = repo
             .azimuth_command(args)
             .process_group(0)
             .stdout(Stdio::from(fs::File::create(&stdout).unwrap()))
-            .stderr(Stdio::from(fs::File::create(&stderr).unwrap()))
+            .stderr(if replay_gate {
+                Stdio::piped()
+            } else {
+                Stdio::from(stderr_file)
+            })
             .spawn()
             .unwrap();
+        let stderr_reader = if replay_gate {
+            use std::io::{Read, Write};
+            let mut pipe = child.stderr.take().unwrap();
+            let destination = stderr.clone();
+            let ready = repo.beside("replay.ready");
+            let release = repo.beside("replay.release");
+            let stop = repo.beside("tree-token").with_extension("stop");
+            Some(std::thread::spawn(move || {
+                let mut output = fs::File::create(destination).unwrap();
+                let prefix = b"TREE-HELD-FIRST-728\n";
+                let mut seen = Vec::new();
+                let mut gated = false;
+                let mut buffer = [0; 8192];
+                loop {
+                    let count = pipe.read(&mut buffer).unwrap();
+                    if count == 0 {
+                        break;
+                    }
+                    output.write_all(&buffer[..count]).unwrap();
+                    output.flush().unwrap();
+                    if !gated {
+                        seen.extend_from_slice(&buffer[..count]);
+                        if seen.windows(prefix.len()).any(|part| part == prefix) {
+                            fs::write(&ready, "").unwrap();
+                            while !release.exists() && !stop.exists() {
+                                std::thread::sleep(Duration::from_millis(10));
+                            }
+                            gated = true;
+                        } else if seen.len() > prefix.len() {
+                            seen.drain(..seen.len() - prefix.len());
+                        }
+                    }
+                }
+            }))
+        } else {
+            None
+        };
         let cli_group = child.id() as i32;
         Self {
             child,
@@ -44,6 +95,12 @@ impl LiveRun {
                 repo.beside("tree-token").display().to_string(),
                 repo.beside("output-gates").display().to_string(),
             ],
+            stderr_reader,
+        }
+    }
+    fn drain_output(&mut self) {
+        if let Some(reader) = self.stderr_reader.take() {
+            reader.join().unwrap();
         }
     }
     pub fn events(&self) -> Vec<serde_json::Value> {
@@ -92,7 +149,7 @@ impl LiveRun {
                 .find(|event| event["event"] == "SIGTERM" && event["pid"] == e["pid"])
                 .map(|event| event["time_ns"].as_u64().unwrap());
             if !self.witnessed_alive.contains(&pid)
-                && own_term.is_some_and(|term| sample_started >= term + 9_000_000_000)
+                && own_term.is_some_and(|term| sample_started >= term + 5_000_000_000)
                 && table.get(&pid).is_some_and(|p| {
                     p.running()
                         && p.command
@@ -144,6 +201,7 @@ impl LiveRun {
             let gone = !stopping || self.observe_exits();
             if let Some(status) = status {
                 if gone {
+                    self.drain_output();
                     let mut out = self.text();
                     out.status = status.code().unwrap_or(-1);
                     return out;
@@ -160,6 +218,7 @@ impl LiveRun {
     pub fn finish_cli(&mut self, limit: Duration) -> Output {
         loop {
             if let Some(status) = self.child.try_wait().unwrap() {
+                self.drain_output();
                 let mut output = self.text();
                 output.status = status.code().unwrap_or(-1);
                 return output;
@@ -175,16 +234,20 @@ impl LiveRun {
 }
 impl Drop for LiveRun {
     fn drop(&mut self) {
-        for root in &self.cleanup_tokens {
-            if root.ends_with("output-gates") {
-                if let Ok(entries) = fs::read_dir(root) {
-                    for folder in entries
-                        .flatten()
-                        .map(|entry| entry.path())
-                        .filter(|path| path.is_dir())
+        for token in &self.cleanup_tokens {
+            if token.ends_with("tree-token") {
+                // This channel is ours even when process inspection has become unavailable.
+                fs::write(std::path::Path::new(token).with_extension("stop"), "").unwrap();
+            } else if token.ends_with("output-gates") {
+                fs::write(std::path::Path::new(token).with_extension("stop"), "").unwrap();
+                for file in files_under(std::path::Path::new(token)) {
+                    if file
+                        .extension()
+                        .is_some_and(|extension| extension == "ready")
                     {
                         for phase in ["first", "second", "exit"] {
-                            let _ = fs::write(folder.join(format!("{phase}.release")), "");
+                            fs::write(file.parent().unwrap().join(format!("{phase}.release")), "")
+                                .unwrap();
                         }
                     }
                 }
@@ -194,9 +257,30 @@ impl Drop for LiveRun {
             let _ = self.child.kill();
         }
         let _ = self.child.wait();
-        // An identity check is mandatory even in cleanup: a journaled PID may have been reused.
-        if let Ok(table) = processes() {
-            for process in table.values().filter(|p| {
+        let events = self.events();
+        let began = Instant::now();
+        loop {
+            let acknowledged = events
+                .iter()
+                .filter(|event| event["event"] == "started")
+                .all(|event| {
+                    events.iter().any(|other| {
+                        other["pid"] == event["pid"] && other["event"] == "observed-exit"
+                    }) || event["token"].as_str().is_some_and(|token| {
+                        std::path::Path::new(token)
+                            .with_extension(format!("done-{}", event["pid"].as_u64().unwrap()))
+                            .exists()
+                    })
+                });
+            if acknowledged || began.elapsed() >= Duration::from_secs(10) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        // A journaled PID alone is never sufficient authority to signal a process.
+        let result = (|| -> Result<(), String> {
+            let table = processes()?;
+            let ours = |p: &azimuth_tests::process::Process| {
                 p.command.split_whitespace().next().is_some_and(|command| {
                     std::path::Path::new(command)
                         .file_name()
@@ -205,8 +289,32 @@ impl Drop for LiveRun {
                     .cleanup_tokens
                     .iter()
                     .any(|token| p.command.split_whitespace().any(|arg| arg == token))
-            }) {
-                process.signal_if_same("-KILL");
+            };
+            for process in table.values().filter(|process| ours(process)) {
+                process.try_signal_if_same("-KILL")?;
+            }
+            let stopping = Instant::now();
+            loop {
+                let table = processes()?;
+                if !table
+                    .values()
+                    .any(|process| process.running() && ours(process))
+                {
+                    break;
+                }
+                if stopping.elapsed() >= Duration::from_secs(10) {
+                    return Err("an owned helper survived cleanup".to_string());
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Ok(())
+        })();
+        self.drain_output();
+        if let Err(error) = result {
+            if std::thread::panicking() {
+                eprintln!("cleanup process inspection failed: {error}");
+            } else {
+                panic!("cleanup process inspection failed: {error}");
             }
         }
     }

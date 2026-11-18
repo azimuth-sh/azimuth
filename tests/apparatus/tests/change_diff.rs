@@ -1386,8 +1386,8 @@ fn base_contents_outside_the_model_and_suites_are_not_requested() {
         })
         .collect();
     on_branch(&repo);
-    for path in needed {
-        repo.replace(&path, "# Check: sixth-loan-is-refused\n", "");
+    for path in &needed {
+        repo.replace(path, "# Check: sixth-loan-is-refused\n", "");
     }
     repo.commit_all("remove three distinct base markers");
     let (doc, invocations, requests) = recorded_base_reads(&repo);
@@ -1411,10 +1411,62 @@ fn base_contents_outside_the_model_and_suites_are_not_requested() {
     // Distinct removed markers prove this recorder saw base reads, rather than an unused wrapper.
     for oid in needed_oids {
         assert!(
-            requested.contains(&oid.as_str()),
-            "needed base object {oid} was not observed"
+            base_object_was_requested(&repo, &requested, &oid),
+            "needed base object {oid} was not observed by id or tree:path"
         );
     }
+}
+fn base_object_was_requested(repo: &Repo, requests: &[&str], oid: &str) -> bool {
+    requests.iter().any(|request| {
+        if *request == oid {
+            return true;
+        }
+        if request.starts_with('-') || !request.contains(':') {
+            return false;
+        }
+        let resolved = repo.git_output_in(repo.root(), &["rev-parse", "--verify", request]);
+        resolved.status == 0 && resolved.stdout.trim() == oid
+    })
+}
+
+#[test]
+fn a_needed_missing_base_blob_names_its_path_and_ends_with_status_two() {
+    let repo = Repo::sample();
+    repo.git(&["config", "gc.auto", "0"]);
+    let path = "suites/desk-checks/missing-base-marker.test";
+    repo.write(
+        path,
+        "# Check: sixth-loan-is-refused\n# a unique base blob to remove by hand\noutcome: passed\n",
+    );
+    repo.commit_all("a marked file in the base tree");
+    let oid = repo
+        .git(&["rev-parse", &format!("main:{path}")])
+        .trim()
+        .to_string();
+    on_branch(&repo);
+    repo.replace(path, "# Check: sixth-loan-is-refused\n", "");
+    repo.commit_all("remove the base marker");
+    let object = repo.root().join(
+        repo.git(&[
+            "rev-parse",
+            "--git-path",
+            &format!("objects/{}/{}", &oid[..2], &oid[2..]),
+        ])
+        .trim(),
+    );
+    assert!(
+        object.is_file(),
+        "fixture object is not loose: {}",
+        object.display()
+    );
+    std::fs::remove_file(object).unwrap();
+    let output = repo.azimuth(&["change", "diff", "--json"]);
+    output.expect_status(2);
+    assert!(
+        output.text().contains(path),
+        "missing base blob error must name {path}:\n{}",
+        output.text()
+    );
 }
 #[test]
 fn a_scenario_with_one_blank_body_line_does_not_crash_the_diff() {

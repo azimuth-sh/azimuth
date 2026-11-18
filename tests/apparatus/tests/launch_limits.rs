@@ -89,11 +89,11 @@ fn grace_bounds(run: &LiveRun, role: &str) {
     // A group mate's receipt cannot prove that this resistant process got the polite stop.
     let term = stamp(run, role, "SIGTERM");
     let alive = stamp(run, role, "observed-alive") - term;
-    // A sample begun after nine seconds proves an eight-second grace is wrong; a delayed ps
-    // response cannot manufacture that witness. Allow exit detection until 11.5 seconds for
-    // polling and process-inspection latency, still short of the twelve-second wrong grace.
+    // A live sample in the second half gives a busy observer five seconds to run; a shortened
+    // grace that stops before that half still fails. The unchanged 9–11.5 s death window
+    // rejects 8- and 12-second graces independently of when the live sample is taken.
     assert!(
-        alive >= 9_000_000_000,
+        alive >= 5_000_000_000,
         "resistant process was not witnessed alive during the grace"
     );
     let elapsed = stamp(run, role, "observed-exit") - term;
@@ -539,4 +539,81 @@ fn no_setting_changes_the_grace() {
         repo.append(PROJECT_FILE, &format!("{key} = 1\n"));
         repo.expect_reading_error(Some(PROJECT_FILE), Some(repo.line_of(PROJECT_FILE, key)));
     }
+}
+
+#[test]
+fn denied_cleanup_inspection_still_stops_the_owned_descriptor_holder_and_fails_loudly() {
+    use azimuth_tests::process::processes;
+    use std::fs;
+    if let Ok(proof) = std::env::var("AZIMUTH_CLEANUP_DENIED_INSPECTION") {
+        let repo = tree("inherited-output", Some(1));
+        let mut run = LiveRun::start(&repo, &["run", "--json"], "denied-cleanup");
+        run.finish_cli(Duration::from_secs(20)).expect_status(0);
+        let table = processes().unwrap_or_else(|error| panic!("{error}"));
+        let token = repo.beside("tree-token");
+        let owned: Vec<_> = table.values().filter(|process| process.running()
+            && process.command.split_whitespace().any(|arg| arg == token.to_str().unwrap()))
+            .map(|process| json!({"pid":process.pid,"birth":process.birth,"command":process.command})).collect();
+        assert_eq!(owned.len(), 1);
+        fs::write(proof, serde_json::to_vec(&owned).unwrap()).unwrap();
+        // Only this re-executed test process gets the denied ps; the parent remains an independent observer.
+        std::env::set_var("PATH", std::env::var("AZIMUTH_DENIED_PS_PATH").unwrap());
+        drop(run);
+        panic!("cleanup silently accepted denied process inspection");
+    }
+    let repo = Repo::sample();
+    let front = repo.beside("denied-ps");
+    fs::create_dir_all(&front).unwrap();
+    fs::write(
+        front.join("ps"),
+        "#!/bin/sh\nprintf 'ps deliberately denied by the apparatus\\n' >&2\nexit 1\n",
+    )
+    .unwrap();
+    set_mode(&front.join("ps"), 0o755);
+    let path = format!("{}:{}", front.display(), std::env::var("PATH").unwrap());
+    let proof = repo.beside("owned-holder.json");
+    let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+    command
+        .args([
+            "--exact",
+            "denied_cleanup_inspection_still_stops_the_owned_descriptor_holder_and_fails_loudly",
+            "--nocapture",
+        ])
+        .env("AZIMUTH_CLEANUP_DENIED_INSPECTION", &proof)
+        .env("AZIMUTH_DENIED_PS_PATH", path);
+    let output = run_with_time_limit(command, Duration::from_secs(60), None);
+    let identities: Vec<serde_json::Value> =
+        serde_json::from_slice(&fs::read(proof).unwrap()).unwrap();
+    let table = processes().unwrap_or_else(|error| panic!("{error}"));
+    let survivors: Vec<_> = identities
+        .iter()
+        .filter_map(|old| {
+            table
+                .get(&(old["pid"].as_u64().unwrap() as u32))
+                .filter(|now| {
+                    now.running()
+                        && now.birth == old["birth"].as_str().unwrap()
+                        && now.command == old["command"].as_str().unwrap()
+                })
+        })
+        .cloned()
+        .collect();
+    // The independent observer also owns the fallback if a regression breaks the shutdown channel.
+    for process in &survivors {
+        process.signal_if_same("-KILL");
+    }
+    output.expect_status(101);
+    assert!(
+        output.stderr.contains("cleanup process inspection failed"),
+        "denied inspection did not fail loudly:\n{}",
+        output.text()
+    );
+    assert!(output
+        .stderr
+        .contains("ps deliberately denied by the apparatus"));
+    assert!(!output.stderr.contains("cleanup silently accepted"));
+    assert!(
+        survivors.is_empty(),
+        "descriptor holders outlived their test despite owned shutdown: {survivors:#?}"
+    );
 }

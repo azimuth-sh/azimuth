@@ -506,12 +506,20 @@ fn launch_duration_excludes_slow_replay_of_large_held_output() {
         let mut buffer = [0; 65536];
         let mut pending = 0;
         let mut payload_bytes = 0;
+        let mut replay_start = None;
+        let mut replay_end = 0;
         loop {
             let count = pipe.read(&mut buffer).unwrap();
             if count == 0 {
                 break;
             }
-            payload_bytes += buffer[..count].iter().filter(|byte| **byte == b'X').count();
+            let payload = buffer[..count].iter().filter(|byte| **byte == b'X').count();
+            if payload != 0 {
+                let now = azimuth_tests::process::monotonic_ns();
+                replay_start.get_or_insert(now);
+                replay_end = now;
+            }
+            payload_bytes += payload;
             file.write_all(&buffer[..count]).unwrap();
             pending += count;
             if pending >= buffer.len() {
@@ -519,7 +527,7 @@ fn launch_duration_excludes_slow_replay_of_large_held_output() {
                 std::thread::sleep(Duration::from_millis(50));
             }
         }
-        payload_bytes
+        (payload_bytes, replay_start.unwrap(), replay_end)
     });
     let began = Instant::now();
     let status = loop {
@@ -535,7 +543,8 @@ fn launch_duration_excludes_slow_replay_of_large_held_output() {
         std::thread::sleep(Duration::from_millis(10));
     };
     let returned = azimuth_tests::process::monotonic_ns();
-    assert_eq!(reader.join().unwrap(), 8 * 1024 * 1024);
+    let (payload_bytes, replay_start, replay_end) = reader.join().unwrap();
+    assert_eq!(payload_bytes, 8 * 1024 * 1024);
     assert_eq!(status.code(), Some(1));
     let doc: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(stdout).unwrap()).unwrap();
@@ -555,8 +564,306 @@ fn launch_duration_excludes_slow_replay_of_large_held_output() {
         "slow consumer did not impose a measurable replay interval"
     );
     let reported_ms = doc["suites"][0]["duration_ms"].as_u64().unwrap();
-    // Journal entry/exit exclude exec and reaping; 1.5 s tolerates those scheduling gaps,
-    // while the synchronized slow consumer imposes at least four seconds after adapter exit.
-    assert!(reported_ms.abs_diff(adapter_ms) <= 1500,
+    // Half the observed replay interval allows scheduling gaps on a busy host. A duration
+    // charged for the whole replay still exceeds that allowance, however slow the reader is.
+    let replay_ms = (replay_end - replay_start) / 1_000_000;
+    assert!(
+        replay_ms >= 4000,
+        "reader did not impose four seconds of replay"
+    );
+    assert!(reported_ms.abs_diff(adapter_ms) <= replay_ms / 2,
         "duration_ms includes output replay: reported {reported_ms} ms, adapter journal {adapter_ms} ms");
+}
+
+#[test]
+fn late_stdout_does_not_change_the_report_written_before_adapter_exit() {
+    assert_gated_late_write("stdout");
+}
+
+#[test]
+fn late_stderr_does_not_change_the_held_output_from_its_first_byte() {
+    assert_gated_late_write("stderr");
+}
+
+fn assert_gated_late_write(stream: &str) {
+    use azimuth_tests::process::processes;
+    let mut repo = Repo::sample();
+    let token = repo.beside("tree-token");
+    repo.replace(
+        PROJECT_FILE,
+        "adapter = \"text-suite-adapter\"",
+        &format!("adapter = \"process-tree adapter {}\"", token.display()),
+    );
+    repo.replace(LATE_FINE_TESTS, "outcome: passed", "outcome: failed");
+    repo.set_env("TREE_MODE", "late-output");
+    repo.set_env("TREE_LOG", repo.beside("tree.jsonl").to_str().unwrap());
+    repo.set_env(
+        "TREE_REQUEST",
+        repo.beside("request.json").to_str().unwrap(),
+    );
+    repo.set_env("TREE_LATE_STREAM", stream);
+    let mut run = LiveRun::start_with_replay_gate(&repo, &["run", "--json"], "late-write");
+    run.wait_until(Duration::from_secs(30), |_| {
+        repo.beside("replay.ready").exists()
+    });
+    let exited = run
+        .events()
+        .into_iter()
+        .find(|event| event["role"] == "adapter" && event["event"] == "exited")
+        .unwrap();
+    run.wait_until(Duration::from_secs(30), |_| {
+        let table = processes().unwrap_or_else(|error| panic!("{error}"));
+        !table
+            .get(&(exited["pid"].as_u64().unwrap() as u32))
+            .is_some_and(|process| process.running())
+    });
+    // Backpressure keeps the replay in progress; the write happens only after actual adapter exit.
+    fs::write(token.with_extension("late-write"), "").unwrap();
+    run.wait_until(Duration::from_secs(30), |run| {
+        run.events()
+            .iter()
+            .any(|event| event["event"] == "late-written")
+    });
+    fs::write(token.with_extension("stop"), "").unwrap();
+    fs::write(repo.beside("replay.release"), "").unwrap();
+    let output = run.finish_cli(Duration::from_secs(60));
+    output.expect_status(1);
+    let doc = output.json();
+    assert_eq!(doc["suites"][0]["launch"], "ok");
+    for check in ALL_CHECKS {
+        let expected = if check == LATE_RETURN {
+            "failed"
+        } else {
+            "passed"
+        };
+        assert_eq!(state_of(&doc, check), expected);
+        assert_eq!(repo.result_of(check)["body"]["outcome"], expected);
+    }
+    for (check, outcome, names) in [
+        (SIXTH_LOAN, "passed", vec!["loan-limit.refuses-sixth-loan"]),
+        (
+            RETURNED_BOOK,
+            "passed",
+            vec!["loan-limit.lends-after-a-return"],
+        ),
+        (LATE_RETURN, "failed", vec!["late-fine"]),
+        (
+            ON_TIME_RETURN,
+            "passed",
+            vec![
+                "free-return.returned-early",
+                "free-return.returned-on-due-date",
+            ],
+        ),
+    ] {
+        let record = repo.result_of(check);
+        let mut actual = record["body"]["tests"].as_array().unwrap().clone();
+        actual.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+        let mut expected: Vec<_> = names
+            .iter()
+            .map(|name| serde_json::json!({"name":name,"outcome":outcome,"duration_ms":1}))
+            .collect();
+        expected.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+        assert_eq!(
+            actual, expected,
+            "late writer changed the report's enrolled tests for {check}"
+        );
+        assert_eq!(
+            record["body"]["method"]["adapter"],
+            serde_json::json!({"name":"text-suite-adapter","version":"1.0.0"})
+        );
+        assert_eq!(checks_by_id(&doc)[check]["duration_ms"], names.len());
+    }
+    assert_eq!(repo.records().len(), 4);
+    assert!(!output.text().contains("LATE-STDOUT-CORRUPTION"));
+    assert!(!output.text().contains("LATE-STDERR-CORRUPTION"));
+    let first = "TREE-HELD-FIRST-728\n";
+    let last = "\nTREE-HELD-LAST-728\n";
+    assert_eq!(output.stderr.matches(first).count(), 1);
+    assert_eq!(output.stderr.matches(last).count(), 1);
+    let start = output.stderr.find(first).unwrap();
+    let end = output.stderr.find(last).unwrap() + last.len();
+    let mut expected = first.as_bytes().to_vec();
+    expected.extend(vec![b'X'; 8 * 1024 * 1024]);
+    expected.extend_from_slice(last.as_bytes());
+    assert_eq!(
+        sha256_hex(&output.stderr.as_bytes()[start..end]),
+        sha256_hex(&expected),
+        "held output differs from the complete bytes written before adapter exit ({stream})"
+    );
+}
+
+#[test]
+fn a_missing_temporary_directory_leaves_no_launch_log_after_run() {
+    let repo = Repo::sample();
+    let missing = repo.beside("missing-temporary-directory");
+    assert!(!missing.exists());
+    let output =
+        repo.azimuth_with_env(&["run", "--json"], &[("TMPDIR", missing.to_str().unwrap())]);
+    assert!(
+        matches!(output.status, 0 | 2),
+        "local preparation must work or be a command error: {}",
+        output.text()
+    );
+    if output.status == 0 {
+        assert_eq!(output.json()["suites"][0]["launch"], "ok");
+        for check in ALL_CHECKS {
+            assert_eq!(state_of(&output.json(), check), "passed");
+        }
+    } else {
+        assert!(!output.stderr.trim().is_empty());
+        assert!(repo.adapter_starts().is_empty());
+    }
+    let logs: Vec<_> = files_under(&repo.path(".azimuth"))
+        .into_iter()
+        .filter(|file| {
+            let name = file.file_name().unwrap().to_str().unwrap();
+            name.starts_with("launch-") && name.ends_with(".log")
+        })
+        .collect();
+    assert!(
+        logs.is_empty(),
+        "preparation failure left launch logs: {logs:#?}"
+    );
+}
+
+#[test]
+fn unterminated_trouble_output_does_not_join_the_next_launch_line() {
+    for json in [false, true] {
+        let mut repo = Repo::sample();
+        repo.split_returns_suite("");
+        repo.replace(LOAN_LIMIT_TESTS, "outcome: passed", "outcome: failed");
+        repo.replace(
+            "suites/returns-checks/late-fine.test",
+            "outcome: passed",
+            "outcome: failed",
+        );
+        let tail = "LAST-RUNNER-BYTE-BEFORE-NEXT-LAUNCH-9572";
+        repo.set_env("TEXT_ADAPTER_TAIL", tail);
+        let args = if json {
+            vec!["run", "--json"]
+        } else {
+            vec!["run"]
+        };
+        let output = repo.azimuth(&args);
+        output.expect_status(1);
+        if json {
+            assert_eq!(output.json()["suites"].as_array().unwrap().len(), 2);
+        }
+        assert_eq!(output.stderr.matches(tail).count(), 2);
+        let desk = format!("text-suite-adapter: loan-limit.refuses-sixth-loan failed\ntext-suite-adapter: loan-limit.lends-after-a-return passed\n{tail}");
+        let returns = format!("text-suite-adapter: free-return.returned-on-due-date passed\ntext-suite-adapter: free-return.returned-early passed\ntext-suite-adapter: late-fine failed\n{tail}");
+        let mut progress = output.stderr.clone();
+        for block in [desk, returns] {
+            assert_eq!(output.stderr.matches(&block).count(), 1);
+            progress = progress.replace(&block, "");
+        }
+        let core_lines: Vec<_> = progress
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .collect();
+        if json {
+            assert_eq!(core_lines.len(), 4);
+        }
+        // Learn the messages by removing our exact fixture bytes, without fixing their wording
+        // or the plain form's stream; each message must already have its own line in the raw stream.
+        for line in core_lines {
+            assert_eq!(
+                output
+                    .stderr
+                    .lines()
+                    .filter(|actual| *actual == line)
+                    .count(),
+                1,
+                "core progress is not a line of its own after unterminated output: {line}"
+            );
+        }
+    }
+}
+
+#[test]
+fn concurrent_troubled_clis_of_the_same_suite_keep_distinct_complete_output() {
+    for json in [false, true] {
+        let mut repo = gated(false);
+        repo.replace(LATE_FINE_TESTS, "outcome: passed", "outcome: failed");
+        let roots = [
+            repo.beside("output-gates").join("one"),
+            repo.beside("output-gates").join("two"),
+        ];
+        let tags = ["OWNED-BY-FIRST-CLI-481", "OWNED-BY-SECOND-CLI-926"];
+        let args = if json {
+            vec!["run", "--json"]
+        } else {
+            vec!["run"]
+        };
+        repo.set_env("TEXT_ADAPTER_GATE_DIR", roots[0].to_str().unwrap());
+        repo.set_env("TEXT_ADAPTER_OUTPUT_TAG", tags[0]);
+        let mut first = LiveRun::start(&repo, &args, "same-suite-first");
+        repo.set_env("TEXT_ADAPTER_GATE_DIR", roots[1].to_str().unwrap());
+        repo.set_env("TEXT_ADAPTER_OUTPUT_TAG", tags[1]);
+        let mut second = LiveRun::start(&repo, &args, "same-suite-second");
+        let runs = [&mut first, &mut second];
+        for phase in ["first", "second", "exit"] {
+            for index in 0..2 {
+                let folder = roots[index].join("desk-checks");
+                runs[index]
+                    .wait_until(WATCHDOG, |_| folder.join(format!("{phase}.ready")).exists());
+                for tag in tags {
+                    assert!(!runs[index].text().text().contains(tag));
+                }
+            }
+            if phase == "first" {
+                let files: Vec<_> = tags
+                    .iter()
+                    .map(|tag| {
+                        let files = held(&repo, tag);
+                        assert_eq!(files.len(), 1);
+                        files[0].clone()
+                    })
+                    .collect();
+                assert_ne!(
+                    files[0], files[1],
+                    "same-suite commands shared one held file"
+                );
+            }
+            for root in &roots {
+                fs::write(
+                    root.join("desk-checks").join(format!("{phase}.release")),
+                    "",
+                )
+                .unwrap();
+            }
+        }
+        let outputs = [runs[0].finish(WATCHDOG), runs[1].finish(WATCHDOG)];
+        for (index, output) in outputs.iter().enumerate() {
+            output.expect_status(1);
+            if json {
+                assert_eq!(output.json()["suites"][0]["launch"], "ok");
+            }
+            let block = expected("desk-checks", "ok").replace("731", tags[index]);
+            assert_eq!(
+                output.stderr.matches(&block).count(),
+                1,
+                "same-suite output was truncated or split:\n{}",
+                output.stderr
+            );
+            assert!(!output.stdout.contains(tags[index]));
+            assert!(
+                !output.text().contains(tags[1 - index]),
+                "one CLI printed the other's held output"
+            );
+            for phase in ["first", "second"] {
+                assert_eq!(
+                    output
+                        .stderr
+                        .matches(&format!(
+                            "AZIMUTH-OUTPUT-desk-checks-{phase}-{}",
+                            tags[index]
+                        ))
+                        .count(),
+                    1
+                );
+            }
+        }
+    }
 }
