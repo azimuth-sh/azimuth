@@ -1,11 +1,14 @@
 //! Packing locally prevents a published adapter from standing in for this repository's source.
 //! No browser fixture is used, so a browser download cannot stand in for an installed runner.
+//! AZIMUTH_PLAYWRIGHT_VERSION=X.Y.Z runs real-runner bodies against that exact version:
+//! AZIMUTH_PLAYWRIGHT_VERSION=1.65.1 cargo test -p azimuth-tests --features playwright --test playwright_adapter
+//! The adapter still enforces its declared range; this changes only the apparatus runner.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use azimuth_tests::*;
@@ -109,37 +112,114 @@ struct Runner {
     modules: PathBuf,
 }
 
-fn runner() -> &'static Runner {
-    static RUNNER: OnceLock<Runner> = OnceLock::new();
-    RUNNER.get_or_init(|| {
-        let temp = tempfile::tempdir().unwrap();
-        for name in ["package.json", "package-lock.json"] {
-            fs::copy(sample_source().join(APP).join(name), temp.path().join(name)).unwrap();
-        }
-        npm(
-            temp.path(),
-            &["ci", "--no-audit", "--no-fund"],
-            &temp.path().join("cache"),
-            "https://registry.npmjs.org",
-        )
-        .expect_status(0);
-        Runner {
-            modules: temp.path().join("node_modules"),
-            _temp: temp,
-        }
-    })
+fn locked_runner() -> Arc<Runner> {
+    static RUNNER: OnceLock<Arc<Runner>> = OnceLock::new();
+    RUNNER
+        .get_or_init(|| {
+            let temp = tempfile::tempdir().unwrap();
+            for name in ["package.json", "package-lock.json"] {
+                fs::copy(sample_source().join(APP).join(name), temp.path().join(name)).unwrap();
+            }
+            npm(
+                temp.path(),
+                &["ci", "--no-audit", "--no-fund"],
+                &temp.path().join("cache"),
+                "https://registry.npmjs.org",
+            )
+            .expect_status(0);
+            Arc::new(Runner {
+                modules: temp.path().join("node_modules"),
+                _temp: temp,
+            })
+        })
+        .clone()
+}
+
+fn runner_version(runner: &Runner) -> String {
+    serde_json::from_slice::<Value>(
+        &fs::read(runner.modules.join("@playwright/test/package.json")).unwrap(),
+    )
+    .unwrap()["version"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+fn provision_runner(version: &str) -> Arc<Runner> {
+    let locked = locked_runner();
+    if runner_version(&locked) == version {
+        return locked;
+    }
+    static RUNNERS: OnceLock<Mutex<BTreeMap<String, Arc<Runner>>>> = OnceLock::new();
+    let mut runners = RUNNERS.get_or_init(Default::default).lock().unwrap();
+    runners
+        .entry(version.to_string())
+        .or_insert_with(|| {
+            let temp = tempfile::tempdir().unwrap();
+            fs::write(temp.path().join("package.json"), "{\"private\":true}").unwrap();
+            npm(
+                temp.path(),
+                &[
+                    "install",
+                    "--save-exact",
+                    "--ignore-scripts",
+                    "--no-audit",
+                    "--no-fund",
+                    &format!("@playwright/test@{version}"),
+                ],
+                &temp.path().join("cache"),
+                "https://registry.npmjs.org",
+            )
+            .expect_status(0);
+            let runner = Arc::new(Runner {
+                modules: temp.path().join("node_modules"),
+                _temp: temp,
+            });
+            assert_eq!(runner_version(&runner), version);
+            runner
+        })
+        .clone()
+}
+
+fn runner() -> Arc<Runner> {
+    match std::env::var("AZIMUTH_PLAYWRIGHT_VERSION") {
+        Ok(version) => provision_runner(&version),
+        Err(_) => locked_runner(),
+    }
+}
+
+fn runner_endpoints() -> Vec<Arc<Runner>> {
+    if let Ok(version) = std::env::var("AZIMUTH_PLAYWRIGHT_VERSION") {
+        eprintln!("Playwright apparatus override: {version}");
+        return vec![provision_runner(&version)];
+    }
+    let locked = locked_runner();
+    let upper = runner_version(&locked);
+    let lower = review::range_endpoints().0;
+    if lower == upper {
+        eprintln!("Playwright range is one version ({lower}); running once");
+        vec![locked]
+    } else {
+        eprintln!("Playwright endpoint versions: {lower}, {upper}");
+        vec![locked, provision_runner(&lower)]
+    }
 }
 
 fn install(repo: &Repo, app: &str) {
-    copy_tree(
-        &runner().modules,
-        &repo.path(&format!("{app}/node_modules")),
-    );
+    install_with_runner(repo, app, &runner());
+}
+
+fn install_with_runner(repo: &Repo, app: &str, runner: &Runner) {
+    for name in ["package.json", "package-lock.json"] {
+        fs::copy(runner._temp.path().join(name), repo.path(app).join(name)).unwrap();
+    }
+    copy_tree(&runner.modules, &repo.path(&format!("{app}/node_modules")));
     let registry = HttpServer::start(|_, _| panic!("adapter install contacted a registry"));
     npm(
         &repo.path(app),
         &[
             "install",
+            "--legacy-peer-deps",
             "--save-dev",
             "--save-exact",
             "--no-audit",
@@ -151,6 +231,15 @@ fn install(repo: &Repo, app: &str) {
         &registry.url(),
     )
     .expect_status(0);
+    let installed: Value = serde_json::from_str(
+        &repo.read(&format!("{app}/node_modules/@playwright/test/package.json")),
+    )
+    .unwrap();
+    assert_eq!(
+        installed["version"],
+        runner_version(runner),
+        "installing the adapter must preserve the selected runner"
+    );
     let manifest: Value = serde_json::from_str(&repo.read(&format!("{app}/package.json"))).unwrap();
     assert!(
         manifest["devDependencies"][PACKAGE].is_string(),
@@ -177,10 +266,14 @@ fn isolate_npm(repo: &mut Repo) {
 }
 
 fn sample() -> Repo {
+    sample_with_runner(&runner())
+}
+
+fn sample_with_runner(runner: &Runner) -> Repo {
     // Packing comes first: absent product code must fail here, before installing any runner.
     packed();
     let mut repo = Repo::sample();
-    install(&repo, APP);
+    install_with_runner(&repo, APP, runner);
     isolate_npm(&mut repo);
     repo.set_env("PATH", &repo.path_without("dotnet"));
     repo.set_env("npm_config_fetch_retries", "0");
@@ -379,7 +472,17 @@ fn the_local_tarball_installs_as_the_scoped_package_with_one_command() {
 // behavior-2: It writes the report to standard output, and the runner's output goes to standard error
 #[test]
 fn real_playwright_failure_is_a_zero_status_report_with_runner_output_on_stderr() {
-    let repo = sample();
+    for runner in runner_endpoints() {
+        real_playwright_failure_is_a_zero_status_report_with_runner_output_on_stderr_with_runner(
+            &runner,
+        );
+    }
+}
+
+fn real_playwright_failure_is_a_zero_status_report_with_runner_output_on_stderr_with_runner(
+    runner: &Runner,
+) {
+    let repo = sample_with_runner(runner);
     spec(
         &repo,
         r#"const {test,expect}=require('@playwright/test');
@@ -405,7 +508,13 @@ test('desk failure', {tag:'@Check:desk-failure'}, async()=>{
 // behavior-2: A test that fails on its first attempt is reported as `failed`
 #[test]
 fn the_first_failure_is_reported_and_no_configured_retry_runs() {
-    let repo = sample();
+    for runner in runner_endpoints() {
+        the_first_failure_is_reported_and_no_configured_retry_runs_with_runner(&runner);
+    }
+}
+
+fn the_first_failure_is_reported_and_no_configured_retry_runs_with_runner(runner: &Runner) {
+    let repo = sample_with_runner(runner);
     let journal = repo.beside("attempts.jsonl");
     spec(
         &repo,
@@ -445,7 +554,15 @@ test('first attempt fails',{tag:'@Check:first-attempt'},async({},info)=>{
 // behavior-2: A test that fails on its first attempt is reported as `failed`
 #[test]
 fn a_first_failure_is_reported_even_when_a_file_configured_retry_passes() {
-    let repo = sample();
+    for runner in runner_endpoints() {
+        a_first_failure_is_reported_even_when_a_file_configured_retry_passes_with_runner(&runner);
+    }
+}
+
+fn a_first_failure_is_reported_even_when_a_file_configured_retry_passes_with_runner(
+    runner: &Runner,
+) {
+    let repo = sample_with_runner(runner);
     let counter = repo.beside("retry-counter.txt");
     spec(
         &repo,
@@ -488,8 +605,18 @@ test('first failure survives a passing retry',{tag:'@Check:retried-loan'},async(
 // behavior-2: Each test has the outcome `passed`, `failed`, `skipped` or `not_run`, and a duration
 #[test]
 fn tags_select_exact_ids_and_key_and_the_report_keeps_unasked_marked_tests() {
+    for runner in runner_endpoints() {
+        tags_select_exact_ids_and_key_and_the_report_keeps_unasked_marked_tests_with_runner(
+            &runner,
+        );
+    }
+}
+
+fn tags_select_exact_ids_and_key_and_the_report_keeps_unasked_marked_tests_with_runner(
+    runner: &Runner,
+) {
     for key in ["Check", "Proof"] {
-        let repo = sample();
+        let repo = sample_with_runner(runner);
         let journal = repo.beside("executed.jsonl");
         spec(&repo,&r#"const {test,expect}=require('@playwright/test');
 const fs=require('node:fs');
@@ -664,7 +791,17 @@ fn read_events(path: &Path) -> Vec<Value> {
 // behavior-2: The duration of that entry is the sum over the projects
 #[test]
 fn browser_projects_collapse_to_one_outcome_and_the_sum_of_their_durations() {
-    let repo = sample();
+    for runner in runner_endpoints() {
+        browser_projects_collapse_to_one_outcome_and_the_sum_of_their_durations_with_runner(
+            &runner,
+        );
+    }
+}
+
+fn browser_projects_collapse_to_one_outcome_and_the_sum_of_their_durations_with_runner(
+    runner: &Runner,
+) {
+    let repo = sample_with_runner(runner);
     let journal = repo.beside("durations.jsonl");
     repo.append(
         "playwright/lending/playwright.config.cjs",
@@ -783,6 +920,14 @@ test('same title',{tag:'@Check:file-beta'},async({},info)=>{await new Promise(r=
 // behavior-2: A refusal writes the reason to standard error, ends with a status other than 0, and writes no report
 #[test]
 fn unsafe_resolved_configs_are_refused_before_starting_a_test_or_server() {
+    for runner in runner_endpoints() {
+        unsafe_resolved_configs_are_refused_before_starting_a_test_or_server_with_runner(&runner);
+    }
+}
+
+fn unsafe_resolved_configs_are_refused_before_starting_a_test_or_server_with_runner(
+    runner: &Runner,
+) {
     for mode in [
         "direct",
         "environment",
@@ -790,7 +935,7 @@ fn unsafe_resolved_configs_are_refused_before_starting_a_test_or_server() {
         "later-server",
         "absent",
     ] {
-        let repo = sample();
+        let repo = sample_with_runner(runner);
         let test_journal = repo.beside("config-test");
         let server_journal = repo.beside("config-server.jsonl");
         spec(
@@ -898,7 +1043,13 @@ fn a_refused_launch_is_crashed_and_leaves_its_checks_without_results() {
 // behavior-2: An adapter does not run tests against a process that was started before the launch
 #[test]
 fn an_already_listening_server_is_not_used() {
-    let repo = sample();
+    for runner in runner_endpoints() {
+        an_already_listening_server_is_not_used_with_runner(&runner);
+    }
+}
+
+fn an_already_listening_server_is_not_used_with_runner(runner: &Runner) {
+    let repo = sample_with_runner(runner);
     let witness = repo.beside("server-body");
     spec(
         &repo,
@@ -1782,8 +1933,14 @@ fn assert_launch_tree_is_gone(running: &mut PlaywrightLaunch) {
 // behavior-2: A Playwright launch that is stopped at its limit leaves no web server behind
 #[test]
 fn a_playwright_timeout_leaves_no_server_or_launch_process_behind() {
+    for runner in runner_endpoints() {
+        a_playwright_timeout_leaves_no_server_or_launch_process_behind_with_runner(&runner);
+    }
+}
+
+fn a_playwright_timeout_leaves_no_server_or_launch_process_behind_with_runner(runner: &Runner) {
     use std::process::Stdio;
-    let mut repo = sample();
+    let mut repo = sample_with_runner(runner);
     core_suites(&repo);
     let mut project = parse_toml(&repo.read(PROJECT_FILE));
     for suite in project["suite"].as_array_mut().unwrap() {
@@ -1874,10 +2031,16 @@ fn a_playwright_timeout_leaves_no_server_or_launch_process_behind() {
 // behavior-2: An adapter that receives SIGINT writes no report and exits
 #[test]
 fn an_adapter_interrupted_with_its_group_exits_without_a_report() {
+    for runner in runner_endpoints() {
+        an_adapter_interrupted_with_its_group_exits_without_a_report_with_runner(&runner);
+    }
+}
+
+fn an_adapter_interrupted_with_its_group_exits_without_a_report_with_runner(runner: &Runner) {
     use std::io::Write;
     use std::os::unix::process::CommandExt;
     use std::process::Stdio;
-    let mut repo = sample();
+    let mut repo = sample_with_runner(runner);
     let witnesses = hanging_playwright_suite(&mut repo);
     let environment = repo.azimuth_command(&[]);
     let stdout = repo.beside("interrupted.stdout");
@@ -1966,8 +2129,14 @@ fn an_adapter_interrupted_with_its_group_exits_without_a_report() {
 
 #[test]
 fn the_locked_runner_uses_the_sample_server_without_a_browser() {
+    for runner in runner_endpoints() {
+        the_locked_runner_uses_the_sample_server_without_a_browser_with_runner(&runner);
+    }
+}
+
+fn the_locked_runner_uses_the_sample_server_without_a_browser_with_runner(runner: &Runner) {
     let mut repo = Repo::sample();
-    copy_tree(&runner().modules, &repo.path("playwright/node_modules"));
+    copy_tree(&runner.modules, &repo.path("playwright/node_modules"));
     isolate_npm(&mut repo);
     let environment = repo.azimuth_command(&[]);
     let mut command = Command::new("node");
@@ -1988,8 +2157,16 @@ fn the_locked_runner_uses_the_sample_server_without_a_browser() {
 
 #[test]
 fn the_locked_runner_lists_and_selects_a_tag_written_only_in_the_title() {
+    for runner in runner_endpoints() {
+        the_locked_runner_lists_and_selects_a_tag_written_only_in_the_title_with_runner(&runner);
+    }
+}
+
+fn the_locked_runner_lists_and_selects_a_tag_written_only_in_the_title_with_runner(
+    runner: &Runner,
+) {
     let mut repo = Repo::sample();
-    copy_tree(&runner().modules, &repo.path("playwright/node_modules"));
+    copy_tree(&runner.modules, &repo.path("playwright/node_modules"));
     isolate_npm(&mut repo);
     let journal = repo.beside("title-body");
     spec(
@@ -2048,55 +2225,73 @@ mod review;
 // behavior-2: A test marked `test.fail()` is `passed` when its body fails and `failed` when its body passes
 #[test]
 fn expected_failures_use_the_real_runners_verdict() {
-    review::expected_failure_verdict();
+    for runner in runner_endpoints() {
+        review::expected_failure_verdict(&runner);
+    }
 }
 
 // behavior-2: When the runner reports an error outside any test, the adapter ends with a failure and writes no report
 #[test]
 fn a_throwing_global_setup_writes_no_adapter_report() {
-    review::outside_error("setup", false);
+    for runner in runner_endpoints() {
+        review::outside_error(&runner, "setup", false);
+    }
 }
 
 // behavior-2: When the runner reports an error outside any test, the adapter ends with a failure and writes no report
 #[test]
 fn a_throwing_global_teardown_after_passes_writes_no_adapter_report() {
-    review::outside_error("teardown", false);
+    for runner in runner_endpoints() {
+        review::outside_error(&runner, "teardown", false);
+    }
 }
 
 // behavior-2: When the runner reports an error outside any test, the adapter ends with a failure and writes no report
 #[test]
 fn a_server_command_that_exits_before_ready_writes_no_adapter_report() {
-    review::outside_error("server", false);
+    for runner in runner_endpoints() {
+        review::outside_error(&runner, "server", false);
+    }
 }
 
 // behavior-2: A global setup or teardown that throws, or a web server that does not start, gives a launch that reads `crashed`, also when every test passed
 #[test]
 fn a_throwing_global_setup_is_a_crashed_core_launch() {
-    review::outside_error("setup", true);
+    for runner in runner_endpoints() {
+        review::outside_error(&runner, "setup", true);
+    }
 }
 
 // behavior-2: A global setup or teardown that throws, or a web server that does not start, gives a launch that reads `crashed`, also when every test passed
 #[test]
 fn a_throwing_global_teardown_discards_the_passing_checks() {
-    review::outside_error("teardown", true);
+    for runner in runner_endpoints() {
+        review::outside_error(&runner, "teardown", true);
+    }
 }
 
 // behavior-2: A global setup or teardown that throws, or a web server that does not start, gives a launch that reads `crashed`, also when every test passed
 #[test]
 fn a_server_command_that_exits_before_ready_is_a_crashed_core_launch() {
-    review::outside_error("server", true);
+    for runner in runner_endpoints() {
+        review::outside_error(&runner, "server", true);
+    }
 }
 
 // behavior-2: An entry that neither failed in a project nor passed in all is `not_run` if a project did not run it, and `skipped` otherwise
 #[test]
 fn project_outcomes_distinguish_skipped_from_failed() {
-    review::mixed_projects();
+    for runner in runner_endpoints() {
+        review::mixed_projects(&runner);
+    }
 }
 
 // behavior-2: An entry that neither failed in a project nor passed in all is `not_run` if a project did not run it, and `skipped` otherwise
 #[test]
 fn unasked_tests_are_not_run_in_any_browser_project() {
-    review::unasked_projects();
+    for runner in runner_endpoints() {
+        review::unasked_projects(&runner);
+    }
 }
 
 // behavior-2: An installation that is a link from `node_modules` to the adapter's code, as pnpm makes it, counts as the application's
@@ -2117,6 +2312,12 @@ fn an_unsupported_real_runner_is_refused_with_its_version_and_range() {
     review::unsupported_runner();
 }
 
+// behavior-2: The package states the versions of Playwright the adapter works with, and with another version the adapter ends with a failure that says so
+#[test]
+fn installed_versions_just_outside_the_declared_range_are_refused() {
+    review::just_outside_range();
+}
+
 // behavior-2: The folder in a `discover` request and each path in its report are relative to the root of the repository, and `.` is the root
 #[test]
 fn real_discovery_uses_repository_paths_including_dot_for_the_root() {
@@ -2126,19 +2327,25 @@ fn real_discovery_uses_repository_paths_including_dot_for_the_root() {
 // behavior-2: It writes the report to standard output, and the runner's output goes to standard error
 #[test]
 fn a_persons_json_output_file_does_not_change_the_adapter_report() {
-    review::reporter_environment("PLAYWRIGHT_JSON_OUTPUT_FILE");
+    for runner in runner_endpoints() {
+        review::reporter_environment(&runner, "PLAYWRIGHT_JSON_OUTPUT_FILE");
+    }
 }
 
 // behavior-2: Its report lists every marked test of the suite, also the ones not asked for
 #[test]
 fn a_persons_only_failures_setting_does_not_remove_passing_tests() {
-    review::reporter_environment("PLAYWRIGHT_JSON_ONLY_FAILURES");
+    for runner in runner_endpoints() {
+        review::reporter_environment(&runner, "PLAYWRIGHT_JSON_ONLY_FAILURES");
+    }
 }
 
 // behavior-2: A test carries a Check id in a tag of the form `@<marker_key>:<id>`
 #[test]
 fn an_empty_or_invalid_tag_id_is_not_a_marker() {
-    review::empty_and_invalid_tags();
+    for runner in runner_endpoints() {
+        review::empty_and_invalid_tags(&runner);
+    }
 }
 
 // behavior-2: For `discover` the Playwright adapter reports each folder that holds a Playwright config

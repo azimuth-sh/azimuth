@@ -1,7 +1,7 @@
 use super::*;
 
-pub(super) fn expected_failure_verdict() {
-    let repo = sample();
+pub(super) fn expected_failure_verdict(runner: &Runner) {
+    let repo = sample_with_runner(runner);
     spec(
         &repo,
         r#"const {test,expect}=require('@playwright/test');
@@ -55,8 +55,8 @@ fn configure_outside_error(repo: &Repo, phase: &str, witness: &Path) {
     assert!(!witness.exists());
 }
 
-pub(super) fn outside_error(phase: &str, through_core: bool) {
-    let mut repo = sample();
+pub(super) fn outside_error(runner: &Runner, phase: &str, through_core: bool) {
+    let mut repo = sample_with_runner(runner);
     let body = repo.beside("passing-body");
     let witness = repo.beside("outside-test-error");
     repo.append("playwright/lending/desk.spec.cjs","test.afterEach(async({},info)=>{if(info.status==='passed')require('node:fs').appendFileSync(process.env.PASSING_BODY,info.title+'\\n');});\n");
@@ -135,8 +135,8 @@ pub(super) fn outside_error(phase: &str, through_core: bool) {
     }
 }
 
-pub(super) fn mixed_projects() {
-    let repo = sample();
+pub(super) fn mixed_projects(runner: &Runner) {
+    let repo = sample_with_runner(runner);
     repo.append(
         "playwright/lending/playwright.config.cjs",
         "module.exports.projects=[{name:'north'},{name:'south'}];\n",
@@ -167,8 +167,8 @@ for(const [name,id] of [['pass and skip','mixed'],['only skips','skips'],['both 
     }
 }
 
-pub(super) fn unasked_projects() {
-    let repo = sample();
+pub(super) fn unasked_projects(runner: &Runner) {
+    let repo = sample_with_runner(runner);
     let journal = repo.beside("project-bodies.jsonl");
     repo.append(
         "playwright/lending/playwright.config.cjs",
@@ -256,39 +256,68 @@ pub(super) fn linked_installation() {
 }
 
 fn compatibility_range() -> String {
-    for section in ["peerDependencies", "dependencies", "optionalDependencies"] {
-        if let Some(range) = packed().manifest[section]["@playwright/test"].as_str() {
-            assert!(!range.is_empty());
-            return range.into();
-        }
-    }
-    panic!("the package declares no supported @playwright/test range");
+    packed().manifest["peerDependencies"]["@playwright/test"]
+        .as_str()
+        .expect("the package declares its supported @playwright/test peer range")
+        .to_string()
 }
 
-fn satisfies(range: &str, version: &str) -> bool {
+fn semver(script: &str, args: &[&str]) -> Value {
     let npm_path = Command::new("which").arg("npm").output().unwrap();
     assert!(npm_path.status.success());
     let npm_path = String::from_utf8(npm_path.stdout).unwrap();
     let mut command = Command::new("node");
-    command.args(["-e",r#"const fs=require('node:fs'),p=require('node:path');const cli=fs.realpathSync(process.argv[1]);const semver=require(require.resolve('semver',{paths:[p.dirname(p.dirname(cli))]}));if(!semver.validRange(process.argv[2]))throw new Error('invalid declared compatibility range');process.stdout.write(JSON.stringify(semver.satisfies(process.argv[3],process.argv[2])));"#,npm_path.trim(),range,version]);
-    let output = run_with_time_limit(command, Duration::from_secs(20), None);
+    command.args(["-e", &format!(r#"const fs=require('node:fs'),p=require('node:path');const cli=fs.realpathSync(process.argv[1]);const semver=require(require.resolve('semver',{{paths:[p.dirname(p.dirname(cli))]}}));{script}"#), npm_path.trim()]);
+    command.args(args);
+    let output = run_with_time_limit(command, Duration::from_secs(60), None);
     output.expect_status(0);
-    output.json().as_bool().unwrap()
+    output.json()
+}
+
+fn satisfies(range: &str, version: &str) -> bool {
+    semver("if(!semver.validRange(process.argv[2]))throw new Error('invalid declared compatibility range');process.stdout.write(JSON.stringify(semver.satisfies(process.argv[3],process.argv[2])));", &[range, version]).as_bool().unwrap()
+}
+
+pub(super) fn range_endpoints() -> (String, String) {
+    static ENDPOINTS: OnceLock<(String, String)> = OnceLock::new();
+    ENDPOINTS.get_or_init(read_range_endpoints).clone()
+}
+
+fn read_range_endpoints() -> (String, String) {
+    let range = compatibility_range();
+    let lock: Value = serde_json::from_slice(
+        &fs::read(sample_source().join(APP).join("package-lock.json")).unwrap(),
+    )
+    .unwrap();
+    let upper = lock["packages"]["node_modules/@playwright/test"]["version"]
+        .as_str()
+        .unwrap();
+    assert!(
+        satisfies(&range, upper),
+        "the locked runner {upper} is outside the declared range {range}"
+    );
+    let facts = semver(
+        r#"const range=process.argv[2],upper=new semver.SemVer(process.argv[3]);
+const lower=semver.minVersion(range);if(!lower)throw new Error('range has no minimum');
+const nextMinor=`${upper.major}.${upper.minor+1}.0`;
+process.stdout.write(JSON.stringify({lower:lower.version,admitsNewerMinor:semver.intersects(range,`>=${nextMinor}`)}));"#,
+        &[&range, upper],
+    );
+    assert_eq!(
+        facts["admitsNewerMinor"], false,
+        "the range {range} admits a minor line newer than the locked runner {upper}"
+    );
+    let lower = facts["lower"].as_str().unwrap();
+    assert!(
+        range.contains(lower),
+        "the lower endpoint {lower} must be stated in the range {range}"
+    );
+    (lower.to_string(), upper.to_string())
 }
 
 pub(super) fn declared_compatibility() {
-    let range = compatibility_range();
-    let version = serde_json::from_slice::<Value>(
-        &fs::read(runner().modules.join("@playwright/test/package.json")).unwrap(),
-    )
-    .unwrap()["version"]
-        .as_str()
-        .unwrap()
-        .to_string();
-    assert!(
-        satisfies(&range, &version),
-        "the locked runner {version} is outside the declared range {range}"
-    );
+    let (_, upper) = range_endpoints();
+    assert_eq!(runner_version(&locked_runner()), upper);
 }
 
 fn old_runner() -> &'static Runner {
@@ -345,29 +374,69 @@ pub(super) fn unsupported_runner() {
         serde_json::from_str(&repo.read("playwright/node_modules/@playwright/test/package.json"))
             .unwrap();
     assert_eq!(version["version"], "1.30.0");
-    let range = packed().manifest["peerDependencies"]["@playwright/test"].as_str();
-    if let Some(range) = range {
-        assert!(!satisfies(range,"1.30.0"),"the old fixture now lies inside {range}; select an older real fixture if support expands");
-    }
+    let range = compatibility_range();
+    assert!(
+        !satisfies(&range, "1.30.0"),
+        "the old fixture now lies inside {range}; select an older real fixture if support expands"
+    );
     let output = start(&repo, SUITE, &request(&[SIXTH_LOAN], "Check"), &[]);
+    assert_unsupported_version(&output, "1.30.0", &range);
+}
+
+fn assert_unsupported_version(output: &Output, version: &str, range: &str) {
     assert_ne!(
         output.status,
         0,
-        "the unsupported real runner was accepted: {}",
+        "unsupported version {version}: {}",
         output.text()
     );
     assert!(output.stdout.is_empty(), "{}", output.text());
-    assert!(output.stderr.contains("1.30.0"), "{}", output.text());
-    let range = compatibility_range();
     assert!(
-        output.stderr.contains(&range),
+        output.stderr.contains(range),
         "the diagnostic names no declared range {range}: {}",
+        output.text()
+    );
+    // A boundary can occur in the range itself, without naming the installed version.
+    assert!(
+        output.stderr.replace(range, "").contains(version),
+        "the diagnostic names no installed version {version} outside the range: {}",
         output.text()
     );
 }
 
-pub(super) fn reporter_environment(variable: &str) {
-    let repo = sample();
+pub(super) fn just_outside_range() {
+    let (lower, upper) = range_endpoints();
+    let range = compatibility_range();
+    let versions = semver(
+        r#"const lo=new semver.SemVer(process.argv[2]),hi=new semver.SemVer(process.argv[3]);
+const below=lo.patch>0?`${lo.major}.${lo.minor}.${lo.patch-1}`:lo.minor>0?`${lo.major}.${lo.minor-1}.0`:`${lo.major}.0.0-0`;
+process.stdout.write(JSON.stringify([below,`${hi.major}.${hi.minor+1}.0`]));"#,
+        &[&lower, &upper],
+    );
+    for (index, version) in versions.as_array().unwrap().iter().enumerate() {
+        let version = version.as_str().unwrap();
+        assert!(!satisfies(&range, version));
+        let runner = if index == 0 {
+            provision_runner(version)
+        } else {
+            locked_runner()
+        };
+        let repo = sample_with_runner(&runner);
+        if index == 1 {
+            // An upper neighbour need not be published yet. The version guard must reject
+            // the installed metadata before loading any runner code.
+            let path = "playwright/node_modules/@playwright/test/package.json";
+            let mut manifest: Value = serde_json::from_str(&repo.read(path)).unwrap();
+            manifest["version"] = json!(version);
+            repo.write(path, &manifest.to_string());
+        }
+        let output = start(&repo, SUITE, &request(&[SIXTH_LOAN], "Check"), &[]);
+        assert_unsupported_version(&output, version, &range);
+    }
+}
+
+pub(super) fn reporter_environment(runner: &Runner, variable: &str) {
+    let repo = sample_with_runner(runner);
     spec(
         &repo,
         r#"const {test,expect}=require('@playwright/test');
@@ -405,8 +474,8 @@ test('kept failing test',{tag:'@Check:report-fail'},async()=>{expect(1).toBe(2);
     }
 }
 
-pub(super) fn empty_and_invalid_tags() {
-    let repo = sample();
+pub(super) fn empty_and_invalid_tags(runner: &Runner) {
+    let repo = sample_with_runner(runner);
     spec(
         &repo,
         r#"const {test}=require('@playwright/test');

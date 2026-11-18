@@ -1,6 +1,65 @@
 //! Comments and echoed command names must not grant a release job publishing rights.
 
 pub fn commands(script: &str) -> Vec<Vec<String>> {
+    let script = without_comments(script);
+    let chars: Vec<_> = script.chars().collect();
+    let mut position = 0;
+    let (outer, captured) = substitutions(&chars, &mut position, false);
+    let mut result = plain_commands(&outer);
+    for script in captured {
+        result.extend(plain_commands(&script));
+    }
+    result
+}
+
+fn substitutions(chars: &[char], position: &mut usize, nested: bool) -> (String, Vec<String>) {
+    let mut outer = String::new();
+    let mut captured = Vec::new();
+    let mut quote = None;
+    let mut depth = 0;
+    while *position < chars.len() {
+        let c = chars[*position];
+        *position += 1;
+        if c == '\\' && quote != Some('\'') {
+            outer.push(c);
+            if let Some(c) = chars.get(*position) {
+                outer.push(*c);
+                *position += 1;
+            }
+            continue;
+        }
+        if c == '$' && chars.get(*position) == Some(&'(') && quote != Some('\'') {
+            *position += 1;
+            let (inner, descendants) = substitutions(chars, position, true);
+            captured.push(inner);
+            captured.extend(descendants);
+            outer.push_str("CAPTURED");
+            continue;
+        }
+        if let Some(open) = quote {
+            if c == open {
+                quote = None;
+            }
+        } else if c == '\'' || c == '"' {
+            quote = Some(c);
+        } else if nested && c == '(' {
+            depth += 1;
+        } else if nested && c == ')' {
+            if depth == 0 {
+                return (outer, captured);
+            }
+            depth -= 1;
+        }
+        outer.push(c);
+    }
+    assert!(
+        !nested,
+        "an unterminated command substitution in a release step"
+    );
+    (outer, captured)
+}
+
+fn plain_commands(script: &str) -> Vec<Vec<String>> {
     let script = script.replace("\\\n", "");
     let mut result = Vec::new();
     let mut words = Vec::new();
@@ -176,4 +235,35 @@ fn empty_arguments_survive_and_only_shell_comments_are_removed() {
         without_comments("# npm publish\nsh -c 'npm publish package.tgz' # ignored\n"),
         "\nsh -c 'npm publish package.tgz' \n"
     );
+}
+
+#[test]
+fn captured_commands_are_read_but_quoted_and_commented_spellings_are_not() {
+    let script = r#"packed="$(npm pack --pack-destination ../..)"
+npm stage publish "$packed" --tag latest
+echo '$(npm publish ignored)'
+echo "\$(npm publish escaped)"
+# ignored="$(npm publish commented)"
+"#;
+    let found = commands(script);
+    assert_eq!(
+        found
+            .iter()
+            .filter(|words| invokes(words, &["npm", "pack"]))
+            .count(),
+        1
+    );
+    assert_eq!(
+        found
+            .iter()
+            .filter(|words| invokes(words, &["npm", "stage", "publish"]))
+            .count(),
+        1
+    );
+    assert!(!found
+        .iter()
+        .any(|words| invokes(words, &["npm", "publish"])));
+    assert!(commands(r#"answer="$(printf '%s' "$(npm pack)")""#)
+        .iter()
+        .any(|words| invokes(words, &["npm", "pack"])));
 }
