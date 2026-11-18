@@ -11,7 +11,6 @@ using var termination = OperatingSystem.IsWindows() ? null : PosixSignalRegistra
 {
     signal.Cancel = true;
     Processes.Stop();
-    Environment.Exit(1);
 });
 
 try
@@ -33,10 +32,19 @@ try
     report.Insert(1, "adapter", new JsonObject { ["name"] = "azimuth-xunit", ["version"] = Version() });
     return Processes.WriteReport(report.ToJsonString()) ? 0 : 1;
 }
+catch (OperationCanceledException)
+{
+    return 1;
+}
 catch (AdapterException error)
 {
     Console.Error.WriteLine($"azimuth-xunit: {error.Message}");
     return 1;
+}
+
+finally
+{
+    Processes.WaitForStop();
 }
 
 static string Text(JsonObject request, string field) =>

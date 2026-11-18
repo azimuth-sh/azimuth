@@ -1,10 +1,11 @@
 //! Where the readers take file content from: the working tree on disk, or a tree that git holds.
 //! `azimuth change diff` reads the model and the markers of two trees with the same readers.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use crate::git::Entry;
+use crate::git::{Blobs, Entry, Git};
 
 pub trait Source {
     fn read(&self, path: &str) -> Option<Vec<u8>>;
@@ -40,8 +41,19 @@ impl Source for Disk<'_> {
 
 /// The files of a tree as git holds them.
 pub struct Stored<'a> {
-    pub blobs: BTreeMap<String, Vec<u8>>,
-    pub files: &'a BTreeMap<String, Entry>,
+    blobs: RefCell<Blobs>,
+    files: &'a BTreeMap<String, Entry>,
+    error: RefCell<Option<String>>,
+}
+
+impl<'a> Stored<'a> {
+    pub fn new(git: &Git, files: &'a BTreeMap<String, Entry>) -> Result<Stored<'a>, String> {
+        Ok(Stored { blobs: RefCell::new(git.blobs()?), files, error: RefCell::new(None) })
+    }
+
+    pub fn error(&self) -> Option<String> {
+        self.error.borrow().clone()
+    }
 }
 
 impl Source for Stored<'_> {
@@ -50,7 +62,16 @@ impl Source for Stored<'_> {
         if entry.mode == "120000" || entry.mode == "160000" {
             return None;
         }
-        self.blobs.get(&entry.id).cloned()
+        if self.error.borrow().is_some() {
+            return None;
+        }
+        match self.blobs.borrow_mut().read(&entry.id) {
+            Ok(bytes) => Some(bytes),
+            Err(error) => {
+                *self.error.borrow_mut() = Some(format!("read base file {path}: {error}"));
+                None
+            }
+        }
     }
 
     fn folders(&self, folder: &str) -> Option<Vec<String>> {

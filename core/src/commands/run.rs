@@ -2,7 +2,6 @@
 //! named Check through the same launch, also when it is kept or a known fail.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::time::Instant;
 
 use serde_json::{json, Value};
 
@@ -167,16 +166,12 @@ pub fn run(selection: Selection, json: bool) -> i32 {
             }
             continue;
         }
-        eprintln!("suite {}: launch starting", suite.name);
-        let started = Instant::now();
-        let launch = launch::run_suite(workspace.git.root(), suite, asked);
+        let (launch, duration_ms) = match launch::run_suite(workspace.git.root(), suite, asked) {
+            Ok(result) => result,
+            Err(message) => return output::could_not(&message),
+        };
         let mut entry = json!({ "name": suite.name, "launch": launch.word() });
-        // The wall time of the launch, with the build. An adapter that did not start had none.
-        if !matches!(launch, Launch::NotStarted { .. }) {
-            entry["duration_ms"] = json!(started.elapsed().as_millis() as u64);
-        }
-        let duration = entry["duration_ms"].as_u64().map(|ms| format!(" in {ms} ms")).unwrap_or_default();
-        eprintln!("suite {}: launch {}{duration}", suite.name, launch.word());
+        output::set_present(&mut entry, "duration_ms", duration_ms);
         suites.push(entry);
         match launch {
             Launch::NotStarted { detail } | Launch::Crashed { detail } => {

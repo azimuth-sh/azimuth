@@ -116,6 +116,8 @@ fn state_line(evaluation: &Evaluation, count_files: bool) -> String {
         let noun = if count == 1 { "file" } else { "files" };
         let parts: Vec<String> = evaluation.parts_changed.iter().map(|part| if part == "files" { format!("{count} {noun}") } else { part.clone() }).collect();
         line.push_str(&format!(" ({} changed)", parts.join(", ")));
+    } else if !evaluation.files_changed.is_empty() {
+        line.push_str(&format!(" ({} changed)", evaluation.parts_changed.join(", ")));
     } else if let Some(detail) = &evaluation.detail {
         line.push_str(&format!(" ({detail})"));
     }

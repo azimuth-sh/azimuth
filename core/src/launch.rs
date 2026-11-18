@@ -3,10 +3,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::{Read, Seek, Write};
+use std::os::fd::AsRawFd;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
@@ -19,31 +20,66 @@ use crate::store;
 /// A proof that runs longer counts as hung. The number is fixed in the first increment.
 const PROOF_TIME_LIMIT: Duration = Duration::from_secs(10);
 const STOP_GRACE: Duration = Duration::from_secs(10);
-const DEFAULT_TIME_LIMIT: Duration = Duration::from_secs(30 * 60);
-
 unsafe extern "C" {
     fn kill(pid: i32, signal: i32) -> i32;
+    fn fcntl(fd: i32, command: i32, ...) -> i32;
+    fn waitid(kind: i32, pid: u32, info: *mut std::ffi::c_void, options: i32) -> i32;
 }
 
-fn signal_group(group: u32, signal: i32) -> bool {
-    // A negative pid reaches descendants even after the adapter has exited.
-    unsafe { kill(-(group as i32), signal) == 0 }
-}
-
-fn stop_group(child: &mut Child) {
-    let group = child.id();
-    signal_group(group, 15);
-    let stopped = Instant::now();
-    while stopped.elapsed() < STOP_GRACE {
-        let _ = child.try_wait();
-        if !signal_group(group, 0) {
-            let _ = child.wait();
-            return;
-        }
-        std::thread::sleep(Duration::from_millis(20));
+fn signal_group(group: u32, signal: i32) -> std::io::Result<()> {
+    // A negative pid reaches descendants while the unreaped leader reserves the group id.
+    if unsafe { kill(-(group as i32), signal) } == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
     }
-    signal_group(group, 9);
-    let _ = child.wait();
+}
+
+fn exited(child: &Child) -> std::io::Result<bool> {
+    // WNOWAIT preserves the leader's identity until every possible group signal is finished.
+    #[cfg(target_os = "macos")]
+    let no_reap = 0x20;
+    #[cfg(not(target_os = "macos"))]
+    let no_reap = 0x01000000;
+    let mut info = [0u64; 16];
+    let result = unsafe { waitid(1, child.id(), info.as_mut_ptr().cast(), 1 | 4 | no_reap) };
+    if result == 0 {
+        Ok(info[0] != 0)
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+fn stop_group(child: &Child, started: Instant) -> u64 {
+    let group = child.id();
+    let signal = |number| {
+        if let Err(error) = signal_group(group, number) {
+            if error.raw_os_error() != Some(3) {
+                eprintln!("azimuth: signal {number} to process group {group}: {error}");
+            }
+        }
+    };
+    signal(15);
+    let stopped = Instant::now();
+    let mut duration_ms = None;
+    // Even an empty group can retain an unreaped leader; waiting the grace avoids reusing its id.
+    while stopped.elapsed() < STOP_GRACE {
+        if duration_ms.is_none() && exited(child).unwrap_or(false) {
+            duration_ms = Some(started.elapsed().as_millis() as u64);
+        }
+        std::thread::sleep(Duration::from_millis(20).min(STOP_GRACE.saturating_sub(stopped.elapsed())));
+    }
+    signal(9);
+    duration_ms.unwrap_or_else(|| started.elapsed().as_millis() as u64)
+}
+
+fn reap(mut child: Child) {
+    if !matches!(child.try_wait(), Ok(Some(_))) {
+        // A leader that escaped its group must not hold the command open either.
+        std::thread::spawn(move || {
+            let _ = child.wait();
+        });
+    }
 }
 
 pub const REQUEST_FORMAT: &str = "adapter-request-1";
@@ -64,7 +100,8 @@ pub fn prove(project: &Project, facility: &str, root: &Path) -> Result<(), Strin
     let Some((program, args)) = words.split_first() else {
         return Err(format!("the facility `{facility}` has an empty proof"));
     };
-    let mut child = Command::new(program)
+    let started = Instant::now();
+    let child = Command::new(program)
         .args(args)
         .current_dir(root)
         .process_group(0)
@@ -73,22 +110,39 @@ pub fn prove(project: &Project, facility: &str, root: &Path) -> Result<(), Strin
         .stderr(Stdio::null())
         .spawn()
         .map_err(|error| format!("the proof of `{facility}` could not start: `{program}`: {error}"))?;
-    match wait_with_limit(&mut child, PROOF_TIME_LIMIT) {
-        Some(status) if status.success() => Ok(()),
-        Some(_) => Err(format!("the proof of `{facility}` failed: `{}`", definition.proof)),
-        None => Err(format!("the proof of `{facility}` did not end within {} seconds", PROOF_TIME_LIMIT.as_secs())),
+    match wait_with_limit(child, started, Some(PROOF_TIME_LIMIT), None) {
+        Ok((Some(status), _)) if status.success() => Ok(()),
+        Ok((Some(_), _)) => Err(format!("the proof of `{facility}` failed: `{}`", definition.proof)),
+        Ok((None, _)) => Err(format!("the proof of `{facility}` did not end within {} seconds", PROOF_TIME_LIMIT.as_secs())),
+        Err(error) => Err(format!("wait for the proof of `{facility}`: {error}")),
     }
 }
 
-fn wait_with_limit(child: &mut Child, limit: Duration) -> Option<std::process::ExitStatus> {
-    let started = Instant::now();
+fn wait_with_limit(
+    mut child: Child,
+    started: Instant,
+    limit: Option<Duration>,
+    mut input: Option<(ChildStdin, &[u8])>,
+) -> std::io::Result<(Option<std::process::ExitStatus>, u64)> {
     loop {
-        if let Ok(Some(status)) = child.try_wait() {
-            return Some(status);
+        if exited(&child)? {
+            let duration_ms = started.elapsed().as_millis() as u64;
+            return child.wait().map(|status| (Some(status), duration_ms));
         }
-        if started.elapsed() >= limit {
-            stop_group(child);
-            return None;
+        if limit.is_some_and(|limit| started.elapsed() >= limit) {
+            let duration_ms = stop_group(&child, started);
+            reap(child);
+            return Ok((None, duration_ms));
+        }
+        if let Some((pipe, remaining)) = input.as_mut() {
+            match pipe.write(remaining) {
+                Ok(count) => *remaining = &remaining[count..],
+                Err(error) if matches!(error.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted) => {}
+                Err(_) => *remaining = &[],
+            }
+            if remaining.is_empty() {
+                input.take();
+            }
         }
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -133,7 +187,7 @@ impl Launch {
 
 /// Starts the suite's adapter in the suite's folder with no added arguments, asks it to run the
 /// tests of the given Checks, and reads its one report.
-pub fn run_suite(root: &Path, suite: &Suite, checks: &[String]) -> Launch {
+pub fn run_suite(root: &Path, suite: &Suite, checks: &[String]) -> Result<(Launch, Option<u64>), String> {
     let request = json!({
         "format": REQUEST_FORMAT,
         "verb": "run",
@@ -141,46 +195,78 @@ pub fn run_suite(root: &Path, suite: &Suite, checks: &[String]) -> Launch {
         "marker_key": suite.marker_key(),
         "checks": checks,
     });
-    let (path, output) = match held_output(root) {
-        Ok(output) => output,
-        Err(error) => return Launch::NotStarted { detail: format!("the runner's output could not be held: {error}") },
-    };
+    let (path, mut output) = held_output(root).map_err(|error| format!("the runner's output could not be held: {error}"))?;
+    let mut report = temporary_file().map_err(|error| format!("prepare the adapter report: {error}"))?;
     let limit = Duration::from_secs(suite.time_limit_minutes.saturating_mul(60));
-    let launch = match adapter(&root.join(&suite.path), &suite.adapter, &request, limit, Stdio::from(output)) {
-        Ok(stdout) => parse_report(&stdout),
+    let stderr = output.try_clone().map_err(|error| format!("hold the runner's output: {error}"))?;
+    eprintln!("suite {}: launch starting", suite.name);
+    let (launch, duration_ms) = match adapter(&root.join(&suite.path), &suite.adapter, &request, &mut report, Some(limit), Stdio::from(stderr)) {
+        Ok((Some(status), duration_ms)) if status.success() => (read_report(&mut report), Some(duration_ms)),
+        Ok((Some(status), duration_ms)) => (Launch::Crashed { detail: format!("the adapter ended with {status} and gave no report") }, Some(duration_ms)),
+        Ok((None, duration_ms)) => (Launch::TimedOut, Some(duration_ms)),
         Err(Started::No(why)) => {
             let mut detail = format!("the adapter of the suite `{}` could not start: {why}", suite.name);
             match runners::install_line(&suite.adapter) {
                 Some(line) => detail.push_str(&format!(". Install it: {line}")),
                 None => detail.push_str(". Install the adapter with its stack's package manager"),
             }
-            Launch::NotStarted { detail }
+            (Launch::NotStarted { detail }, None)
         }
-        Err(Started::Crashed(detail)) => Launch::Crashed { detail },
-        Err(Started::TimedOut) => Launch::TimedOut,
+        Err(Started::Crashed(detail)) => (Launch::Crashed { detail }, None),
     };
+    let duration = duration_ms.map(|ms| format!(" in {ms} ms")).unwrap_or_default();
+    eprintln!("suite {}: launch {}{duration}", suite.name, launch.word());
     let trouble = match &launch {
         Launch::Crashed { .. } | Launch::TimedOut | Launch::BuildFailed => true,
         Launch::Ran(report) => report.tests.iter().any(|test| test.outcome == "failed"),
         Launch::NotStarted { .. } => false,
     };
     if trouble {
-        if let Err(error) = File::open(&path).and_then(|mut file| std::io::copy(&mut file, &mut std::io::stderr().lock())) {
+        if let Err(error) = output.rewind().and_then(|_| {
+            let length = output.metadata()?.len();
+            std::io::copy(&mut output.take(length), &mut std::io::stderr().lock())
+        }) {
             eprintln!("azimuth: read the held runner output: {error}");
         }
     } else if let Err(error) = std::fs::remove_file(&path) {
         eprintln!("azimuth: remove the held runner output: {error}");
     }
-    launch
+    Ok((launch, duration_ms))
+}
+
+fn read_report(report: &mut File) -> Launch {
+    match report_text(report) {
+        Ok(stdout) => parse_report(&stdout),
+        Err(error) => Launch::Crashed { detail: format!("read the adapter report: {error}") },
+    }
+}
+
+fn report_text(report: &mut File) -> std::io::Result<String> {
+    report.rewind()?;
+    let length = report.metadata()?.len();
+    let mut text = String::new();
+    report.take(length).read_to_string(&mut text)?;
+    Ok(text)
+}
+
+fn temporary_file() -> std::io::Result<File> {
+    // An inherited standard-I/O handle must not make exit depend on a descendant closing a pipe.
+    let (path, file) = unique_file(&std::env::temp_dir())?;
+    std::fs::remove_file(path)?;
+    Ok(file)
 }
 
 fn held_output(root: &Path) -> std::io::Result<(std::path::PathBuf, File)> {
-    static NEXT: AtomicU64 = AtomicU64::new(0);
     let folder = root.join(store::WORKTREE_FOLDER);
     store::ensure_worktree_folder(&folder).map_err(std::io::Error::other)?;
+    unique_file(&folder)
+}
+
+fn unique_file(folder: &Path) -> std::io::Result<(std::path::PathBuf, File)> {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
     loop {
         let path = folder.join(format!("launch-{}-{}.log", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
-        match OpenOptions::new().write(true).create_new(true).open(&path) {
+        match OpenOptions::new().read(true).write(true).create_new(true).open(&path) {
             Ok(file) => return Ok((path, file)),
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(error) => return Err(error),
@@ -193,50 +279,58 @@ pub enum Started {
     No(String),
     /// It started and ended without a report.
     Crashed(String),
-    TimedOut,
 }
 
 /// Starts an adapter command with no added arguments and one request on standard input, and
 /// returns what it wrote on standard output when it ended with status 0. The runner's output
 /// goes to standard error.
 pub fn start_adapter(dir: &Path, command: &str, request: &Value) -> Result<String, Started> {
-    adapter(dir, command, request, DEFAULT_TIME_LIMIT, Stdio::inherit())
+    let mut report = temporary_file().map_err(|error| Started::Crashed(format!("prepare the adapter report: {error}")))?;
+    let (status, _) = adapter(dir, command, request, &mut report, None, Stdio::inherit())?;
+    match status {
+        Some(status) if status.success() => report_text(&mut report).map_err(|error| Started::Crashed(format!("read the adapter report: {error}"))),
+        Some(status) => Err(Started::Crashed(format!("the adapter ended with {status} and gave no report"))),
+        None => unreachable!("discovery has no time limit"),
+    }
 }
 
-fn adapter(dir: &Path, command: &str, request: &Value, limit: Duration, stderr: Stdio) -> Result<String, Started> {
+fn adapter(
+    dir: &Path,
+    command: &str,
+    request: &Value,
+    report: &mut File,
+    limit: Option<Duration>,
+    stderr: Stdio,
+) -> Result<(Option<std::process::ExitStatus>, u64), Started> {
     let words = split_command(command);
     let Some((program, args)) = words.split_first() else {
         return Err(Started::No("the command is empty".to_string()));
     };
+    let stdout = report.try_clone().map_err(|error| Started::Crashed(format!("hold the adapter report: {error}")))?;
+    let request = request.to_string();
+    let started = Instant::now();
     let mut child = Command::new(program)
         .args(args)
         .current_dir(dir)
         .process_group(0)
         .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
+        .stdout(Stdio::from(stdout))
         .stderr(stderr)
         .spawn()
         .map_err(|error| Started::No(format!("`{program}`: {error}")))?;
-    let mut stdin = child.stdin.take().expect("stdin is piped");
-    let request = request.to_string();
-    let writer = std::thread::spawn(move || {
-        let _ = stdin.write_all(request.as_bytes());
-    });
-    let mut pipe = child.stdout.take().expect("stdout is piped");
-    let reader = std::thread::spawn(move || {
-        let mut stdout = String::new();
-        pipe.read_to_string(&mut stdout).map(|_| stdout)
-    });
-    let status = wait_with_limit(&mut child, limit);
-    let _ = writer.join();
-    let read = reader.join();
-    match status {
-        None => Err(Started::TimedOut),
-        Some(status) => match read {
-            Ok(Ok(stdout)) if status.success() => Ok(stdout),
-            _ => Err(Started::Crashed(format!("the adapter ended with {status} and gave no report"))),
-        },
+    let input = child.stdin.take().expect("stdin is piped");
+    #[cfg(target_os = "macos")]
+    let nonblocking = 4;
+    #[cfg(not(target_os = "macos"))]
+    let nonblocking = 0x800;
+    let flags = unsafe { fcntl(input.as_raw_fd(), 3) };
+    if flags < 0 || unsafe { fcntl(input.as_raw_fd(), 4, flags | nonblocking) } < 0 {
+        let error = std::io::Error::last_os_error();
+        stop_group(&child, started);
+        reap(child);
+        return Err(Started::Crashed(format!("prepare adapter input: {error}")));
     }
+    wait_with_limit(child, started, limit, Some((input, request.as_bytes()))).map_err(|error| Started::Crashed(format!("wait for the adapter: {error}")))
 }
 
 /// A report is one JSON document of the format `adapter-report-1`; anything else is a crash.
@@ -321,10 +415,7 @@ pub fn judge<'r>(
         let tests: Vec<&ReportedTest> = report.tests.iter().filter(|test| test.checks.contains(check)).collect();
         let markers = markers_in_suite.get(check).copied().unwrap_or(0);
         let verdict = if markers > tests.len() {
-            Verdict::Mismatch(format!(
-                "a marker in source matches no listed test: {markers} marker lines and {} listed tests carry this Check",
-                tests.len()
-            ))
+            Verdict::Mismatch(format!("a marker in source matches no listed test: {markers} marker lines and {} listed tests carry this Check", tests.len()))
         } else if tests.iter().any(|test| test.outcome == "failed") {
             Verdict::Failed(tests)
         } else if tests.iter().all(|test| test.outcome == "passed") {

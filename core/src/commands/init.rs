@@ -96,7 +96,9 @@ fn repository_name(git: &Git) -> String {
         .iter()
         .find_map(|remote| git.remote_address(remote))
         .map(|address| {
-            let name = address.trim_end_matches('/').rsplit(['/', ':']).next().unwrap_or("");
+            let address = address.trim_end_matches('/');
+            let path = address.split_once(':').filter(|(host, _)| host.contains('@') && !host.contains('/')).map_or(address, |(_, path)| path);
+            let name = path.rsplit('/').next().unwrap_or("");
             name.strip_suffix(".git").unwrap_or(name).to_string()
         })
         .unwrap_or_else(|| git.root().file_name().map(|name| name.to_string_lossy().to_string()).unwrap_or_default())
@@ -115,7 +117,6 @@ fn discover(root: &Path, runner: &Runner) -> Result<Vec<String>, String> {
     let request = json!({ "format": launch::REQUEST_FORMAT, "verb": "discover", "folder": "." });
     let stdout = launch::start_adapter(root, runner.adapter, &request).map_err(|started| match started {
         Started::No(why) | Started::Crashed(why) => why,
-        Started::TimedOut => "the adapter timed out".to_string(),
     })?;
     let report: Value = serde_json::from_str(&stdout).map_err(|_| "it wrote no report".to_string())?;
     if report["format"] != launch::REPORT_FORMAT {

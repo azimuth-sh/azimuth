@@ -32,16 +32,18 @@ pub fn run(target: Option<String>, json: bool) -> i32 {
         Err(message) => return output::could_not(&message),
     };
 
-    let blobs = match git.blobs(&base_files) {
-        Ok(blobs) => blobs,
+    let stored = match Stored::new(git, &base_files) {
+        Ok(stored) => stored,
         Err(message) => return output::could_not(&message),
     };
-    let stored = Stored { blobs, files: &base_files };
     let base_project = project::read(&stored).ok();
     // A model that the target cannot read compares as what could be read of it; the working
     // tree, which this change is about, reads without errors or the command stopped above.
     let (base_model, _) = model::read(&stored);
     let base_markers = markers::scan(&stored, base_project.as_ref().unwrap_or(&workspace.project), &base_files);
+    if let Some(message) = stored.error() {
+        return output::could_not(&message);
+    }
     let markers_now = markers::scan(&Disk { root: git.root() }, &workspace.project, &tree.files);
 
     let change = change::compare(
