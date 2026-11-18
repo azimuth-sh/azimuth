@@ -7,10 +7,12 @@ using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
 using Azimuth.Xunit;
 
-using var termination = OperatingSystem.IsWindows() ? null : PosixSignalRegistration.Create(PosixSignal.SIGTERM, signal =>
+var reportState = 0;
+using var interrupt = OperatingSystem.IsWindows() ? null : PosixSignalRegistration.Create(PosixSignal.SIGINT, signal =>
 {
     signal.Cancel = true;
-    Processes.Stop();
+    Interlocked.Exchange(ref reportState, 1);
+    Environment.Exit(1);
 });
 
 try
@@ -30,21 +32,18 @@ try
     };
     report.Insert(0, "format", "adapter-report-1");
     report.Insert(1, "adapter", new JsonObject { ["name"] = "azimuth-xunit", ["version"] = Version() });
-    return Processes.WriteReport(report.ToJsonString()) ? 0 : 1;
-}
-catch (OperationCanceledException)
-{
-    return 1;
+    var text = report.ToJsonString();
+    if (Interlocked.CompareExchange(ref reportState, 2, 0) != 0)
+    {
+        return 1;
+    }
+    Console.Out.Write(text);
+    return 0;
 }
 catch (AdapterException error)
 {
     Console.Error.WriteLine($"azimuth-xunit: {error.Message}");
     return 1;
-}
-
-finally
-{
-    Processes.WaitForStop();
 }
 
 static string Text(JsonObject request, string field) =>

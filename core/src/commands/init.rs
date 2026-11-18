@@ -55,7 +55,8 @@ pub fn run() -> i32 {
                     }
                 }
                 // The line stands alone, so it can be copied whole without a full stop.
-                Err(why) => println!(
+                Err(Started::Preparation(message)) => return output::could_not(&message),
+                Err(Started::No(why) | Started::Crashed(why)) => println!(
                     "{}: the adapter `{}` is not installed here ({why}). Install it with this line:\n  {}\nThe suites of this stack are not in the project file; add them by hand.",
                     runner.stack, runner.adapter, runner.install_line()
                 ),
@@ -113,12 +114,14 @@ fn stack_exists(root: &Path, tree: &Tree, runner: &Runner) -> bool {
 
 /// The test projects the adapter reports. For `discover` the adapter starts at the root of the
 /// repository, because no suite exists yet.
-fn discover(root: &Path, runner: &Runner) -> Result<Vec<String>, String> {
+fn discover(root: &Path, runner: &Runner) -> Result<Vec<String>, Started> {
     let request = json!({ "format": launch::REQUEST_FORMAT, "verb": "discover", "folder": "." });
-    let stdout = launch::start_adapter(root, runner.adapter, &request).map_err(|started| match started {
-        Started::No(why) | Started::Crashed(why) => why,
-    })?;
-    let report: Value = serde_json::from_str(&stdout).map_err(|_| "it wrote no report".to_string())?;
+    let stdout = launch::start_adapter(root, runner.adapter, &request)?;
+    discovered_paths(&stdout).map_err(Started::Crashed)
+}
+
+fn discovered_paths(stdout: &str) -> Result<Vec<String>, String> {
+    let report: Value = serde_json::from_str(stdout).map_err(|_| "it wrote no report".to_string())?;
     if report["format"] != launch::REPORT_FORMAT {
         return Err("it wrote a document that is not an adapter-report-1".to_string());
     }

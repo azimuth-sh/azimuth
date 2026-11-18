@@ -3,8 +3,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{File, OpenOptions};
-use std::io::{Read, Seek, Write};
+use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
+use std::os::unix::fs::FileExt;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -41,16 +42,44 @@ fn exited(child: &Child) -> std::io::Result<bool> {
     let no_reap = 0x20;
     #[cfg(not(target_os = "macos"))]
     let no_reap = 0x01000000;
-    let mut info = [0u64; 16];
-    let result = unsafe { waitid(1, child.id(), info.as_mut_ptr().cast(), 1 | 4 | no_reap) };
-    if result == 0 {
-        Ok(info[0] != 0)
-    } else {
-        Err(std::io::Error::last_os_error())
+    loop {
+        let mut info = [0u64; 16];
+        let result = unsafe { waitid(1, child.id(), info.as_mut_ptr().cast(), 1 | 4 | no_reap) };
+        if result == 0 {
+            return Ok(info[0] != 0);
+        }
+        let error = std::io::Error::last_os_error();
+        if error.kind() != std::io::ErrorKind::Interrupted {
+            return Err(error);
+        }
     }
 }
 
-fn stop_group(child: &Child, started: Instant) -> u64 {
+struct Snapshot {
+    duration_ms: u64,
+    lengths: Vec<u64>,
+}
+
+impl Snapshot {
+    fn take(started: Instant, files: &[&File]) -> std::io::Result<Snapshot> {
+        let duration_ms = started.elapsed().as_millis() as u64;
+        let lengths = files.iter().map(|file| file.metadata().map(|metadata| metadata.len())).collect::<std::io::Result<_>>()?;
+        Ok(Snapshot { duration_ms, lengths })
+    }
+}
+
+struct Completed {
+    status: std::process::ExitStatus,
+    snapshot: Snapshot,
+}
+
+enum Waited {
+    Exited(Completed),
+    TimedOut(Snapshot),
+    Failed { error: std::io::Error, snapshot: Snapshot },
+}
+
+fn stop_group(child: &Child, started: Instant, files: &[&File]) -> std::io::Result<Snapshot> {
     let group = child.id();
     let signal = |number| {
         if let Err(error) = signal_group(group, number) {
@@ -59,18 +88,18 @@ fn stop_group(child: &Child, started: Instant) -> u64 {
             }
         }
     };
-    signal(15);
+    signal(2);
     let stopped = Instant::now();
-    let mut duration_ms = None;
+    let mut snapshot = None;
     // Even an empty group can retain an unreaped leader; waiting the grace avoids reusing its id.
     while stopped.elapsed() < STOP_GRACE {
-        if duration_ms.is_none() && exited(child).unwrap_or(false) {
-            duration_ms = Some(started.elapsed().as_millis() as u64);
+        if snapshot.is_none() && exited(child).unwrap_or(false) {
+            snapshot = Some(Snapshot::take(started, files));
         }
         std::thread::sleep(Duration::from_millis(20).min(STOP_GRACE.saturating_sub(stopped.elapsed())));
     }
     signal(9);
-    duration_ms.unwrap_or_else(|| started.elapsed().as_millis() as u64)
+    snapshot.unwrap_or_else(|| Snapshot::take(started, files))
 }
 
 fn reap(mut child: Child) {
@@ -110,41 +139,80 @@ pub fn prove(project: &Project, facility: &str, root: &Path) -> Result<(), Strin
         .stderr(Stdio::null())
         .spawn()
         .map_err(|error| format!("the proof of `{facility}` could not start: `{program}`: {error}"))?;
-    match wait_with_limit(child, started, Some(PROOF_TIME_LIMIT), None) {
-        Ok((Some(status), _)) if status.success() => Ok(()),
-        Ok((Some(_), _)) => Err(format!("the proof of `{facility}` failed: `{}`", definition.proof)),
-        Ok((None, _)) => Err(format!("the proof of `{facility}` did not end within {} seconds", PROOF_TIME_LIMIT.as_secs())),
+    let running = Running { child, started, input: None };
+    match running.wait_with_limit(PROOF_TIME_LIMIT, &[]) {
+        Ok(Waited::Exited(completed)) if completed.status.success() => Ok(()),
+        Ok(Waited::Exited(_)) => Err(format!("the proof of `{facility}` failed: `{}`", definition.proof)),
+        Ok(Waited::TimedOut(_)) => Err(format!("the proof of `{facility}` did not end within {} seconds", PROOF_TIME_LIMIT.as_secs())),
+        Ok(Waited::Failed { error, .. }) => Err(format!("wait for the proof of `{facility}`: {error}")),
         Err(error) => Err(format!("wait for the proof of `{facility}`: {error}")),
     }
 }
 
-fn wait_with_limit(
-    mut child: Child,
+struct Running<'a> {
+    child: Child,
     started: Instant,
-    limit: Option<Duration>,
-    mut input: Option<(ChildStdin, &[u8])>,
-) -> std::io::Result<(Option<std::process::ExitStatus>, u64)> {
-    loop {
-        if exited(&child)? {
-            let duration_ms = started.elapsed().as_millis() as u64;
-            return child.wait().map(|status| (Some(status), duration_ms));
+    input: Option<(ChildStdin, &'a [u8])>,
+}
+
+impl Running<'_> {
+    fn poll_exit(&mut self, files: &[&File]) -> std::io::Result<Option<Completed>> {
+        if exited(&self.child)? {
+            let snapshot = Snapshot::take(self.started, files)?;
+            let status = self.child.wait()?;
+            return Ok(Some(Completed { status, snapshot }));
         }
-        if limit.is_some_and(|limit| started.elapsed() >= limit) {
-            let duration_ms = stop_group(&child, started);
-            reap(child);
-            return Ok((None, duration_ms));
-        }
-        if let Some((pipe, remaining)) = input.as_mut() {
+        Ok(None)
+    }
+
+    fn deliver_request(&mut self) {
+        if let Some((pipe, remaining)) = self.input.as_mut() {
             match pipe.write(remaining) {
                 Ok(count) => *remaining = &remaining[count..],
                 Err(error) if matches!(error.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted) => {}
                 Err(_) => *remaining = &[],
             }
             if remaining.is_empty() {
-                input.take();
+                self.input.take();
             }
         }
         std::thread::sleep(Duration::from_millis(20));
+    }
+
+    fn stop(mut self, files: &[&File]) -> std::io::Result<Snapshot> {
+        self.input.take();
+        let snapshot = stop_group(&self.child, self.started, files);
+        reap(self.child);
+        snapshot
+    }
+
+    fn wait_with_limit(mut self, limit: Duration, files: &[&File]) -> std::io::Result<Waited> {
+        loop {
+            match self.poll_exit(files) {
+                Ok(Some(completed)) => return Ok(Waited::Exited(completed)),
+                Ok(None) => {}
+                Err(error) => {
+                    return self.stop(files).map(|snapshot| Waited::Failed { error, snapshot });
+                }
+            }
+            if self.started.elapsed() >= limit {
+                return self.stop(files).map(Waited::TimedOut);
+            }
+            self.deliver_request();
+        }
+    }
+
+    fn wait_until_exit(mut self, files: &[&File]) -> std::io::Result<Completed> {
+        loop {
+            match self.poll_exit(files) {
+                Ok(Some(completed)) => return Ok(completed),
+                Ok(None) => self.deliver_request(),
+                Err(error) => {
+                    let _ = self.stop(files);
+                    return Err(error);
+                }
+            }
+        }
     }
 }
 
@@ -195,15 +263,35 @@ pub fn run_suite(root: &Path, suite: &Suite, checks: &[String]) -> Result<(Launc
         "marker_key": suite.marker_key(),
         "checks": checks,
     });
-    let (path, mut output) = held_output(root).map_err(|error| format!("the runner's output could not be held: {error}"))?;
-    let mut report = temporary_file().map_err(|error| format!("prepare the adapter report: {error}"))?;
+    let mut output = held_output(root).map_err(|error| format!("the runner's output could not be held: {error}"))?;
+    let report = temporary_file().map_err(|error| format!("prepare the adapter report: {error}"))?;
+    let stderr = output.file.try_clone().map_err(|error| format!("hold the runner's output: {error}"))?;
+    let stdout = report.try_clone().map_err(|error| format!("hold the adapter report: {error}"))?;
+    let request = request.to_string();
     let limit = Duration::from_secs(suite.time_limit_minutes.saturating_mul(60));
-    let stderr = output.try_clone().map_err(|error| format!("hold the runner's output: {error}"))?;
     eprintln!("suite {}: launch starting", suite.name);
-    let (launch, duration_ms) = match adapter(&root.join(&suite.path), &suite.adapter, &request, &mut report, Some(limit), Stdio::from(stderr)) {
-        Ok((Some(status), duration_ms)) if status.success() => (read_report(&mut report), Some(duration_ms)),
-        Ok((Some(status), duration_ms)) => (Launch::Crashed { detail: format!("the adapter ended with {status} and gave no report") }, Some(duration_ms)),
-        Ok((None, duration_ms)) => (Launch::TimedOut, Some(duration_ms)),
+    let waited = spawn_adapter(&root.join(&suite.path), &suite.adapter, request.as_bytes(), stdout, Stdio::from(stderr)).and_then(|running| {
+        running.wait_with_limit(limit, &[&report, &output.file]).map_err(|error| Started::Crashed(format!("wait for the adapter: {error}")))
+    });
+    let mut output_length = 0;
+    let (launch, duration_ms) = match waited {
+        Ok(Waited::Exited(completed)) => {
+            output_length = completed.snapshot.lengths[1];
+            let launch = if completed.status.success() {
+                read_report(&report, completed.snapshot.lengths[0])
+            } else {
+                Launch::Crashed { detail: format!("the adapter ended with {} and gave no report", completed.status) }
+            };
+            (launch, Some(completed.snapshot.duration_ms))
+        }
+        Ok(Waited::TimedOut(snapshot)) => {
+            output_length = snapshot.lengths[1];
+            (Launch::TimedOut, Some(snapshot.duration_ms))
+        }
+        Ok(Waited::Failed { error, snapshot }) => {
+            output_length = snapshot.lengths[1];
+            (Launch::Crashed { detail: format!("wait for the adapter: {error}") }, Some(snapshot.duration_ms))
+        }
         Err(Started::No(why)) => {
             let mut detail = format!("the adapter of the suite `{}` could not start: {why}", suite.name);
             match runners::install_line(&suite.adapter) {
@@ -213,6 +301,7 @@ pub fn run_suite(root: &Path, suite: &Suite, checks: &[String]) -> Result<(Launc
             (Launch::NotStarted { detail }, None)
         }
         Err(Started::Crashed(detail)) => (Launch::Crashed { detail }, None),
+        Err(Started::Preparation(detail)) => return Err(detail),
     };
     let duration = duration_ms.map(|ms| format!(" in {ms} ms")).unwrap_or_default();
     eprintln!("suite {}: launch {}{duration}", suite.name, launch.word());
@@ -222,31 +311,71 @@ pub fn run_suite(root: &Path, suite: &Suite, checks: &[String]) -> Result<(Launc
         Launch::NotStarted { .. } => false,
     };
     if trouble {
-        if let Err(error) = output.rewind().and_then(|_| {
-            let length = output.metadata()?.len();
-            std::io::copy(&mut output.take(length), &mut std::io::stderr().lock())
-        }) {
+        output.retain = true;
+        if let Err(error) = replay(&output.file, output_length) {
             eprintln!("azimuth: read the held runner output: {error}");
         }
-    } else if let Err(error) = std::fs::remove_file(&path) {
-        eprintln!("azimuth: remove the held runner output: {error}");
     }
     Ok((launch, duration_ms))
 }
 
-fn read_report(report: &mut File) -> Launch {
-    match report_text(report) {
+struct Captured<'a> {
+    file: &'a File,
+    position: u64,
+    length: u64,
+}
+
+impl Read for Captured<'_> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        let count = buffer.len().min(self.length.saturating_sub(self.position) as usize);
+        let count = self.file.read_at(&mut buffer[..count], self.position)?;
+        self.position += count as u64;
+        Ok(count)
+    }
+}
+
+fn replay(file: &File, length: u64) -> std::io::Result<()> {
+    let mut input = Captured { file, position: 0, length };
+    let mut stderr = std::io::stderr().lock();
+    std::io::copy(&mut input, &mut stderr)?;
+    if length > 0 {
+        let mut last = [0];
+        if file.read_at(&mut last, length - 1)? == 1 && last != *b"\n" {
+            stderr.write_all(b"\n")?;
+        }
+    }
+    Ok(())
+}
+
+fn read_report(report: &File, length: u64) -> Launch {
+    match report_text(report, length) {
         Ok(stdout) => parse_report(&stdout),
         Err(error) => Launch::Crashed { detail: format!("read the adapter report: {error}") },
     }
 }
 
-fn report_text(report: &mut File) -> std::io::Result<String> {
-    report.rewind()?;
-    let length = report.metadata()?.len();
+fn report_text(report: &File, length: u64) -> std::io::Result<String> {
     let mut text = String::new();
-    report.take(length).read_to_string(&mut text)?;
+    Captured { file: report, position: 0, length }.read_to_string(&mut text)?;
     Ok(text)
+}
+
+struct HeldOutput {
+    path: std::path::PathBuf,
+    file: File,
+    retain: bool,
+}
+
+impl Drop for HeldOutput {
+    fn drop(&mut self) {
+        if !self.retain {
+            if let Err(error) = std::fs::remove_file(&self.path) {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    eprintln!("azimuth: remove the held runner output: {error}");
+                }
+            }
+        }
+    }
 }
 
 fn temporary_file() -> std::io::Result<File> {
@@ -256,10 +385,11 @@ fn temporary_file() -> std::io::Result<File> {
     Ok(file)
 }
 
-fn held_output(root: &Path) -> std::io::Result<(std::path::PathBuf, File)> {
+fn held_output(root: &Path) -> std::io::Result<HeldOutput> {
     let folder = root.join(store::WORKTREE_FOLDER);
     store::ensure_worktree_folder(&folder).map_err(std::io::Error::other)?;
-    unique_file(&folder)
+    let (path, file) = unique_file(&folder)?;
+    Ok(HeldOutput { path, file, retain: false })
 }
 
 fn unique_file(folder: &Path) -> std::io::Result<(std::path::PathBuf, File)> {
@@ -277,7 +407,9 @@ fn unique_file(folder: &Path) -> std::io::Result<(std::path::PathBuf, File)> {
 pub enum Started {
     /// The command could not be started at all.
     No(String),
-    /// It started and ended without a report.
+    /// A local file could not be prepared, so the command cannot launch the adapter.
+    Preparation(String),
+    /// The adapter started but did not complete with a usable report.
     Crashed(String),
 }
 
@@ -285,29 +417,23 @@ pub enum Started {
 /// returns what it wrote on standard output when it ended with status 0. The runner's output
 /// goes to standard error.
 pub fn start_adapter(dir: &Path, command: &str, request: &Value) -> Result<String, Started> {
-    let mut report = temporary_file().map_err(|error| Started::Crashed(format!("prepare the adapter report: {error}")))?;
-    let (status, _) = adapter(dir, command, request, &mut report, None, Stdio::inherit())?;
-    match status {
-        Some(status) if status.success() => report_text(&mut report).map_err(|error| Started::Crashed(format!("read the adapter report: {error}"))),
-        Some(status) => Err(Started::Crashed(format!("the adapter ended with {status} and gave no report"))),
-        None => unreachable!("discovery has no time limit"),
+    let report = temporary_file().map_err(|error| Started::Preparation(format!("prepare the adapter report: {error}")))?;
+    let stdout = report.try_clone().map_err(|error| Started::Preparation(format!("hold the adapter report: {error}")))?;
+    let request = request.to_string();
+    let running = spawn_adapter(dir, command, request.as_bytes(), stdout, Stdio::inherit())?;
+    let completed = running.wait_until_exit(&[&report]).map_err(|error| Started::Crashed(format!("wait for the adapter: {error}")))?;
+    if completed.status.success() {
+        report_text(&report, completed.snapshot.lengths[0]).map_err(|error| Started::Crashed(format!("read the adapter report: {error}")))
+    } else {
+        Err(Started::Crashed(format!("the adapter ended with {} and gave no report", completed.status)))
     }
 }
 
-fn adapter(
-    dir: &Path,
-    command: &str,
-    request: &Value,
-    report: &mut File,
-    limit: Option<Duration>,
-    stderr: Stdio,
-) -> Result<(Option<std::process::ExitStatus>, u64), Started> {
+fn spawn_adapter<'a>(dir: &Path, command: &str, request: &'a [u8], stdout: File, stderr: Stdio) -> Result<Running<'a>, Started> {
     let words = split_command(command);
     let Some((program, args)) = words.split_first() else {
         return Err(Started::No("the command is empty".to_string()));
     };
-    let stdout = report.try_clone().map_err(|error| Started::Crashed(format!("hold the adapter report: {error}")))?;
-    let request = request.to_string();
     let started = Instant::now();
     let mut child = Command::new(program)
         .args(args)
@@ -326,11 +452,12 @@ fn adapter(
     let flags = unsafe { fcntl(input.as_raw_fd(), 3) };
     if flags < 0 || unsafe { fcntl(input.as_raw_fd(), 4, flags | nonblocking) } < 0 {
         let error = std::io::Error::last_os_error();
-        stop_group(&child, started);
+        drop(input);
+        let _ = stop_group(&child, started, &[]);
         reap(child);
         return Err(Started::Crashed(format!("prepare adapter input: {error}")));
     }
-    wait_with_limit(child, started, limit, Some((input, request.as_bytes()))).map_err(|error| Started::Crashed(format!("wait for the adapter: {error}")))
+    Ok(Running { child, started, input: Some((input, request)) })
 }
 
 /// A report is one JSON document of the format `adapter-report-1`; anything else is a crash.

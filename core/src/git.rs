@@ -6,6 +6,12 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
+fn git_command() -> Command {
+    let mut command = Command::new("git");
+    command.env("GIT_NO_LAZY_FETCH", "1");
+    command
+}
+
 pub struct Git {
     root: PathBuf,
 }
@@ -28,7 +34,7 @@ pub enum WorkingChange {
 impl Git {
     /// The repository that holds the current folder, opened at its root.
     pub fn open_here() -> Result<Git, String> {
-        let output = Command::new("git")
+        let output = git_command()
             .args(["rev-parse", "--show-toplevel"])
             .stderr(Stdio::null())
             .output()
@@ -45,7 +51,7 @@ impl Git {
     }
 
     fn command(&self, args: &[&str]) -> Command {
-        let mut command = Command::new("git");
+        let mut command = git_command();
         // Reading commands must not rewrite the index, which a sandbox may forbid.
         command.arg("--no-optional-locks").args(args).current_dir(&self.root);
         command
@@ -131,7 +137,6 @@ impl Git {
     pub fn blobs(&self) -> Result<Blobs, String> {
         let mut child = self
             .command(&["cat-file", "--batch"])
-            .env("GIT_NO_LAZY_FETCH", "1")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
