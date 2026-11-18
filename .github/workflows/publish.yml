@@ -91,11 +91,29 @@ jobs:
           path: package/*.nupkg
           if-no-files-found: error
 
-  release:
+  npm:
     needs: [check, tests, build, package]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Pack the Playwright adapter and stage that file
+        run: |
+          cd adapters/playwright
+          npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version
+          npm pack --pack-destination ../..
+          cd ../..
+          npm stage publish azimuth-sh-playwright-*.tgz --access public
+
+  draft:
+    needs: [check, tests, build, package]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
@@ -109,31 +127,19 @@ jobs:
           path: dist
       - name: Assemble the release files
         run: sh release/assemble.sh "${GITHUB_REF_NAME#v}" dist
-      # A normal release marked latest, also for an alpha, because the install script reads the
-      # "latest release" address and that address skips a pre-release.
-      - name: Publish the release
+      - name: Make the draft with every release file
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           version="${GITHUB_REF_NAME#v}"
-          gh release create "$GITHUB_REF_NAME" --verify-tag --latest --title "azimuth $version" --notes "" \
+          gh release create "$GITHUB_REF_NAME" --verify-tag --draft --title "azimuth $version" --notes "" \
             "dist/azimuth-$version-aarch64-apple-darwin" \
             "dist/azimuth-$version-x86_64-unknown-linux-musl" \
             dist/SHA256SUMS dist/VERSION
 
-  site:
-    needs: release
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    uses: ./.github/workflows/site.yml
-
-  # The package goes after the GitHub release, because a release can be removed and a pushed
-  # package cannot.
   nuget:
-    needs: release
+    needs: [draft, npm]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: release
@@ -153,3 +159,26 @@ jobs:
         env:
           NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
         run: dotnet nuget push package/*.nupkg --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+  release:
+    needs: nuget
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      # The installer reads the latest normal release, also while the version says alpha.
+      - name: Publish the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false --prerelease=false --latest
+
+  site:
+    needs: release
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/site.yml

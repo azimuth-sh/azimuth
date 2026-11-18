@@ -3,6 +3,7 @@
 //! own ignore file. It never changes a file that exists, needs no account and no network, and
 //! writes no model and no process.
 
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use serde_json::{json, Value};
@@ -36,39 +37,69 @@ pub fn run() -> i32 {
         println!("{PROJECT_FILE} exists, so init writes nothing into it.");
     } else {
         let Some(target) = target_branch(&git) else {
-            return output::could_not("the head is detached, so there is no branch to name as the target. Check out a branch and run `azimuth init` again");
+            return output::could_not(
+                "the head is detached, so there is no branch to name as the target. Check out a branch and run `azimuth init` again",
+            );
         };
         let tree = match Tree::current(&git) {
             Ok(tree) => tree,
             Err(message) => return output::could_not(&message),
         };
         let mut suites = Vec::new();
-        for runner in RUNNERS.iter().filter(|runner| stack_exists(root, &tree, runner)) {
-            match discover(root, runner) {
-                Ok(paths) => {
-                    if paths.is_empty() {
-                        println!("{}: the adapter `{}` found no test project.", runner.stack, runner.adapter);
+        for runner in &RUNNERS {
+            let manifests: Vec<String> = tree
+                .files
+                .keys()
+                .filter(|path| path.rsplit('/').next() == Some("package.json"))
+                .filter(|path| !path.split('/').any(|part| part == "node_modules"))
+                .filter_map(|path| {
+                    let text = std::fs::read_to_string(root.join(path)).ok()?;
+                    runner.lists_adapter(path, &text).then(|| path.rsplit_once('/').map_or(".", |(folder, _)| folder).to_string())
+                })
+                .collect();
+            let mut folders = BTreeSet::from([".".to_string()]);
+            folders.extend(manifests.iter().cloned());
+            let mut found = BTreeSet::new();
+            let mut missing = None;
+            for folder in folders {
+                match discover(root, &folder, runner) {
+                    Ok(paths) => {
+                        for path in paths {
+                            if !found.insert(path.clone()) {
+                                continue;
+                            }
+                            let name = suite_name(&path, &suites);
+                            suites.push(DiscoveredSuite { name, path, runner });
+                        }
                     }
-                    for path in paths {
-                        let name = suite_name(&path, &suites);
-                        suites.push(DiscoveredSuite { name, path, runner });
+                    Err(Started::Preparation(message)) => return output::could_not(&message),
+                    Err(Started::No(why) | Started::Crashed(why)) => {
+                        if manifests.contains(&folder) || (folder == "." && manifests.is_empty() && stack_exists(root, &tree, runner)) {
+                            missing = Some(why);
+                        }
                     }
                 }
+            }
+            if let Some(why) = missing {
                 // The line stands alone, so it can be copied whole without a full stop.
-                Err(Started::Preparation(message)) => return output::could_not(&message),
-                Err(Started::No(why) | Started::Crashed(why)) => println!(
+                println!(
                     "{}: the adapter `{}` is not installed here ({why}). Install it with this line:\n  {}\nThe suites of this stack are not in the project file; add them by hand.",
                     runner.stack, runner.adapter, runner.install_line()
-                ),
+                );
             }
         }
         let name = repository_name(&git);
         let text = project_file(&name, &target, &suites);
         let path = root.join(PROJECT_FILE);
-        if let Err(error) = std::fs::create_dir_all(path.parent().expect("the project file has a folder")).and_then(|_| std::fs::write(&path, text)) {
+        if let Err(error) =
+            std::fs::create_dir_all(path.parent().expect("the project file has a folder")).and_then(|_| std::fs::write(&path, text))
+        {
             return output::could_not(&format!("write {PROJECT_FILE}: {error}"));
         }
-        println!("wrote {PROJECT_FILE}: the repository `{name}` with the target `{target}`, the area `{AREA}` for all of it, and {} suites.", suites.len());
+        println!(
+            "wrote {PROJECT_FILE}: the repository `{name}` with the target `{target}`, the area `{AREA}` for all of it, and {} suites.",
+            suites.len()
+        );
         for suite in &suites {
             println!("  suite `{}` at {}, run by `{}`", suite.name, suite.path, suite.runner.adapter);
         }
@@ -98,7 +129,8 @@ fn repository_name(git: &Git) -> String {
         .find_map(|remote| git.remote_address(remote))
         .map(|address| {
             let address = address.trim_end_matches('/');
-            let path = address.split_once(':').filter(|(host, _)| host.contains('@') && !host.contains('/')).map_or(address, |(_, path)| path);
+            let path =
+                address.split_once(':').filter(|(host, _)| host.contains('@') && !host.contains('/')).map_or(address, |(_, path)| path);
             let name = path.rsplit('/').next().unwrap_or("");
             name.strip_suffix(".git").unwrap_or(name).to_string()
         })
@@ -107,16 +139,17 @@ fn repository_name(git: &Git) -> String {
 
 fn stack_exists(root: &Path, tree: &Tree, runner: &Runner) -> bool {
     tree.files.keys().any(|path| {
-        runner.project_file_endings.iter().any(|ending| path.ends_with(ending))
+        !path.split('/').any(|part| part == "node_modules")
+            && runner.project_file_endings.iter().any(|ending| path.ends_with(ending))
             && std::fs::read_to_string(root.join(path)).is_ok_and(|text| runner.recognizes(path, &text))
     })
 }
 
 /// The test projects the adapter reports. For `discover` the adapter starts at the root of the
 /// repository, because no suite exists yet.
-fn discover(root: &Path, runner: &Runner) -> Result<Vec<String>, Started> {
-    let request = json!({ "format": launch::REQUEST_FORMAT, "verb": "discover", "folder": "." });
-    let stdout = launch::start_adapter(root, runner.adapter, &request)?;
+fn discover(root: &Path, folder: &str, runner: &Runner) -> Result<Vec<String>, Started> {
+    let request = json!({ "format": launch::REQUEST_FORMAT, "verb": "discover", "folder": folder });
+    let stdout = launch::start_adapter(&root.join(folder), runner.adapter, &request)?;
     discovered_paths(&stdout).map_err(Started::Crashed)
 }
 
