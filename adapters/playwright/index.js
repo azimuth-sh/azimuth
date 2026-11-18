@@ -96,7 +96,18 @@ function applicationRunner() {
   const application = createRequire(path.join(process.cwd(), 'package.json'));
   const version = application('@playwright/test/package.json').version;
   const supported = manifest.peerDependencies['@playwright/test'];
-  if (version !== supported) throw new Error(`installed Playwright ${version} is outside the supported range ${supported}`);
+  const bounds = /^>=(\d+)\.(\d+)\.(\d+) <(\d+)\.(\d+)\.(\d+)$/.exec(supported);
+  const installed = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  const compare = (left, right) => {
+    for (let index = 0; index < 3; index++) {
+      const difference = Number(left[index]) - Number(right[index]);
+      if (difference) return difference;
+    }
+    return 0;
+  };
+  if (!bounds || !installed || compare(installed.slice(1), bounds.slice(1, 4)) < 0 || compare(installed.slice(1), bounds.slice(4)) >= 0) {
+    throw new Error(`installed Playwright ${version} is outside the supported range ${supported}`);
+  }
   return application;
 }
 

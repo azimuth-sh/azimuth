@@ -8,7 +8,7 @@
   "homepage": "https://azimuth.sh",
   "repository": { "type": "git", "url": "https://github.com/azimuth-sh/azimuth.git", "directory": "adapters/playwright" },
   "author": "Azimuth",
-  "peerDependencies": { "@playwright/test": "1.65.1" },
+  "peerDependencies": { "@playwright/test": ">=1.61.1 <1.66.0" },
   "peerDependenciesMeta": { "@playwright/test": { "optional": true } },
   "engines": { "node": ">=20" }
 }

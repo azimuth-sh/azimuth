@@ -2,9 +2,10 @@
 
 This adapter lists marked Playwright tests, runs the requested Checks and reports
 their first attempts to Azimuth. It uses the application's own `@playwright/test`.
-This version supports Playwright 1.65.1, verified with the adapter's real-runner suite.
-The resolved-config loader is pinned to that version because the public reporter
-configuration does not expose the entries of a `webServer` array.
+This version supports Playwright `>=1.61.1 <1.66.0`, verified with the adapter's
+real-runner suite at 1.61.1 and 1.65.1. The resolved-config loader uses an
+undocumented interface because the public reporter configuration does not expose
+the entries of a `webServer` array.
 
 Install it as a development dependency of the application:
 
