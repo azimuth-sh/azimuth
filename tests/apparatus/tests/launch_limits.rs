@@ -343,7 +343,13 @@ fn a_group_ignoring_sigint_is_killed_after_the_fixed_grace() {
     let output = run.finish(Duration::from_secs(240));
     no_results(&repo, &output);
     assert_tree_stopped(&run, "adapter");
-    limit_bounds(&run, "adapter", 60);
+    let elapsed = first_interrupt(&run) - stamp(&run, "adapter", "entered");
+    // Scheduling before main consumes the launch's wall clock too. Give that start-up five
+    // seconds here; signal identity and the grace are measured separately below.
+    assert!(
+        (55_000_000_000..=63_000_000_000).contains(&elapsed),
+        "limit after {elapsed} ns from main entry"
+    );
     for role in ["adapter", "runner"] {
         grace_bounds(&run, role);
     }

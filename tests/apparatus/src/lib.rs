@@ -242,7 +242,7 @@ impl Repo {
             .tempdir()
             .expect("a temporary folder");
         let root = temp.path().join("library-desk");
-        copy_tree(&sample_source(), &root);
+        copy_git_worktree_files(&sample_source(), &root);
         pin_to_the_cli(&root);
         // `.azimuth/` ignores itself, so the sample cannot carry it in Azimuth's own repository.
         // It is written here as `azimuth init` would have left it.
@@ -582,6 +582,51 @@ pub fn run_with_time_limit(mut command: Command, limit: Duration, input: Option<
         status: status.code().unwrap_or(-1),
         stdout: out.join().unwrap(),
         stderr: err.join().unwrap(),
+    }
+}
+
+fn copy_git_worktree_files(from: &Path, to: &Path) {
+    use std::os::unix::ffi::OsStrExt;
+    let listing = Command::new("git")
+        .args([
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "-z",
+            "--",
+            ".",
+        ])
+        .current_dir(from)
+        .output()
+        .unwrap();
+    assert!(
+        listing.status.success(),
+        "git could not list {}: {}",
+        from.display(),
+        String::from_utf8_lossy(&listing.stderr)
+    );
+    fs::create_dir_all(to).unwrap();
+    for name in listing
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|name| !name.is_empty())
+    {
+        let relative = Path::new(std::ffi::OsStr::from_bytes(name));
+        let source = from.join(relative);
+        let destination = to.join(relative);
+        let metadata = match fs::symlink_metadata(&source) {
+            Ok(metadata) => metadata,
+            // An uncommitted sample deletion must survive copying.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => panic!("read {}: {error}", source.display()),
+        };
+        fs::create_dir_all(destination.parent().unwrap()).unwrap();
+        if metadata.file_type().is_symlink() {
+            std::os::unix::fs::symlink(fs::read_link(&source).unwrap(), destination).unwrap();
+        } else {
+            fs::copy(source, destination).unwrap();
+        }
     }
 }
 
@@ -1344,6 +1389,90 @@ pub fn assert_no_file_names(text: &str, files: &[&str]) {
 #[cfg(test)]
 mod apparatus_checks {
     use super::*;
+
+    #[test]
+    fn a_sample_copy_keeps_git_files_and_omits_ignored_output() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("source");
+        let sample = root.join("sample");
+        fs::create_dir_all(&sample).unwrap();
+        let git = |args: &[&str]| {
+            let output = Command::new("git")
+                .args(args)
+                .current_dir(&root)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        git(&["init", "--quiet"]);
+        git(&["config", "core.excludesFile", "/dev/null"]);
+        let write = |path: &str, text: &str| {
+            let path = root.join(path);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, text).unwrap();
+        };
+        write(".gitignore", "bin/\nobj/\n*.local\n.DS_Store\n");
+        write("sample/tracked.txt", "tracked source");
+        write("sample/commands/bin/tool", "tracked command");
+        git(&[
+            "add",
+            "--force",
+            "--",
+            "sample/tracked.txt",
+            "sample/commands/bin/tool",
+        ]);
+        write("sample/.gitignore", "nested-cache/\n");
+        write("sample/draft.txt", "untracked source");
+        write("sample/name with space.txt", "untracked with spaces");
+        std::os::unix::fs::symlink("commands/bin/tool", sample.join("shortcut")).unwrap();
+        for path in [
+            "sample/project/bin/build.dll",
+            "sample/project/obj/build.cache",
+            "sample/config.local",
+            "sample/.DS_Store",
+            "sample/nested-cache/data",
+        ] {
+            write(path, "ignored output");
+        }
+        let destination = temp.path().join("copy");
+        copy_git_worktree_files(&sample, &destination);
+        let paths: Vec<_> = files_under(&destination)
+            .into_iter()
+            .map(|path| {
+                path.strip_prefix(&destination)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        assert_eq!(
+            paths,
+            vec![
+                ".gitignore",
+                "commands/bin/tool",
+                "draft.txt",
+                "name with space.txt",
+                "shortcut",
+                "tracked.txt"
+            ]
+        );
+        assert_eq!(
+            fs::read_to_string(destination.join("commands/bin/tool")).unwrap(),
+            "tracked command"
+        );
+        assert_eq!(
+            fs::read_to_string(destination.join("draft.txt")).unwrap(),
+            "untracked source"
+        );
+        assert_eq!(
+            fs::read_link(destination.join("shortcut")).unwrap(),
+            Path::new("commands/bin/tool")
+        );
+    }
 
     // A folder that holds the hidden program and another tool, as `/usr/bin` holds `dotnet` and
     // `git` on a Linux runner: the tool stays reachable by name, the program does not, and the

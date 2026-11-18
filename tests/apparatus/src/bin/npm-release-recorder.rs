@@ -1,37 +1,68 @@
 //! The staging witness must identify the artifact bytes, without requiring Node or a registry.
 
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::PathBuf;
+
+fn operands_and_options(args: &[String]) -> (Vec<String>, BTreeMap<String, Vec<String>>) {
+    let mut operands = Vec::new();
+    let mut options = BTreeMap::<String, Vec<String>>::new();
+    let mut arguments = args.iter();
+    while let Some(argument) = arguments.next() {
+        if argument == "--" {
+            operands.extend(arguments.cloned());
+            break;
+        }
+        let (name, inline) = argument
+            .split_once('=')
+            .map_or((argument.as_str(), None), |(name, value)| {
+                (name, Some(value))
+            });
+        if [
+            "--prefix",
+            "--pack-destination",
+            "--access",
+            "--tag",
+            "--registry",
+            "--otp",
+            "--workspace",
+        ]
+        .contains(&name)
+        {
+            let value = inline.unwrap_or_else(|| {
+                arguments
+                    .next()
+                    .unwrap_or_else(|| panic!("{name} needs a value"))
+                    .as_str()
+            });
+            options
+                .entry(name.trim_start_matches("--").into())
+                .or_default()
+                .push(value.into());
+        } else if !argument.starts_with('-') {
+            operands.push(argument.clone());
+        }
+    }
+    (operands, options)
+}
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut folder = std::env::current_dir().unwrap();
-    for (i, arg) in args.iter().enumerate() {
-        if arg == "--prefix" {
-            folder = folder.join(&args[i + 1]);
-        } else if let Some(path) = arg.strip_prefix("--prefix=") {
-            folder = folder.join(path);
-        }
-    }
     let index = args
         .iter()
         .position(|v| {
             ["version", "pack", "ci", "install", "stage", "publish"].contains(&v.as_str())
         })
         .unwrap_or_else(|| panic!("unexpected npm command {args:?}"));
-    let mut operands = Vec::new();
-    let mut skip = false;
-    for arg in &args[index + 1..] {
-        if skip {
-            skip = false;
-        } else if ["--prefix", "--pack-destination", "--registry"].contains(&arg.as_str()) {
-            skip = true;
-        } else if !arg.starts_with('-') {
-            operands.push(arg);
-        }
+    let mut arguments = args[..index].to_vec();
+    arguments.extend_from_slice(&args[index + 1..]);
+    let (operands, options) = operands_and_options(&arguments);
+    if let Some(path) = options.get("prefix").and_then(|values| values.last()) {
+        folder = folder.join(path);
     }
-    let mut record = json!({"args":args,"folder":folder,"verb":args[index]});
+    let mut record = json!({"args":args,"folder":folder,"verb":args[index],"options":options});
     if args[index] == "stage" {
         assert_eq!(operands.first().map(|v| v.as_str()), Some("publish"));
         assert_eq!(
@@ -39,19 +70,12 @@ fn main() {
             2,
             "one packed file must be staged: {args:?}"
         );
-        let file = folder.join(operands[1]).canonicalize().unwrap();
+        let file = folder.join(&operands[1]).canonicalize().unwrap();
         let bytes = std::fs::read(&file).unwrap();
         record["verb"] = json!("stage publish");
         record["file"] = json!(file);
         record["bytes"] = json!(bytes);
-        let mut registries = Vec::new();
-        for (index, arg) in args.iter().enumerate() {
-            if arg == "--registry" {
-                registries.push(args[index + 1].clone());
-            } else if let Some(value) = arg.strip_prefix("--registry=") {
-                registries.push(value.into());
-            }
-        }
+        let mut registries = options.get("registry").cloned().unwrap_or_default();
         for (key, value) in std::env::vars() {
             let key = key.to_uppercase();
             if key.starts_with("NPM_CONFIG_") && key.ends_with("REGISTRY") {
@@ -123,16 +147,10 @@ fn main() {
             std::fs::write(&manifest_path, manifest.to_string()).unwrap();
         }
         if args[index] == "pack" {
-            let destination = args
-                .iter()
-                .position(|v| v == "--pack-destination")
-                .map(|i| folder.join(&args[i + 1]))
-                .or_else(|| {
-                    args.iter().find_map(|v| {
-                        v.strip_prefix("--pack-destination=")
-                            .map(|p| folder.join(p))
-                    })
-                })
+            let destination = options
+                .get("pack-destination")
+                .and_then(|values| values.last())
+                .map(|path| folder.join(path))
                 .unwrap_or_else(|| folder.clone());
             std::fs::create_dir_all(&destination).unwrap();
             let name = manifest["name"]
@@ -164,4 +182,30 @@ fn main() {
         .open(path)
         .unwrap();
     writeln!(log, "{record}").unwrap();
+}
+
+#[test]
+fn stage_options_retain_both_spellings_without_becoming_file_operands() {
+    let expected: BTreeMap<String, Vec<String>> = BTreeMap::from([
+        ("access".into(), vec!["public".into()]),
+        ("tag".into(), vec!["caller-chosen".into()]),
+        ("registry".into(), vec!["https://registry.npmjs.org".into()]),
+        ("otp".into(), vec!["123456".into()]),
+        ("workspace".into(), vec!["desk".into(), "catalog".into()]),
+    ]);
+    for joined in [false, true] {
+        let mut args = vec!["publish".into(), "packed-file.tgz".into()];
+        for (name, values) in &expected {
+            for value in values {
+                if joined {
+                    args.push(format!("--{name}={value}"));
+                } else {
+                    args.extend([format!("--{name}"), value.clone()]);
+                }
+            }
+        }
+        let (operands, options) = operands_and_options(&args);
+        assert_eq!(operands, vec!["publish", "packed-file.tgz"]);
+        assert_eq!(options, expected);
+    }
 }
