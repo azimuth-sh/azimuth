@@ -596,6 +596,8 @@ The suite's declaration names its marker form, for xUnit the text `[Trait("Check
 
 **When the form ends with `<id>`, the id ends at the first character that is not a letter, a digit or a hyphen.** Nothing in such a form says where the id stops, and the text around a marker belongs to the language: a tag stands in quotes, and a marker in a comment may end a sentence. With a text after `<id>` in the form, the id ends where that text starts. Letters of both cases are read, so a marker with a capital letter is still found and reported as naming no Check.
 
+A form has text before `<id>`. One that starts with `<id>` is a reading error, because nothing would say where a marker begins. The letters and digits of an id are the ASCII ones, so any other character ends it.
+
 Example: a page test carries `tag: '@Check:overview-lists-the-labs',` and the form is `@Check:<id>`. The id is `overview-lists-the-labs`, without the quote and the comma.
 
 Lint works from source alone. It finds a marker that names an unknown Check and a Check with no marker. The launch compares the two lists: a marker in source that matches no listed test, or a listed test whose Check id appears nowhere in source, is a finding, and that Check gets no result.
@@ -1127,6 +1129,8 @@ Example: drim-dev holds two web applications with their own `package.json`, in `
 
 A manifest that lists the adapter while the adapter cannot be started is a stack whose adapter is not installed. Init prints the install line, and a person writes those suites into the project file. A Playwright stack is recognized by a `package.json` that lists `@playwright/test`.
 
+**Every path in a discovery is relative to the root of the repository.** That holds for the folder in the request and for each path in the report, and `.` is the root. Init writes only the reported folders that lie under the folder it asked about, each once, and none that git ignores.
+
 The cost. Init reads every package manifest of the repository, which is one small read each. And an application whose packages are not installed yet shows as a stack without its adapter, although its manifest names it.
 
 **A suite's folder holds its tests and the runner's own configuration.** A .NET test project already has its project file in the folder. A Playwright config goes into the folder of its tests. The adapter starts there, and the runner finds its configuration by itself. A change to that configuration is then a change inside the suite's folder, so it is at least class C. The contract of an adapter needs nothing new for a package that holds two suites.
@@ -1271,6 +1275,8 @@ The request and the report do not change. An adapter has one duty: when it is as
 **The stop is SIGINT, because a runner is built for Ctrl+C.** A person who stops a test run presses Ctrl+C, and the terminal sends SIGINT to every process of the group. Measured in November 2026 on macOS: after SIGINT the Playwright runner ran its teardown and stopped its web server, and everything was gone in about a second. After SIGTERM it did neither, and the server lived on. That server is in a process group of its own, so the kill after the grace does not reach it. `dotnet test` alone ignored a SIGTERM for 15 seconds and ended at once on a SIGINT.
 
 **A stop promises no clean-up.** The .NET test host ends at once on either signal and runs no dispose of a test or of a fixture. The core cannot reach a container started through Docker, which is a child of the Docker daemon. So a container goes away only when what started it also removes it. Testcontainers does that with a reaper of its own, about ten seconds after the test process is gone, and a plain `docker run` leaves it. The core also cannot reach a process that leaves the group on purpose.
+
+**When the CLI itself is asked to stop, it stops its launch first.** A launch is in a process group of its own, so the Ctrl+C of a terminal reaches the CLI and not the launch. On SIGINT or SIGTERM the CLI stops the running launch as it does at the limit, with SIGINT to the group, the grace and the kill, and then ends with a failure. Nothing of that launch is stored.
 
 The cost. A long launch that is stopped at the limit loses every test that had passed. A partial report written while being stopped would save them, and it would make every adapter harder to write and be the least trustworthy report. A process that ignores SIGINT gets only the kill, for example a command that a shell started in the background.
 
@@ -2156,11 +2162,17 @@ A report always lists every marked test of the suite, also the ones not asked fo
 
 **A test that the runner runs several times under different settings is one entry as well.** Playwright runs each test once per browser project of its config. The entry failed if the test failed in any of them, it passed only if it passed in all of them, and its duration is the sum. The contract needs nothing new.
 
+When the test neither failed in one of them nor passed in all, the entry is `not_run` if one of them did not run it, and `skipped` otherwise.
+
 The cost. The result does not name the browser, so a person reads the runner's output to learn which one failed. And removing a browser from the config weakens the proof quietly: it is an edit inside the suite's folder, so class C, and it is not reported as rigor lowered, because no marker and no Check went away.
 
 Example: drim-dev's config has one browser project, `chromium`. If the team adds `firefox`, the config changed inside the suite's folder, so every Check of that suite is owed and runs again in both browsers. A journey that passes in Chromium and fails in Firefox is one failed test.
 
 **An adapter reports the first attempt of each test and turns the runner's own retries off.** It is a rule of the contract, for every adapter. A test that fails and then passes inside one launch is a fail and a pass on one fingerprint, which is a contradiction, and a runner that retries hides the fail. The adapter owns the runner's command line, so it turns retries off whatever the runner's configuration says. Running again belongs to the core, where every attempt is a result. The runner's own setting keeps its meaning for a person who starts the runner by hand.
+
+**An adapter reports the runner's own verdict of a test.** A runner can know more than whether the body of a test threw. In Playwright a test marked `test.fail()` is expected to fail: when its body fails the runner counts it as passed, and when its body passes the runner counts it as failed. The adapter reports what the runner counts, for the first attempt.
+
+**A runner error outside any test is a crash.** A global setup or teardown that throws, or a web server that does not start, belongs to no test, and the runner ends with a failure and names the error. The adapter then ends with a failure and writes no report, also when every test passed. The launch is `crashed` and gives no results.
 
 The cost. Every unstable test shows as a failed Check. On the core rung nothing is recorded across CI jobs, so a team sees more failed jobs and runs them again by hand.
 
@@ -2260,6 +2272,10 @@ Example: drim-dev already pins one tool in `.config/dotnet-tools.json`. The .NET
 **The Playwright adapter is the npm package `@azimuth-sh/playwright`, and the project file says `npx --no @azimuth-sh/playwright`.** The package is a development dependency of the application whose tests it runs, and it has one command. The scope belongs to the project, so nobody else can publish a package under it. The command line names the package and not the bare command, because a bare name is looked up in the registry, where anybody can own it. `--no` keeps `npx` from downloading a package, so a missing adapter ends with a message of `npx`: it may ask the registry about the name, and it downloads and runs nothing. Its code is in `adapters/playwright/` of the Azimuth repository. Azimuth's own tests pack it into a file and install it from that file, so they need no registry.
 
 **The Playwright adapter refuses to run from outside the application's installation.** `npx` also runs a copy that it kept in its own cache on the machine, after somebody once started the package without `--no`. Such a copy can have any version, while the pin in `package.json` is the input of the Checks. So the adapter looks at where its own code is. It runs only from a `node_modules` folder of the folder named in the request, or of a folder above it. Otherwise it ends with a failure and says that the package is not installed in this application, and the launch is `crashed`.
+
+A link counts by where it stands. pnpm keeps every package in a store and puts a link into `node_modules`, and a link there that leads to the adapter's code is the application's installation.
+
+**The adapter names the versions of Playwright it works with.** Its package states them. With another version the adapter ends with a failure that says so, and the launch is `crashed`.
 
 For Playwright the install line is `npm install --save-dev --save-exact @azimuth-sh/playwright@<version>`. `--save-exact` writes the one version into `package.json`, as the tool manifest of .NET holds one version.
 
