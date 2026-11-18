@@ -1,10 +1,10 @@
 //! Where the readers take file content from: the working tree on disk, or a tree that git holds.
-//! `azimuth change show` reads the model and the markers of two trees with the same readers.
+//! `azimuth change diff` reads the model and the markers of two trees with the same readers.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use crate::git::{Entry, Git};
+use crate::git::Entry;
 
 pub trait Source {
     fn read(&self, path: &str) -> Option<Vec<u8>>;
@@ -40,7 +40,7 @@ impl Source for Disk<'_> {
 
 /// The files of a tree as git holds them.
 pub struct Stored<'a> {
-    pub git: &'a Git,
+    pub blobs: BTreeMap<String, Vec<u8>>,
     pub files: &'a BTreeMap<String, Entry>,
 }
 
@@ -50,7 +50,7 @@ impl Source for Stored<'_> {
         if entry.mode == "120000" || entry.mode == "160000" {
             return None;
         }
-        self.git.blob(&entry.id).ok()
+        self.blobs.get(&entry.id).cloned()
     }
 
     fn folders(&self, folder: &str) -> Option<Vec<String>> {

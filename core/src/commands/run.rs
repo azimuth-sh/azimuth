@@ -35,13 +35,7 @@ struct Entry {
 
 impl Entry {
     fn from_evaluation(evaluation: &Evaluation) -> Entry {
-        Entry {
-            state: evaluation.state.as_str(),
-            reason: evaluation.reason,
-            detail: evaluation.detail.clone(),
-            failing_tests: Vec::new(),
-            duration_ms: None,
-        }
+        Entry { state: evaluation.state.as_str(), reason: evaluation.reason, detail: evaluation.detail.clone(), failing_tests: Vec::new(), duration_ms: None }
     }
 
     fn owed(reason: &'static str, detail: String) -> Entry {
@@ -173,6 +167,7 @@ pub fn run(selection: Selection, json: bool) -> i32 {
             }
             continue;
         }
+        eprintln!("suite {}: launch starting", suite.name);
         let started = Instant::now();
         let launch = launch::run_suite(workspace.git.root(), suite, asked);
         let mut entry = json!({ "name": suite.name, "launch": launch.word() });
@@ -180,12 +175,15 @@ pub fn run(selection: Selection, json: bool) -> i32 {
         if !matches!(launch, Launch::NotStarted { .. }) {
             entry["duration_ms"] = json!(started.elapsed().as_millis() as u64);
         }
+        let duration = entry["duration_ms"].as_u64().map(|ms| format!(" in {ms} ms")).unwrap_or_default();
+        eprintln!("suite {}: launch {}{duration}", suite.name, launch.word());
         suites.push(entry);
         match launch {
             Launch::NotStarted { detail } | Launch::Crashed { detail } => {
                 eprintln!("azimuth: suite {}: {detail}", suite.name);
                 no_result(&mut entries, asked, &detail);
             }
+            Launch::TimedOut => no_result(&mut entries, asked, "the launch timed out"),
             Launch::BuildFailed => no_result(&mut entries, asked, "the suite did not build"),
             Launch::Ran(report) => {
                 if !inputs_unchanged(&survey) {
@@ -267,10 +265,6 @@ pub fn run(selection: Selection, json: bool) -> i32 {
         }
         output::document(&document);
     } else {
-        for suite in &suites {
-            let duration = suite["duration_ms"].as_u64().map(|ms| format!(" in {ms} ms")).unwrap_or_default();
-            println!("suite {}: launch {}{duration}", suite["name"].as_str().unwrap_or_default(), suite["launch"].as_str().unwrap_or_default());
-        }
         for id in &shown {
             println!("{}", entries[*id].to_text(id));
         }

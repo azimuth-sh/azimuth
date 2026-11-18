@@ -5,6 +5,36 @@ namespace Azimuth.Xunit;
 /// <summary>Starts <c>dotnet</c> for the build and the runner, with their output on standard error.</summary>
 public static class Processes
 {
+    private static readonly object Gate = new();
+    private static Process? active;
+    private static bool stopping;
+
+    public static void Stop()
+    {
+        lock (Gate)
+        {
+            stopping = true;
+            if (active is { HasExited: false })
+            {
+                active.Kill(entireProcessTree: true);
+                active.WaitForExit();
+            }
+        }
+    }
+
+    public static bool WriteReport(string report)
+    {
+        lock (Gate)
+        {
+            if (stopping)
+            {
+                return false;
+            }
+            Console.Out.Write(report);
+            return true;
+        }
+    }
+
     public static int Dotnet(string folder, params string[] arguments) => Start(folder, arguments, captureOutput: false).Status;
 
     /// <summary>Runs <c>dotnet</c> and returns what it wrote on standard output.</summary>
@@ -23,20 +53,42 @@ public static class Processes
         {
             start.ArgumentList.Add(argument);
         }
-        using var process = Process.Start(start) ?? throw new AdapterException("`dotnet` could not be started");
-        process.StandardInput.Close();
-        string output;
-        if (captureOutput)
+        using var process = new Process { StartInfo = start };
+        lock (Gate)
         {
-            output = process.StandardOutput.ReadToEnd();
+            if (stopping)
+            {
+                throw new AdapterException("the adapter was asked to stop");
+            }
+            if (!process.Start())
+            {
+                throw new AdapterException("`dotnet` could not be started");
+            }
+            active = process;
         }
-        else
+        try
         {
-            // Standard output belongs to the report, so the runner's output goes to standard error.
-            process.StandardOutput.BaseStream.CopyTo(Console.OpenStandardError());
-            output = "";
+            process.StandardInput.Close();
+            string output;
+            if (captureOutput)
+            {
+                output = process.StandardOutput.ReadToEnd();
+            }
+            else
+            {
+                // Standard output belongs to the report, so the runner's output goes to standard error.
+                process.StandardOutput.BaseStream.CopyTo(Console.OpenStandardError());
+                output = "";
+            }
+            process.WaitForExit();
+            return (process.ExitCode, output);
         }
-        process.WaitForExit();
-        return (process.ExitCode, output);
+        finally
+        {
+            lock (Gate)
+            {
+                active = null;
+            }
+        }
     }
 }

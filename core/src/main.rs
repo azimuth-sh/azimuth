@@ -51,7 +51,7 @@ fn dispatch(command: Command) -> i32 {
         Command::RequirementShow { id, json } => commands::show::requirement(&id, json),
         Command::Status { json } => commands::status::run(json),
         Command::Lint { json } => commands::lint::run(json),
-        Command::ChangeShow { target, json } => commands::change::run(target, json),
+        Command::ChangeDiff { target, json } => commands::change::run(target, json),
         Command::SkillsInstall { harness } => commands::skills::install(&harness),
         Command::Init => commands::init::run(),
         Command::Sync => commands::sync::run(),

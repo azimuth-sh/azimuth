@@ -61,7 +61,7 @@ pub fn run() -> i32 {
                 ),
             }
         }
-        let name = root.file_name().map(|name| name.to_string_lossy().to_string()).unwrap_or_default();
+        let name = repository_name(&git);
         let text = project_file(&name, &target, &suites);
         let path = root.join(PROJECT_FILE);
         if let Err(error) = std::fs::create_dir_all(path.parent().expect("the project file has a folder")).and_then(|_| std::fs::write(&path, text)) {
@@ -89,6 +89,19 @@ fn target_branch(git: &Git) -> Option<String> {
     remotes.iter().find_map(|remote| git.remote_default_branch(remote)).or_else(|| git.current_branch())
 }
 
+fn repository_name(git: &Git) -> String {
+    let mut remotes = git.remotes();
+    remotes.sort_by_key(|remote| remote != "origin");
+    remotes
+        .iter()
+        .find_map(|remote| git.remote_address(remote))
+        .map(|address| {
+            let name = address.trim_end_matches('/').rsplit(['/', ':']).next().unwrap_or("");
+            name.strip_suffix(".git").unwrap_or(name).to_string()
+        })
+        .unwrap_or_else(|| git.root().file_name().map(|name| name.to_string_lossy().to_string()).unwrap_or_default())
+}
+
 fn stack_exists(root: &Path, tree: &Tree, runner: &Runner) -> bool {
     tree.files.keys().any(|path| {
         runner.project_file_endings.iter().any(|ending| path.ends_with(ending))
@@ -102,6 +115,7 @@ fn discover(root: &Path, runner: &Runner) -> Result<Vec<String>, String> {
     let request = json!({ "format": launch::REQUEST_FORMAT, "verb": "discover", "folder": "." });
     let stdout = launch::start_adapter(root, runner.adapter, &request).map_err(|started| match started {
         Started::No(why) | Started::Crashed(why) => why,
+        Started::TimedOut => "the adapter timed out".to_string(),
     })?;
     let report: Value = serde_json::from_str(&stdout).map_err(|_| "it wrote no report".to_string())?;
     if report["format"] != launch::REPORT_FORMAT {

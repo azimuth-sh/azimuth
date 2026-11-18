@@ -26,12 +26,6 @@ pub struct Lists {
     pub removed: Vec<String>,
 }
 
-impl Lists {
-    pub fn is_empty(&self) -> bool {
-        self.added.is_empty() && self.changed.is_empty() && self.removed.is_empty()
-    }
-}
-
 pub struct Change {
     pub class: char,
     pub requirements: Lists,
@@ -51,13 +45,6 @@ pub struct Lowered {
     pub id: String,
 }
 
-impl Change {
-    /// Whether the change touches no model file and no test, so there is nothing to show.
-    pub fn shows_nothing(&self) -> bool {
-        self.class == 'A' && self.requirements.is_empty() && self.scenarios.is_empty() && self.checks.is_empty()
-    }
-}
-
 pub fn compare(before: &Side, after: &Side) -> Change {
     let differing = crate::tree::differing_paths(before.files, after.files);
     let marked_files: BTreeSet<&str> = before.markers.iter().chain(after.markers).map(|marker| marker.file.as_str()).collect();
@@ -74,7 +61,7 @@ pub fn compare(before: &Side, after: &Side) -> Change {
         class = 'D';
     }
 
-    let not_compared = differing.iter().filter(|path| marked_files.contains(path.as_str())).cloned().collect();
+    let not_compared = differing.iter().filter(|path| before.files.contains_key(*path) && marked_files.contains(path.as_str())).cloned().collect();
     Change { class, requirements, scenarios, checks, markers_removed, not_compared, rigor_lowered }
 }
 

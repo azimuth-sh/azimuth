@@ -39,6 +39,7 @@ pub struct Suite {
     pub marker: String,
     pub marker_key: Option<String>,
     pub needs: Vec<String>,
+    pub time_limit_minutes: u64,
 }
 
 impl Suite {
@@ -210,7 +211,7 @@ impl Reader {
 
     fn suite(&mut self, table: &Table, index: usize) -> Suite {
         let place = Place::Entry("suite", index);
-        self.refuse_unknown_keys(table, place, &["name", "area", "path", "adapter", "marker", "marker_key", "needs"]);
+        self.refuse_unknown_keys(table, place, &["name", "area", "path", "adapter", "marker", "marker_key", "needs", "time_limit_minutes"]);
         let path = self.text(table, place, "path");
         let marker = self.text(table, place, "marker");
         if !marker.is_empty() && marker.matches("<id>").count() != 1 {
@@ -227,7 +228,16 @@ impl Reader {
                 None
             }
         };
+        let time_limit_minutes = match table.get("time_limit_minutes") {
+            None => 30,
+            Some(Value::Integer(minutes)) if *minutes >= 1 => *minutes as u64,
+            Some(_) => {
+                self.error(place, Some("time_limit_minutes"), "`time_limit_minutes` must be a whole number of at least 1".to_string());
+                30
+            }
+        };
         Suite {
+            time_limit_minutes,
             name: self.text(table, place, "name"),
             area: self.text(table, place, "area"),
             path: normalize_folder(&path),

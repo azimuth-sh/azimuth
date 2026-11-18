@@ -124,8 +124,29 @@ impl Git {
         name.strip_prefix(&format!("{remote}/")).map(str::to_string)
     }
 
-    pub fn blob(&self, id: &str) -> Result<Vec<u8>, String> {
-        self.output(&["cat-file", "blob", id], None)
+    pub fn remote_address(&self, remote: &str) -> Option<String> {
+        self.text(&["remote", "get-url", remote]).ok()
+    }
+
+    pub fn blobs(&self, ids: &BTreeMap<String, Entry>) -> Result<BTreeMap<String, Vec<u8>>, String> {
+        let objects: std::collections::BTreeSet<&str> =
+            ids.values().filter(|entry| entry.mode != "120000" && entry.mode != "160000").map(|entry| entry.id.as_str()).collect();
+        let input: String = objects.iter().map(|id| format!("{id}\n")).collect();
+        let bytes = self.output(&["cat-file", "--batch"], Some(input.as_bytes()))?;
+        let mut rest = bytes.as_slice();
+        let mut blobs = BTreeMap::new();
+        for id in objects {
+            let end = rest.iter().position(|byte| *byte == b'\n').ok_or("git cat-file gave no object header")?;
+            let header = String::from_utf8_lossy(&rest[..end]);
+            let size = header.split_whitespace().nth(2).and_then(|size| size.parse::<usize>().ok()).ok_or("git cat-file gave no object size")?;
+            rest = &rest[end + 1..];
+            if rest.len() <= size {
+                return Err("git cat-file gave an incomplete object".to_string());
+            }
+            blobs.insert(id.to_string(), rest[..size].to_vec());
+            rest = &rest[size + 1..];
+        }
+        Ok(blobs)
     }
 
     /// Every file of a tree, or `None` when git no longer has that tree.

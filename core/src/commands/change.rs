@@ -1,4 +1,4 @@
-//! `azimuth change show`: what did this change do to the model? It compares the working tree
+//! `azimuth change diff`: what did this change do to the model? It compares the working tree
 //! with the common ancestor of the current commit and the target branch, and never fetches.
 
 use serde_json::{json, Value};
@@ -32,7 +32,11 @@ pub fn run(target: Option<String>, json: bool) -> i32 {
         Err(message) => return output::could_not(&message),
     };
 
-    let stored = Stored { git, files: &base_files };
+    let blobs = match git.blobs(&base_files) {
+        Ok(blobs) => blobs,
+        Err(message) => return output::could_not(&message),
+    };
+    let stored = Stored { blobs, files: &base_files };
     let base_project = project::read(&stored).ok();
     // A model that the target cannot read compares as what could be read of it; the working
     // tree, which this change is about, reads without errors or the command stopped above.
@@ -47,7 +51,7 @@ pub fn run(target: Option<String>, json: bool) -> i32 {
 
     if json {
         output::document(&document(&target, &base, &change));
-    } else if !change.shows_nothing() {
+    } else {
         print!("{}", text(&target, &base, &change));
     }
     status::FINE
@@ -100,7 +104,10 @@ fn text(target: &str, base: &str, change: &Change) -> String {
     for (noun, lists) in [("Requirements", &change.requirements), ("Scenarios", &change.scenarios), ("Checks", &change.checks)] {
         for (which, ids) in [("added", &lists.added), ("changed", &lists.changed), ("removed", &lists.removed)] {
             if !ids.is_empty() {
-                text.push_str(&format!("{noun} {which}: {}\n", ids.join(", ")));
+                text.push_str(&format!("{noun} {which}:\n"));
+                for id in ids {
+                    text.push_str(&format!("  {id}\n"));
+                }
             }
         }
     }

@@ -22,12 +22,15 @@ Stop. The person reads the proposal.
 ## 2. Intent
 
 Write the Requirement and its Scenarios in `specification.md`, then the Checks in
-`verification.md`. Run `azimuth lint` until it reports nothing.
+`verification.md`. Run `azimuth lint`. Only two findings may remain at this stop:
+a Check that this change adds has no marked test, and a marker names a Check that this change
+removes. Its test is written or removed in the Build. Clear every other finding and every
+reading error before the stop, and list the findings that remain when you stop.
 
 When `azimuth` is not found, run `~/.azimuth/bin/azimuth` instead, and tell the person that
 their shell profile lacks the line `export PATH="$HOME/.azimuth/bin:$PATH"`.
 
-Stop. The person reads `azimuth change show` before any code exists.
+Stop. The person reads `azimuth change diff` before any code exists.
 
 ## 3. Build
 
@@ -36,7 +39,7 @@ Write the marked tests from the Scenarios, then the code. Run `azimuth run` unti
 
 ## 4. Hand over
 
-Run `azimuth run --lane commit`. Then print `azimuth change show` and `azimuth status` for the
+Run `azimuth run --lane commit`. Then print `azimuth change diff` and `azimuth status` for the
 person.
 
 Stop. The person merges.

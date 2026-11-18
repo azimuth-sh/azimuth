@@ -9,7 +9,7 @@ pub enum Command {
     RequirementShow { id: String, json: bool },
     Status { json: bool },
     Lint { json: bool },
-    ChangeShow { target: Option<String>, json: bool },
+    ChangeDiff { target: Option<String>, json: bool },
     SkillsInstall { harness: String },
     Init,
     Sync,
@@ -38,7 +38,7 @@ const USAGE: &str = "usage: azimuth <command>\n\
   requirement show <id> [--json]  how does this Requirement stand?\n\
   status [--json]                 where does the project tree stand?\n\
   lint [--json]                   is the description consistent with itself and with the code?\n\
-  change show [--target <ref>] [--json]  what did this change do to the model?\n\
+  change diff [--target <ref>] [--json]  what did this change do to the model?\n\
   skills install <claude|codex>   write the default process for an agent harness\n\
   init                            write the project file and the ignored folder\n\
   sync                            move records from the outbox into the store\n\
@@ -63,7 +63,7 @@ pub fn parse(args: &[String]) -> Result<Command, String> {
         }
     }
     let command = match words.as_slice() {
-        ["change", "show"] if lane.is_none() => return Ok(Command::ChangeShow { target: target.map(str::to_string), json }),
+        ["change", "diff"] if lane.is_none() => return Ok(Command::ChangeDiff { target: target.map(str::to_string), json }),
         ["run"] if target.is_none() => {
             let lane = match lane {
                 None | Some("local") => Lane::Local,
@@ -90,7 +90,7 @@ pub fn parse(args: &[String]) -> Result<Command, String> {
         return Err("`--lane` belongs to `azimuth run`".to_string());
     }
     if target.is_some() {
-        return Err("`--target` belongs to `azimuth change show`".to_string());
+        return Err("`--target` belongs to `azimuth change diff`".to_string());
     }
     Ok(command)
 }

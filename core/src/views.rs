@@ -56,7 +56,7 @@ pub fn requirement_entry(survey: &Survey, requirement: &Requirement) -> Value {
                 .checks_of(&requirement.id, &scenario.id)
                 .map(|check| {
                     let evaluation = &survey.evaluations[&check.id];
-                    let mut entry = json!({ "id": check.id, "state": evaluation.state.as_str() });
+                    let mut entry = json!({ "id": check.id, "state": evaluation.state.as_str(), "files_changed": evaluation.files_changed });
                     output::set_present(&mut entry, "reason", evaluation.reason);
                     output::set_present(&mut entry, "detail", evaluation.detail.clone());
                     entry
@@ -91,7 +91,9 @@ pub fn requirement_text(survey: &Survey, requirement: &Requirement) -> String {
         let mut any = false;
         for check in survey.workspace.model.checks_of(&requirement.id, &scenario.id) {
             any = true;
-            text.push_str(&format!("    {}  {}\n", check.id, state_line(&survey.evaluations[&check.id])));
+            let evaluation = &survey.evaluations[&check.id];
+            let line = state_line(evaluation, true);
+            text.push_str(&format!("    {}  {line}\n", check.id));
         }
         if !any {
             text.push_str("    no Check proves this Scenario\n");
@@ -104,12 +106,17 @@ pub fn requirement_text(survey: &Survey, requirement: &Requirement) -> String {
 }
 
 /// "owed: <reason> (<detail>)" or "kept".
-pub fn state_line(evaluation: &Evaluation) -> String {
+fn state_line(evaluation: &Evaluation, count_files: bool) -> String {
     let mut line = evaluation.state.as_str().to_string();
     if let Some(reason) = evaluation.reason {
         line.push_str(&format!(": {reason}"));
     }
-    if let Some(detail) = &evaluation.detail {
+    if count_files && !evaluation.files_changed.is_empty() {
+        let count = evaluation.files_changed.len();
+        let noun = if count == 1 { "file" } else { "files" };
+        let parts: Vec<String> = evaluation.parts_changed.iter().map(|part| if part == "files" { format!("{count} {noun}") } else { part.clone() }).collect();
+        line.push_str(&format!(" ({} changed)", parts.join(", ")));
+    } else if let Some(detail) = &evaluation.detail {
         line.push_str(&format!(" ({detail})"));
     }
     line
@@ -159,7 +166,7 @@ pub fn check_text(survey: &Survey, id: &str) -> String {
     if let Some(reuse) = &check.reuse {
         text.push_str(&format!("  Reuse: {}, {}\n", reuse.value.as_str(), reuse.reason));
     }
-    text.push_str(&format!("  {}\n", state_line(evaluation)));
+    text.push_str(&format!("  {}\n", state_line(evaluation, false)));
     if !evaluation.parts_changed.is_empty() {
         for part in &evaluation.parts_changed {
             text.push_str(&format!("    {part}  changed\n"));
