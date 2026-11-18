@@ -386,7 +386,7 @@ fn only_two_jobs_ask_to_write() {
     for job in &all {
         let allowed: &[&str] = if job.text.contains("gh release create") {
             &["contents"]
-        } else if job.text.contains("NuGet/login@") {
+        } else if job.text.contains("NuGet/login@") || job.text.contains("npm publish") {
             &["id-token"]
         } else if deploys_pages(job) || calls_the_site(job) {
             &["pages", "id-token"]
@@ -564,9 +564,9 @@ fn the_two_publishing_jobs_name_the_release_environment() {
     // The environment's approval is a setting in GitHub and is not seen here. A job that only
     // builds must neither wait for that approval nor get the environment's secrets.
     let all = all_jobs();
-    let publishing = |job: &Job| job.workflow == "publish.yml" && (job.text.contains("gh release create") || job.text.contains("NuGet/login@"));
+    let publishing = |job: &Job| job.workflow == "publish.yml" && (job.text.contains("gh release create") || job.text.contains("NuGet/login@") || job.text.contains("npm publish"));
     let named: Vec<&Job> = all.iter().filter(|job| publishing(job)).collect();
-    assert_eq!(named.len(), 2, "the publishing jobs of publish.yml: {:?}", named.iter().map(|job| &job.name).collect::<Vec<_>>());
+    assert!((2..=3).contains(&named.len()), "the publishing jobs of publish.yml: {:?}", named.iter().map(|job| &job.name).collect::<Vec<_>>());
     for job in &all {
         if publishing(job) {
             assert_eq!(job.environment.as_deref(), Some("release"), "{}/{} does not name the environment release", job.workflow, job.name);
@@ -645,5 +645,310 @@ fn ubuntu_ci_runs_the_real_default_launch_limit() {
     assert_eq!(
         found[0].child("if").unwrap().value.as_deref(),
         Some("matrix.runner == 'ubuntu-24.04'")
+    );
+}
+
+fn release_workflow() -> Node {
+    workflows()
+        .into_iter()
+        .find(|(name, _, _)| name == "publish.yml")
+        .unwrap()
+        .2
+}
+
+fn npm_job(root: &Node) -> &Node {
+    let found: Vec<_> = jobs(root)
+        .into_iter()
+        .filter(|job| {
+            job.descendants().iter().any(|node| {
+                node.key == "run"
+                    && node.value.as_deref().is_some_and(|script| {
+                        script
+                            .split_whitespace()
+                            .collect::<Vec<_>>()
+                            .windows(2)
+                            .any(|words| words == ["npm", "publish"])
+                    })
+            })
+        })
+        .collect();
+    assert_eq!(
+        found.len(),
+        1,
+        "the release workflow has no unique npm publishing job"
+    );
+    found[0]
+}
+
+// behavior-2: The release workflow packs the Playwright adapter with the version of the release and pushes it to npm
+#[test]
+fn the_release_packs_the_playwright_adapter_at_the_tag_version_and_publishes_its_tarball() {
+    let root = release_workflow();
+    npm_job(&root);
+    let scripts: Vec<_> = root
+        .descendants()
+        .into_iter()
+        .filter(|n| n.key == "run")
+        .filter_map(|n| n.value.as_deref())
+        .collect();
+    let packs: Vec<_> = scripts
+        .iter()
+        .filter(|s| {
+            s.split_whitespace()
+                .collect::<Vec<_>>()
+                .windows(2)
+                .any(|w| w == ["npm", "pack"])
+        })
+        .collect();
+    assert!(
+        !packs.is_empty(),
+        "no parsed run step packs the npm adapter"
+    );
+    let locations: Vec<_> = root
+        .descendants()
+        .into_iter()
+        .filter_map(|n| n.value.as_deref())
+        .filter(|v| v.contains("adapters/playwright"))
+        .collect();
+    assert!(
+        !locations.is_empty(),
+        "the workflow names no Playwright adapter source"
+    );
+    for version in ["0.2.0-alpha.73", "0.3.1-alpha.5"] {
+        let folder = tempfile::tempdir().unwrap();
+        let root_dir = folder.path();
+        azimuth_tests::copy_tree(
+            &repository_root().join("adapters/playwright"),
+            &root_dir.join("adapters/playwright"),
+        );
+        let bin = root_dir.join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        fs::copy(env!("CARGO_BIN_EXE_npm-release-recorder"), bin.join("npm")).unwrap();
+        let log = root_dir.join("npm.jsonl");
+        let github_env = root_dir.join("github-env");
+        let mut environment = std::collections::BTreeMap::from([
+            ("GITHUB_REF_NAME".to_string(), format!("v{version}")),
+            ("GITHUB_ENV".to_string(), github_env.display().to_string()),
+            ("NPM_RELEASE_LOG".to_string(), log.display().to_string()),
+            (
+                "PATH".to_string(),
+                format!("{}:{}", bin.display(), std::env::var("PATH").unwrap()),
+            ),
+        ]);
+        let pack_jobs: Vec<_> = jobs(&root)
+            .into_iter()
+            .filter(|job| {
+                job.descendants().iter().any(|n| {
+                    n.key == "run" && n.value.as_deref().is_some_and(|s| s.contains("npm pack"))
+                })
+            })
+            .collect();
+        assert_eq!(pack_jobs.len(), 1, "no unique npm packing job");
+        let job = pack_jobs[0];
+        for node in [root.child("env"), job.child("env")].into_iter().flatten() {
+            for value in &node.children {
+                environment.insert(value.key.clone(), value.value.clone().unwrap());
+            }
+        }
+        for step in &job.child("steps").unwrap().children {
+            let Some(script) = step.child("run").and_then(|n| n.value.as_deref()) else {
+                continue;
+            };
+            if !script.contains("npm ") {
+                continue;
+            }
+            let script = script.replace("${{ github.ref_name }}", &format!("v{version}"));
+            let working = step
+                .child("working-directory")
+                .and_then(|n| n.value.as_deref())
+                .or_else(|| {
+                    job.child("defaults")
+                        .and_then(|n| n.child("run"))
+                        .and_then(|n| n.child("working-directory"))
+                        .and_then(|n| n.value.as_deref())
+                })
+                .unwrap_or(".");
+            let mut command = Command::new("/bin/sh");
+            command
+                .args(["-eu", "-c", &script])
+                .current_dir(root_dir.join(working))
+                .envs(&environment);
+            if let Some(env) = step.child("env") {
+                for value in &env.children {
+                    command.env(&value.key, value.value.as_deref().unwrap());
+                }
+            }
+            run_with_time_limit(command, Duration::from_secs(30), None).expect_status(0);
+            if let Ok(text) = fs::read_to_string(&github_env) {
+                for line in text.lines() {
+                    if let Some((k, v)) = line.split_once('=') {
+                        environment.insert(k.into(), v.into());
+                    }
+                }
+            }
+        }
+        let calls: Vec<serde_json::Value> = fs::read_to_string(&log)
+            .expect("npm steps made no calls")
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        let packs: Vec<_> = calls.iter().filter(|call| call["verb"] == "pack").collect();
+        assert_eq!(packs.len(), 1, "{calls:#?}");
+        assert_eq!(
+            packs[0]["manifest"]["name"], "@azimuth-sh/playwright",
+            "{calls:#?}"
+        );
+        assert_eq!(
+            packs[0]["manifest"]["version"], version,
+            "the pack did not use the release version: {calls:#?}"
+        );
+    }
+    let publish = npm_job(&root)
+        .descendants()
+        .into_iter()
+        .find(|n| {
+            n.key == "run"
+                && n.value
+                    .as_deref()
+                    .is_some_and(|s| s.contains("npm publish"))
+        })
+        .unwrap()
+        .value
+        .as_deref()
+        .unwrap();
+    assert!(
+        publish.contains(".tgz"),
+        "the publishing step does not push a packed file: {publish}"
+    );
+}
+
+// behavior-2: The workflow holds no npm token
+#[test]
+fn npm_publishing_uses_the_job_identity_and_no_registry_token() {
+    let root = release_workflow();
+    let job = npm_job(&root);
+    let permissions = job
+        .child("permissions")
+        .expect("npm job has no identity permission");
+    assert_eq!(
+        permissions
+            .child("id-token")
+            .and_then(|n| n.value.as_deref()),
+        Some("write")
+    );
+    for node in root.descendants() {
+        let key = node.key.to_uppercase();
+        let value = node.value.as_deref().unwrap_or_default();
+        assert!(
+            !["NPM_TOKEN", "NODE_AUTH_TOKEN", "NPM_AUTH_TOKEN"].contains(&key.as_str()),
+            "registry token {}",
+            node.key
+        );
+        assert!(
+            !value.contains("_authToken")
+                && !value.contains("secrets.NPM")
+                && !value.contains("secrets.NODE_AUTH"),
+            "registry credential: {value}"
+        );
+    }
+    for node in job.descendants().into_iter().filter(|n| n.key == "run") {
+        let script = node.value.as_deref().unwrap_or_default();
+        assert!(
+            !script.contains("npm login") && !script.contains("npm adduser"),
+            "the npm job uses a stored login: {script}"
+        );
+    }
+    for node in job.descendants() {
+        assert!(
+            !node
+                .value
+                .as_deref()
+                .unwrap_or_default()
+                .to_lowercase()
+                .contains("secrets."),
+            "the npm publishing job uses a stored secret: {node:?}"
+        );
+    }
+}
+
+// behavior-2: The npm job runs only after a person approved it in the environment `release`
+#[test]
+fn the_npm_publishing_job_names_the_release_environment() {
+    let root = release_workflow();
+    let job = npm_job(&root);
+    let environment = job
+        .child("environment")
+        .expect("the npm job has no release approval environment");
+    let name = environment
+        .value
+        .as_deref()
+        .or_else(|| environment.child("name").and_then(|n| n.value.as_deref()));
+    assert_eq!(name, Some("release"));
+    // GitHub owns the approval rule of this environment; a local file cannot prove that setting.
+}
+
+// behavior-2: The job uses no action from a party that the release path does not trust already
+#[test]
+fn npm_publishing_uses_only_actions_from_the_existing_trusted_parties() {
+    let root = release_workflow();
+    let job = npm_job(&root);
+    for node in job.descendants().into_iter().filter(|n| n.key == "uses") {
+        let action = node.value.as_deref().unwrap_or_default();
+        assert!(
+            action.starts_with("./")
+                || action.starts_with("actions/")
+                || action.starts_with("NuGet/login@"),
+            "an untrusted action in the npm release: {action}"
+        );
+    }
+}
+
+#[test]
+fn ci_runs_the_real_playwright_adapter_on_both_runners() {
+    let (_, _, root) = workflows()
+        .into_iter()
+        .find(|(name, _, _)| name == "ci.yml")
+        .unwrap();
+    let tested: Vec<_> = jobs(&root)
+        .into_iter()
+        .filter(|job| {
+            job.descendants().iter().any(|n| {
+                n.key == "run"
+                    && n.value.as_deref().is_some_and(|s| {
+                        s.contains("cargo test")
+                            && s.contains("azimuth-tests/playwright")
+                            && s.contains("--test playwright_adapter")
+                    })
+            })
+        })
+        .collect();
+    assert_eq!(
+        tested.len(),
+        1,
+        "no unique CI job for the real Playwright tests"
+    );
+    let job = tested[0];
+    let strategy = job.child("strategy").unwrap();
+    let runners = strategy.child("matrix").unwrap().child("runner").unwrap();
+    let mut names: Vec<_> = runners
+        .descendants()
+        .into_iter()
+        .filter_map(|n| n.value.as_deref())
+        .collect();
+    names.sort();
+    assert_eq!(names, vec!["macos-15", "ubuntu-24.04"]);
+    let steps = job.child("steps").unwrap();
+    let step = steps
+        .children
+        .iter()
+        .find(|step| {
+            step.child("run")
+                .and_then(|n| n.value.as_deref())
+                .is_some_and(|s| s.contains("--test playwright_adapter"))
+        })
+        .unwrap();
+    assert!(
+        step.child("if").is_none(),
+        "the Playwright tests are conditional on one runner"
     );
 }

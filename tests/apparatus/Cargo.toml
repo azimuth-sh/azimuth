@@ -23,7 +23,13 @@ path = "src/bin/stdin-recorder.rs"
 [features]
 # The .NET adapter tests need the .NET SDK and the real adapter, so they run only on request.
 dotnet = []
+playwright = []
 long-timeout = []
+
+[[test]]
+name = "playwright_adapter"
+path = "tests/playwright_adapter.rs"
+required-features = ["playwright"]
 
 [[test]]
 name = "dotnet_adapter"

@@ -1044,6 +1044,18 @@ pub fn path_hiding(program: &str, path: &std::ffi::OsStr, under: &Path) -> Strin
 }
 
 impl Repo {
+    /// Init asks every known host, so a test of absent adapters must hide both hosts even on a
+    /// machine that happens to have Node installed.
+    pub fn path_without_programs(&self, programs: &[&str]) -> String {
+        let under = self.beside(&format!("path-without-{}", programs.join("-")));
+        let _ = fs::remove_dir_all(&under);
+        let mut path = std::env::var_os("PATH").unwrap_or_default();
+        for (index, program) in programs.iter().enumerate() {
+            path = path_hiding(program, &path, &under.join(index.to_string())).into();
+        }
+        format!("{}:{}", binaries_dir().display(), path.to_string_lossy())
+    }
+
     /// The machine's PATH, with the apparatus first and one program hidden; the stand-in
     /// folders live in this repository's temporary folder.
     pub fn path_without(&self, program: &str) -> String {

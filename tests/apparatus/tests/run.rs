@@ -1094,6 +1094,7 @@ fn a_proof_and_an_adapter_get_the_environment() {
 }
 
 // behavior: The core adds no argument to an adapter's command line and passes on the arguments written in the project file
+// behavior-2: Arguments on the adapter's command line in the project file reach the adapter as written
 #[test]
 fn the_adapter_gets_exactly_the_written_arguments() {
     let plain = Repo::sample();
