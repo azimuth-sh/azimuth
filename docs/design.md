@@ -324,9 +324,13 @@ The cost. The sums file sits beside the binaries. It catches a broken download a
 
 **The workflow's identity may only stage at npm.** The workflow runs `npm stage publish` and never `npm publish`, and the trusted publisher at npm is set to allow only that. So the workflow alone can never put a version on npm, also when the approval in GitHub is switched off.
 
+**The staged version carries the tag `latest`.** npm refuses a version with a suffix, such as `0.2.0-alpha.3`, when the command names no tag. The step names `latest`, also while the version says alpha, as the GitHub release is the latest normal one. So a person who installs the package without a version gets the newest release. Azimuth's own install line names the exact version and does not depend on the tag.
+
+**The job that stages installs its own npm.** Staging needs npm 11.15.0 or later, and the runner's image ships an older one. The job installs npm at one exact version, at least 11.21.0, which npm names as the first that lets a workflow's identity set a tag. A person raises the version, in a change of its own.
+
 The cost. A release takes three acts of a person: the tag, the approval in GitHub and the approval at npm. The steps are not one transaction. NuGet can still refuse a push that passed every local test. With two places that cannot stage, one can take the version and the next one refuse it. Nothing makes the person approve at npm only after step 3, and between the steps the places disagree: the binaries are public before the adapter is. The settings live in GitHub and at npm and not in the repository, so no test proves that they are on. And a person approves their own run, so the gates guard against an accident and against an agent, and not against that person.
 
-Unmeasured: whether a staged version expires, whether a rejected version number can be staged again, and whether GitHub asks for the approval once or once for each job that names the environment.
+Unmeasured: whether a staged version expires, whether a rejected version number can be staged again, whether the tag named while staging needs the publisher's setting that allows tags, and whether GitHub asks for the approval once or once for each job that names the environment.
 
 **The compiler is pinned in the repository.** The file `rust-toolchain.toml` names one exact Rust version, with the linter and the two build targets. Every machine and every runner builds with it, so a clean run on one machine is a clean run on the other, and two builds of one tag use one compiler. A person raises the version, in a change of its own.
 
