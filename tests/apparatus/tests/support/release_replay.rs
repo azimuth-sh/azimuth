@@ -5,6 +5,7 @@ use azimuth_tests::{files_under, run_with_time_limit, Output};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
@@ -13,6 +14,14 @@ type Artifact = Vec<(PathBuf, Vec<u8>)>;
 
 fn interpolate(text: &str, env: &BTreeMap<String, String>) -> String {
     let mut text = text.replace("${{ github.ref_name }}", &env["GITHUB_REF_NAME"]);
+    for (expression, key) in [
+        ("${{ runner.temp }}", "RUNNER_TEMP"),
+        ("${{ github.workspace }}", "GITHUB_WORKSPACE"),
+    ] {
+        if let Some(value) = env.get(key) {
+            text = text.replace(expression, value);
+        }
+    }
     for (key, value) in env {
         text = text.replace(&format!("${{{{ env.{key} }}}}"), value);
     }
@@ -39,6 +48,9 @@ fn source_files(destination: &Path) {
     let files = Command::new("git")
         .args([
             "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
             "-z",
             "--",
             "adapters/playwright",
@@ -133,6 +145,32 @@ fn replay_job_result(
     tag: &str,
     artifacts: &mut BTreeMap<String, Artifact>,
 ) -> Result<(), Output> {
+    replay_job_options(
+        root,
+        job,
+        work,
+        temp,
+        tag,
+        artifacts,
+        &ReplayOptions::default(),
+    )
+}
+
+#[derive(Default)]
+struct ReplayOptions {
+    installed_version: Option<String>,
+    corrupt_after_step: Option<usize>,
+}
+
+fn replay_job_options(
+    root: &Node,
+    job: &Node,
+    work: &Path,
+    temp: &Path,
+    tag: &str,
+    artifacts: &mut BTreeMap<String, Artifact>,
+    options: &ReplayOptions,
+) -> Result<(), Output> {
     fs::create_dir_all(work).unwrap();
     source_files(work);
     let tools = temp.join("tools");
@@ -144,11 +182,22 @@ fn replay_job_result(
         )
         .unwrap();
     }
+    if !tools.join("sudo").exists() {
+        fs::copy(
+            env!("CARGO_BIN_EXE_npm-release-recorder"),
+            tools.join("sudo"),
+        )
+        .unwrap();
+    }
     if !tools.join("gh").exists() {
         fs::copy(env!("CARGO_BIN_EXE_gh-release-recorder"), tools.join("gh")).unwrap();
     }
     let github_env = work.join("github-env");
     let output = work.join("github-output");
+    let github_path = work.join("github-path");
+    let runner_temp = temp.join("runner-temp");
+    fs::create_dir_all(work.join("home")).unwrap();
+    fs::create_dir_all(&runner_temp).unwrap();
     let mut env = BTreeMap::from([
         (
             "PATH".into(),
@@ -158,6 +207,10 @@ fn replay_job_result(
         ("GITHUB_REF_NAME".into(), tag.to_string()),
         ("GITHUB_ENV".into(), github_env.display().to_string()),
         ("GITHUB_OUTPUT".into(), output.display().to_string()),
+        ("GITHUB_PATH".into(), github_path.display().to_string()),
+        ("RUNNER_TEMP".into(), runner_temp.display().to_string()),
+        ("TMPDIR".into(), runner_temp.display().to_string()),
+        ("GITHUB_WORKSPACE".into(), work.display().to_string()),
         (
             "NPM_RELEASE_LOG".into(),
             temp.join("npm.jsonl").display().to_string(),
@@ -168,6 +221,9 @@ fn replay_job_result(
         ),
         ("npm_config_offline".into(), "true".into()),
     ]);
+    if let Some(version) = &options.installed_version {
+        env.insert("NPM_RECORDER_INSTALLED_VERSION".into(), version.clone());
+    }
     for block in [root.child("env"), job.child("env")].into_iter().flatten() {
         for item in &block.children {
             let value = interpolate(item.value.as_deref().unwrap(), &env);
@@ -231,6 +287,26 @@ fn replay_job_result(
             continue;
         };
         let commands = expanded_commands(script);
+        for words in &commands {
+            assert!(
+                !words
+                    .first()
+                    .is_some_and(|word| Path::new(word).is_absolute()
+                        && Path::new(word)
+                            .file_name()
+                            .is_some_and(|name| name == "npm")),
+                "the replay must not execute an unrecorded absolute npm"
+            );
+            assert!(
+                !words.first().is_some_and(|word| Path::new(word)
+                    .file_name()
+                    .is_some_and(|name| name == "sudo"))
+                    || !words.iter().any(|word| Path::new(word)
+                        .file_name()
+                        .is_some_and(|name| name == "npm")),
+                "sudo must not install the job's npm"
+            );
+        }
         for command in commands
             .iter()
             .filter(|words| shell::invokes(words, &["npm", "stage", "publish"]))
@@ -253,7 +329,12 @@ fn replay_job_result(
                 ["mkdir", "cp", "mv", "echo", "printf", "true"].contains(&v.as_str())
             })
         });
-        if !npm && !github && !assemble && !files_only {
+        let repository_script = commands.iter().any(|words| {
+            words
+                .iter()
+                .any(|word| word.starts_with("release/") || word.starts_with("./release/"))
+        });
+        if !npm && !github && !assemble && !files_only && !repository_script {
             continue;
         }
         let mut effective = env.clone();
@@ -279,6 +360,8 @@ fn replay_job_result(
         command
             .env_clear()
             .envs(&effective)
+            .env("NPM_RECORDER_OWNED_HOME", work.join("home"))
+            .env("NPM_RECORDER_OWNED_TEMP", &runner_temp)
             .env("RELEASE_REPLAY_JOB", &job.key)
             .env("RELEASE_REPLAY_STEP", step_index.to_string())
             .args(["-eu", "-c", &script])
@@ -286,6 +369,33 @@ fn replay_job_result(
         let result: Output = run_with_time_limit(command, Duration::from_secs(30), None);
         if result.status != 0 {
             return Err(result);
+        }
+        if let Ok(text) = fs::read_to_string(&github_path) {
+            for path in text.lines().filter(|line| !line.is_empty()) {
+                let mut log = fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(temp.join("npm.jsonl"))
+                    .unwrap();
+                writeln!(log,"{}",serde_json::json!({"verb":"github path","value":path,"step":step_index,"job":job.key})).unwrap();
+                let previous = env["PATH"].clone();
+                env.insert("PATH".into(), format!("{path}:{previous}"));
+            }
+            fs::write(&github_path, "").unwrap();
+        }
+        if options.corrupt_after_step == Some(step_index) {
+            for call in calls(temp) {
+                if call["verb"] == "install npm" {
+                    let bin = Path::new(call["bin"].as_str().unwrap());
+                    let path = bin.join("npm-recorder-state.json");
+                    let mut state: Value =
+                        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+                    state["version"] = serde_json::json!(super::npm_installation::next_version(
+                        call["version"].as_str().unwrap()
+                    ));
+                    fs::write(path, state.to_string()).unwrap();
+                }
+            }
         }
         if let Ok(text) = fs::read_to_string(&github_env) {
             for line in text.lines() {
@@ -623,5 +733,60 @@ pub fn replay_existing_release(
         state,
         before,
         assembled,
+    }
+}
+
+fn calls(temp: &Path) -> Vec<Value> {
+    fs::read_to_string(temp.join("npm.jsonl"))
+        .unwrap_or_default()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+pub struct ToolReplay {
+    pub status: i32,
+    pub diagnostic: String,
+    pub calls: Vec<Value>,
+    pub paths: Vec<String>,
+}
+
+pub fn tool_job(
+    root: &Node,
+    job: &Node,
+    installed_version: Option<&str>,
+    corrupt_after_step: Option<usize>,
+) -> ToolReplay {
+    let temp = tempfile::tempdir().unwrap();
+    let work = temp.path().join("work");
+    let options = ReplayOptions {
+        installed_version: installed_version.map(str::to_string),
+        corrupt_after_step,
+    };
+    let result = replay_job_options(
+        root,
+        job,
+        &work,
+        temp.path(),
+        "v0.2.0-alpha.73",
+        &mut BTreeMap::new(),
+        &options,
+    );
+    let (status, diagnostic) = match result {
+        Ok(()) => (0, String::new()),
+        Err(output) => (output.status, output.text()),
+    };
+    let calls = calls(temp.path());
+    let paths = calls
+        .iter()
+        .filter(|call| call["verb"] == "github path")
+        .filter_map(|call| call["value"].as_str())
+        .map(str::to_string)
+        .collect();
+    ToolReplay {
+        status,
+        diagnostic,
+        calls,
+        paths,
     }
 }

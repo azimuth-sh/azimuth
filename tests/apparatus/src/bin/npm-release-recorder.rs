@@ -3,7 +3,7 @@
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn operands_and_options(args: &[String]) -> (Vec<String>, BTreeMap<String, Vec<String>>) {
     let mut operands = Vec::new();
@@ -48,9 +48,143 @@ fn operands_and_options(args: &[String]) -> (Vec<String>, BTreeMap<String, Vec<S
     (operands, options)
 }
 
+fn resolved_destination(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for part in path.components() {
+        match part {
+            std::path::Component::ParentDir => {
+                normalized.pop();
+            }
+            std::path::Component::CurDir => {}
+            part => normalized.push(part.as_os_str()),
+        }
+    }
+    let mut existing = normalized.as_path();
+    let mut tail = Vec::new();
+    while !existing.exists() {
+        tail.push(existing.file_name().unwrap().to_os_string());
+        existing = existing.parent().unwrap();
+    }
+    let mut result = existing.canonicalize().unwrap();
+    for part in tail.into_iter().rev() {
+        result.push(part);
+    }
+    result
+}
+
+fn owned_prefix(folder: &Path, prefix: Option<&str>, global: bool) -> PathBuf {
+    assert!(
+        !global || prefix.is_some(),
+        "npm installation has no job-owned prefix; the runner's global folder is forbidden"
+    );
+    let prefix = prefix.unwrap_or(".");
+    let destination = resolved_destination(&folder.join(prefix));
+    let owned = ["NPM_RECORDER_OWNED_HOME", "NPM_RECORDER_OWNED_TEMP"]
+        .iter()
+        .filter_map(std::env::var_os)
+        .any(|root| destination.starts_with(resolved_destination(Path::new(&root))));
+    assert!(
+        owned,
+        "npm installation prefix is outside the supplied home/temp folders: {}",
+        destination.display()
+    );
+    destination
+}
+
+fn append_record(record: &Value) {
+    let path = PathBuf::from(std::env::var("NPM_RELEASE_LOG").unwrap());
+    let mut log = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .unwrap();
+    writeln!(log, "{record}").unwrap();
+}
+
+fn configured_prefix() -> Option<String> {
+    std::env::var("npm_config_prefix")
+        .or_else(|_| std::env::var("NPM_CONFIG_PREFIX"))
+        .ok()
+        .or_else(|| {
+            let home = std::env::var_os("HOME")?;
+            let text = std::fs::read_to_string(Path::new(&home).join(".npmrc")).ok()?;
+            text.lines()
+                .filter_map(|line| line.trim().strip_prefix("prefix="))
+                .next_back()
+                .map(str::to_string)
+        })
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut folder = std::env::current_dir().unwrap();
+    let executable = std::env::current_exe().unwrap().canonicalize().unwrap();
+    assert_ne!(
+        executable.file_name().unwrap(),
+        "sudo",
+        "sudo must not install the job's npm"
+    );
+    let state = executable.parent().unwrap().join("npm-recorder-state.json");
+    let state: Value = std::fs::read(state)
+        .ok()
+        .map(|bytes| serde_json::from_slice(&bytes).unwrap())
+        .unwrap_or(Value::Null);
+    let actual_version = state["version"].as_str().unwrap_or("8.0.0");
+    if args == ["--version"]
+        || args == ["-v"]
+        || args == ["version"]
+        || args == ["version", "--json"]
+    {
+        let record = json!({"verb":"version query","executable":executable,"installed_version":state["version"],"answer":actual_version,
+            "job":std::env::var("RELEASE_REPLAY_JOB").ok(),"step":std::env::var("RELEASE_REPLAY_STEP").ok().map(|step|step.parse::<usize>().unwrap())});
+        append_record(&record);
+        if args[0] == "version" {
+            println!("{}", json!({"npm":actual_version}));
+        } else {
+            println!("{actual_version}");
+        }
+        return;
+    }
+    if args.first().is_some_and(|arg| arg == "config") {
+        if args.get(1).is_some_and(|arg| arg == "set")
+            && args.get(2).is_some_and(|arg| arg == "prefix")
+        {
+            let value = args.get(3).expect("npm config set prefix needs a value");
+            let home = PathBuf::from(std::env::var_os("HOME").unwrap());
+            std::fs::write(home.join(".npmrc"), format!("prefix={value}\n")).unwrap();
+            append_record(&json!({"verb":"configure prefix","value":value,"args":args}));
+            return;
+        }
+        assert!(
+            args.get(1).is_some_and(|arg| arg == "get")
+                && args.get(2).is_some_and(|arg| arg == "prefix"),
+            "unsupported npm config query: {args:?}"
+        );
+        println!(
+            "{}",
+            configured_prefix().unwrap_or_else(|| "/usr/local".into())
+        );
+        return;
+    }
+    if args
+        .first()
+        .is_some_and(|arg| arg == "prefix" || arg == "root")
+    {
+        let prefix = configured_prefix()
+            .or_else(|| state["prefix"].as_str().map(str::to_string))
+            .unwrap_or_else(|| "/usr/local".into());
+        let prefix = PathBuf::from(prefix);
+        println!(
+            "{}",
+            if args[0] == "root" {
+                prefix.join("lib/node_modules")
+            } else {
+                prefix
+            }
+            .display()
+        );
+        return;
+    }
     let index = args
         .iter()
         .position(|v| {
@@ -63,27 +197,63 @@ fn main() {
     let mut arguments = args[..index].to_vec();
     arguments.extend_from_slice(&args[index + 1..]);
     let (operands, options) = operands_and_options(&arguments);
+    let inherited_prefix = configured_prefix();
+    let prefix = options
+        .get("prefix")
+        .and_then(|values| values.last())
+        .map(String::as_str)
+        .or(inherited_prefix.as_deref());
+    let original_folder = folder.clone();
     if let Some(path) = options.get("prefix").and_then(|values| values.last()) {
         folder = folder.join(path);
     }
     let mut record = json!({"args":args,"folder":folder,"verb":args[index],"options":options,
         "job":std::env::var("RELEASE_REPLAY_JOB").ok(),
-        "step":std::env::var("RELEASE_REPLAY_STEP").ok().map(|step|step.parse::<usize>().unwrap())});
+        "step":std::env::var("RELEASE_REPLAY_STEP").ok().map(|step|step.parse::<usize>().unwrap()),
+        "executable":executable,"installed_version":state["version"]});
     let global = args
         .iter()
-        .any(|arg| ["-g", "--global", "--global=true"].contains(&arg.as_str()))
+        .any(|arg| ["-g", "-g=true", "--global", "--global=true"].contains(&arg.as_str()))
         || options
             .get("location")
             .and_then(|values| values.last())
-            .is_some_and(|location| location == "global");
+            .is_some_and(|location| location == "global")
+        || ["npm_config_global", "NPM_CONFIG_GLOBAL"]
+            .iter()
+            .any(|key| std::env::var(key).is_ok_and(|value| value == "true"))
+        || ["npm_config_location", "NPM_CONFIG_LOCATION"]
+            .iter()
+            .any(|key| std::env::var(key).is_ok_and(|value| value == "global"));
     let npm_package = operands
         .iter()
         .find(|operand| operand.as_str() == "npm" || operand.starts_with("npm@"));
     if let Some(package) =
-        npm_package.filter(|_| ["install", "i", "add"].contains(&args[index].as_str()) && global)
+        npm_package.filter(|_| ["install", "i", "add"].contains(&args[index].as_str()))
     {
         record["verb"] = json!("install npm");
         record["version"] = json!(package.strip_prefix("npm@"));
+        let destination = owned_prefix(&original_folder, prefix, global);
+        let bin = if global {
+            destination.join("bin")
+        } else {
+            destination.join("node_modules/.bin")
+        };
+        std::fs::create_dir_all(&bin).unwrap();
+        let installed = bin.join("npm");
+        if !installed.exists() || installed.canonicalize().unwrap() != executable {
+            std::fs::copy(&executable, &installed).unwrap();
+        }
+        let requested = package.strip_prefix("npm@").unwrap_or("unversioned");
+        let reported = std::env::var("NPM_RECORDER_INSTALLED_VERSION")
+            .unwrap_or_else(|_| requested.to_string());
+        std::fs::write(
+            bin.join("npm-recorder-state.json"),
+            json!({"version":reported,"prefix":destination}).to_string(),
+        )
+        .unwrap();
+        record["installed_executable"] = json!(installed.canonicalize().unwrap());
+        record["prefix"] = json!(destination);
+        record["bin"] = json!(bin.canonicalize().unwrap());
     } else if args[index] == "stage" {
         assert_eq!(operands.first().map(|v| v.as_str()), Some("publish"));
         assert_eq!(
@@ -196,13 +366,7 @@ fn main() {
         }
         record["manifest"] = manifest;
     }
-    let path = PathBuf::from(std::env::var("NPM_RELEASE_LOG").unwrap());
-    let mut log = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .unwrap();
-    writeln!(log, "{record}").unwrap();
+    append_record(&record);
 }
 
 #[test]

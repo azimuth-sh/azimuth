@@ -9,6 +9,20 @@ pub fn commands(script: &str) -> Vec<Vec<String>> {
     for script in captured {
         result.extend(plain_commands(&script));
     }
+    let wrappers = result.clone();
+    for words in wrappers {
+        if words.first().is_some_and(|word| {
+            std::path::Path::new(word)
+                .file_name()
+                .is_some_and(|name| name == "sh" || name == "bash")
+        }) {
+            if let Some(index) = words.iter().position(|word| word == "-c") {
+                if let Some(inner) = words.get(index + 1) {
+                    result.extend(commands(inner));
+                }
+            }
+        }
+    }
     result
 }
 
