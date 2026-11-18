@@ -442,6 +442,43 @@ test('first attempt fails',{tag:'@Check:first-attempt'},async({},info)=>{
     );
 }
 
+// behavior-2: A test that fails on its first attempt is reported as `failed`
+#[test]
+fn a_first_failure_is_reported_even_when_a_file_configured_retry_passes() {
+    let repo = sample();
+    let counter = repo.beside("retry-counter.txt");
+    spec(
+        &repo,
+        r#"const {test,expect}=require('@playwright/test');
+const fs=require('node:fs');
+test.describe.configure({retries:1});
+test('first failure survives a passing retry',{tag:'@Check:retried-loan'},async()=>{
+ const counter=process.env.RETRY_COUNTER;
+ const attempt=fs.existsSync(counter)?Number(fs.readFileSync(counter,'utf8'))+1:1;
+ fs.writeFileSync(counter,String(attempt));
+ expect(attempt).toBeGreaterThan(1);
+});
+"#,
+    );
+    let output = start(
+        &repo,
+        SUITE,
+        &request(&["retried-loan"], "Check"),
+        &[("RETRY_COUNTER", counter.to_str().unwrap())],
+    );
+    output.expect_status(0);
+    let document = output.json();
+    assert_report_identity(&document);
+    assert_eq!(document["build"], "ok");
+    complete_names(&document, &["first failure survives a passing retry"]);
+    assert_eq!(fs::read_to_string(counter).unwrap(), "2");
+    assert_eq!(
+        named(&document, "first failure survives a passing retry")["outcome"],
+        "failed",
+        "the first failure must survive the passing retry"
+    );
+}
+
 // behavior-2: A test carries a Check id in a tag of the form `@<marker_key>:<id>`
 // behavior-2: The tag may stand on a test or on a `describe` group, and a test may carry several
 // behavior-2: An annotation with a Check id is no marker
