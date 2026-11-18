@@ -162,7 +162,7 @@ fn replay_job(
         }
     }
     copy_declared_configs(work, &env);
-    for step in &job.child("steps").unwrap().children {
+    for (step_index, step) in job.child("steps").unwrap().children.iter().enumerate() {
         if let Some(action) = step.child("uses").and_then(|n| n.value.as_deref()) {
             if action.starts_with("actions/upload-artifact@") {
                 let options = step.child("with").unwrap();
@@ -218,6 +218,12 @@ fn replay_job(
             continue;
         };
         let commands = expanded_commands(script);
+        for command in commands
+            .iter()
+            .filter(|words| shell::invokes(words, &["npm", "stage", "publish"]))
+        {
+            assert_eq!(command[0],"npm","staging must use the job's installed npm through PATH, not another npm named by a path");
+        }
         let npm = commands.iter().any(|w| {
             w.first()
                 .is_some_and(|v| Path::new(v).file_name().is_some_and(|n| n == "npm"))
@@ -260,6 +266,8 @@ fn replay_job(
         command
             .env_clear()
             .envs(&effective)
+            .env("RELEASE_REPLAY_JOB", &job.key)
+            .env("RELEASE_REPLAY_STEP", step_index.to_string())
             .args(["-eu", "-c", &script])
             .current_dir(work.join(interpolate(working, &effective)));
         let result: Output = run_with_time_limit(command, Duration::from_secs(30), None);

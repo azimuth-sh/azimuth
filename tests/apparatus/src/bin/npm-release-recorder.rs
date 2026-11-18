@@ -27,6 +27,7 @@ fn operands_and_options(args: &[String]) -> (Vec<String>, BTreeMap<String, Vec<S
             "--registry",
             "--otp",
             "--workspace",
+            "--location",
         ]
         .contains(&name)
         {
@@ -53,7 +54,10 @@ fn main() {
     let index = args
         .iter()
         .position(|v| {
-            ["version", "pack", "ci", "install", "stage", "publish"].contains(&v.as_str())
+            [
+                "version", "pack", "ci", "install", "i", "add", "stage", "publish",
+            ]
+            .contains(&v.as_str())
         })
         .unwrap_or_else(|| panic!("unexpected npm command {args:?}"));
     let mut arguments = args[..index].to_vec();
@@ -62,8 +66,25 @@ fn main() {
     if let Some(path) = options.get("prefix").and_then(|values| values.last()) {
         folder = folder.join(path);
     }
-    let mut record = json!({"args":args,"folder":folder,"verb":args[index],"options":options});
-    if args[index] == "stage" {
+    let mut record = json!({"args":args,"folder":folder,"verb":args[index],"options":options,
+        "job":std::env::var("RELEASE_REPLAY_JOB").ok(),
+        "step":std::env::var("RELEASE_REPLAY_STEP").ok().map(|step|step.parse::<usize>().unwrap())});
+    let global = args
+        .iter()
+        .any(|arg| ["-g", "--global", "--global=true"].contains(&arg.as_str()))
+        || options
+            .get("location")
+            .and_then(|values| values.last())
+            .is_some_and(|location| location == "global");
+    let npm_package = operands
+        .iter()
+        .find(|operand| operand.as_str() == "npm" || operand.starts_with("npm@"));
+    if let Some(package) =
+        npm_package.filter(|_| ["install", "i", "add"].contains(&args[index].as_str()) && global)
+    {
+        record["verb"] = json!("install npm");
+        record["version"] = json!(package.strip_prefix("npm@"));
+    } else if args[index] == "stage" {
         assert_eq!(operands.first().map(|v| v.as_str()), Some("publish"));
         assert_eq!(
             operands.len(),

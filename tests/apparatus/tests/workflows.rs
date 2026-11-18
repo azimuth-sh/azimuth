@@ -1959,3 +1959,206 @@ fn gh_records_empty_notes_and_the_exact_assembled_attachment_bytes() {
     ))
     .is_err());
 }
+
+fn assert_latest_staging_tag(calls: &[serde_json::Value]) {
+    let stages: Vec<_> = calls
+        .iter()
+        .filter(|call| call["verb"] == "stage publish")
+        .collect();
+    assert_eq!(stages.len(), 1, "{calls:#?}");
+    assert_eq!(
+        stages[0]["options"]["tag"],
+        serde_json::json!(["latest"]),
+        "the staging command must explicitly name --tag latest"
+    );
+}
+
+// behavior-2: The staging step names the tag `latest`
+#[test]
+fn the_release_explicitly_stages_the_prerelease_with_the_latest_tag() {
+    let calls = release_replay::pack_and_stage(&release_workflow(), "0.2.0-alpha.73");
+    let packed: Vec<_> = calls.iter().filter(|call| call["verb"] == "pack").collect();
+    assert_eq!(packed.len(), 1);
+    assert_eq!(packed[0]["manifest"]["version"], "0.2.0-alpha.73");
+    assert_latest_staging_tag(&calls);
+}
+
+fn assert_staging_npm_installation(root: &Node, calls: &[serde_json::Value]) {
+    let job = npm_job(root);
+    let stages: Vec<_> = calls
+        .iter()
+        .filter(|call| call["verb"] == "stage publish")
+        .collect();
+    assert_eq!(stages.len(), 1, "{calls:#?}");
+    let stage = stages[0];
+    assert_eq!(stage["job"], job.key);
+    let stage_step = stage["step"].as_u64().unwrap();
+    let install = calls
+        .iter()
+        .rev()
+        .find(|call| {
+            call["verb"] == "install npm"
+                && call["job"] == job.key
+                && call["step"].as_u64().is_some_and(|step| step < stage_step)
+        })
+        .expect("the staging job has no earlier step that installs npm globally");
+    let version = install["version"]
+        .as_str()
+        .expect("the npm installation must name an exact X.Y.Z version");
+    let numbers: Vec<_> = version.split('.').collect();
+    assert!(
+        numbers.len() == 3
+            && numbers.iter().all(
+                |number| !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
+            ),
+        "the npm installation must name an exact X.Y.Z version, got {version:?}"
+    );
+    let numbers: Vec<u64> = numbers
+        .into_iter()
+        .map(|number| number.parse().expect("npm version component is too large"))
+        .collect();
+    assert!(
+        numbers.as_slice() >= [11, 21, 0].as_slice(),
+        "npm {version} is older than 11.21.0"
+    );
+}
+
+// behavior-2: The job that stages installs npm at one exact version, at least 11.21.0, before it stages
+#[test]
+fn the_staging_job_installs_an_exact_supported_npm_before_using_it() {
+    let root = release_workflow();
+    let calls = release_replay::pack_and_stage(&root, "0.2.0-alpha.73");
+    assert_staging_npm_installation(&root, &calls);
+}
+
+fn npm_release_control(before: &str, pack_options: &str, stage_command: &str, after: &str) -> Node {
+    let text = format!(
+        r#"jobs:
+  npm:
+    steps:
+      - run: |
+          mkdir -p package
+          printf '%s' '{{"name":"@azimuth-sh/playwright","version":"0.0.0"}}' > package/package.json
+          npm version --prefix package --no-git-tag-version "${{GITHUB_REF_NAME#v}}"
+          npm pack package --pack-destination packed {pack_options}
+{before}      - run: {stage_command}
+{after}"#
+    );
+    Node {
+        key: String::new(),
+        value: None,
+        children: read_yaml(&text, "npm release control"),
+        line: 0,
+    }
+}
+
+#[test]
+fn the_latest_tag_is_required_on_staging_rather_than_another_npm_command() {
+    for option in ["--tag latest", "--tag=latest"] {
+        let root = npm_release_control(
+            "",
+            "",
+            &format!("npm stage publish packed/*.tgz {option}"),
+            "",
+        );
+        assert_latest_staging_tag(&release_replay::pack_and_stage(&root, "0.2.0-alpha.73"));
+    }
+    for (pack, stage) in [("", ""), ("", "--tag alpha"), ("--tag latest", "")] {
+        let root = npm_release_control(
+            "",
+            pack,
+            &format!("npm stage publish packed/*.tgz {stage}"),
+            "",
+        );
+        let calls = release_replay::pack_and_stage(&root, "0.2.0-alpha.73");
+        assert!(
+            std::panic::catch_unwind(|| assert_latest_staging_tag(&calls)).is_err(),
+            "pack={pack}, stage={stage}"
+        );
+    }
+}
+
+#[test]
+fn the_npm_pin_is_numeric_exact_and_installed_in_an_earlier_step_of_this_job() {
+    for (command, accepted) in [
+        ("npm install -g npm@11.21.0", true),
+        ("npm install npm@12.0.0 --global", true),
+        ("npm i --location=global npm@20.0.0", true),
+        ("npm add --global npm@11.22.3", true),
+        ("npm install -g npm@11.9.0", false),
+        ("npm install -g npm@11.20.99", false),
+        ("npm install -g npm@latest", false),
+        ("npm install -g npm@11", false),
+        ("npm install -g npm@11.21", false),
+        ("npm install -g npm@^11.21.0", false),
+        ("npm install -g npm@~11.21.0", false),
+        ("npm install -g 'npm@>=11.21.0'", false),
+        ("npm install -g npm@11.21.0-alpha.1", false),
+        ("npm install -g npm", false),
+    ] {
+        let root = npm_release_control(
+            &format!("      - run: {command}\n"),
+            "",
+            "npm stage publish packed/*.tgz --tag latest",
+            "",
+        );
+        let calls = release_replay::pack_and_stage(&root, "0.2.0-alpha.73");
+        assert_eq!(
+            std::panic::catch_unwind(|| assert_staging_npm_installation(&root, &calls)).is_ok(),
+            accepted,
+            "{command}"
+        );
+    }
+    let install = "      - run: npm install -g npm@11.21.0\n";
+    for root in [
+        npm_release_control("","","npm stage publish packed/*.tgz --tag latest",install),
+        npm_release_control("","","|\n          npm install -g npm@11.21.0\n          npm stage publish packed/*.tgz --tag latest", ""),
+        npm_release_control(&format!("{install}      - run: npm install -g npm@11.9.0\n"),"","npm stage publish packed/*.tgz --tag latest", ""),
+    ] {
+        let calls=release_replay::pack_and_stage(&root,"0.2.0-alpha.73");
+        assert!(std::panic::catch_unwind(||assert_staging_npm_installation(&root,&calls)).is_err());
+    }
+    let root = npm_release_control(
+        install,
+        "",
+        "/another/npm stage publish packed/*.tgz --tag latest",
+        "",
+    );
+    assert!(
+        std::panic::catch_unwind(|| release_replay::pack_and_stage(&root, "0.2.0-alpha.73"))
+            .is_err()
+    );
+    let text = r#"jobs:
+  pack:
+    steps:
+      - run: |
+          mkdir -p package
+          printf '%s' '{"name":"@azimuth-sh/playwright","version":"0.0.0"}' > package/package.json
+          npm install -g npm@12.0.0
+          npm version --prefix package --no-git-tag-version "${GITHUB_REF_NAME#v}"
+          npm pack package --pack-destination packed
+      - uses: actions/upload-artifact@abc
+        with:
+          name: package
+          path: packed/*.tgz
+  stage:
+    needs: pack
+    steps:
+      - uses: actions/download-artifact@abc
+        with:
+          name: package
+          path: packed
+      - run: npm stage publish packed/*.tgz --tag latest
+"#;
+    let root = Node {
+        key: String::new(),
+        value: None,
+        children: read_yaml(text, "installation in the packing job"),
+        line: 0,
+    };
+    let calls = release_replay::pack_and_stage(&root, "0.2.0-alpha.73");
+    assert!(calls.iter().any(|call| call["verb"] == "install npm"
+        && call["version"] == "12.0.0"
+        && call["job"] == "pack"));
+    assert!(std::panic::catch_unwind(|| assert_staging_npm_installation(&root, &calls)).is_err());
+}
