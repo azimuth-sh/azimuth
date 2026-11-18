@@ -86,7 +86,8 @@ fn limit_bounds(run: &LiveRun, role: &str, seconds: u64) {
     );
 }
 fn grace_bounds(run: &LiveRun, role: &str) {
-    let term = first_term(run);
+    // A group mate's receipt cannot prove that this resistant process got the polite stop.
+    let term = stamp(run, role, "SIGTERM");
     let alive = stamp(run, role, "observed-alive") - term;
     // A sample begun after nine seconds proves an eight-second grace is wrong; a delayed ps
     // response cannot manufacture that witness. Allow exit detection until 11.5 seconds for
@@ -98,7 +99,7 @@ fn grace_bounds(run: &LiveRun, role: &str) {
     let elapsed = stamp(run, role, "observed-exit") - term;
     assert!(
         (9_000_000_000..=11_500_000_000).contains(&elapsed),
-        "grace after {elapsed} ns from first SIGTERM receipt"
+        "{role} grace after {elapsed} ns from its own SIGTERM receipt"
     );
 }
 // behavior-2: A launch of an adapter has a time limit
@@ -128,6 +129,7 @@ fn a_build_that_hangs_loses_the_whole_process_tree_at_one_minute() {
                         .count()
                         == 3
                 });
+                assert_tree_is_separate_and_alive(&run, "adapter");
                 let during = run.text();
                 let payload = format!("TREE-PAYLOAD-{}", repo.beside("tree-token").display());
                 run.wait_until(Duration::from_secs(180), |run| {
@@ -175,6 +177,144 @@ fn a_build_that_hangs_loses_the_whole_process_tree_at_one_minute() {
             });
         }
     });
+}
+
+fn assert_tree_is_separate_and_alive(run: &LiveRun, root: &str) {
+    let events = run.events();
+    assert!(!events.iter().any(|event| event["event"] == "SIGTERM"));
+    let starts: Vec<_> = events
+        .iter()
+        .filter(|event| event["event"] == "started")
+        .collect();
+    assert_eq!(starts.len(), 3);
+    let group = starts.iter().find(|event| event["role"] == root).unwrap()["group"]
+        .as_i64()
+        .unwrap() as i32;
+    let table = azimuth_tests::process::processes().unwrap_or_else(|error| panic!("{error}"));
+    for event in starts {
+        let process = &table[&(event["pid"].as_u64().unwrap() as u32)];
+        assert!(
+            process.running(),
+            "{} was not alive before the limit",
+            event["role"]
+        );
+        assert_eq!(process.group, group);
+        assert_ne!(
+            process.group, run.cli_group,
+            "{} shares the CLI's group before the limit",
+            event["role"]
+        );
+    }
+}
+
+#[test]
+fn a_timeout_finishes_even_when_an_escaped_process_retains_stdout() {
+    let repo = tree("escaped-output", Some(1));
+    let mut run = LiveRun::start(&repo, &["run", "--json"], "escaped-output");
+    run.wait_until(Duration::from_secs(30), |run| {
+        run.events()
+            .iter()
+            .any(|event| event["role"] == "holder" && event["event"] == "started")
+    });
+    assert_ne!(stamp_group(&run, "holder"), stamp_group(&run, "adapter"));
+    // The escaped process is explicitly outside the core's reach; waiting for its pipe is not grace.
+    let output = run.finish_cli(Duration::from_secs(80));
+    no_results(&repo, &output);
+    assert_holder_alive(&run);
+    // LiveRun's guard verifies executable, unique token, birth and command before killing the holder.
+}
+
+fn stamp_group(run: &LiveRun, role: &str) -> serde_json::Value {
+    run.events()
+        .into_iter()
+        .find(|event| event["role"] == role && event["event"] == "started")
+        .unwrap()["group"]
+        .clone()
+}
+fn assert_holder_alive(run: &LiveRun) {
+    let event = run
+        .events()
+        .into_iter()
+        .find(|event| event["role"] == "holder" && event["event"] == "started")
+        .unwrap();
+    let table = azimuth_tests::process::processes().unwrap_or_else(|error| panic!("{error}"));
+    let process = &table[&(event["pid"].as_u64().unwrap() as u32)];
+    assert!(process.running());
+    assert!(process
+        .command
+        .split_whitespace()
+        .any(|arg| Some(arg) == event["token"].as_str()));
+}
+
+#[test]
+fn a_report_is_used_without_waiting_for_a_descendants_stdout_to_close() {
+    let repo = tree("inherited-output", Some(1));
+    let mut run = LiveRun::start(&repo, &["run", "--json"], "inherited-output");
+    let output = run.finish_cli(Duration::from_secs(15));
+    output.expect_status(0);
+    let doc = output.json();
+    assert_eq!(doc["suites"][0]["launch"], "ok");
+    for check in ALL_CHECKS {
+        assert_eq!(state_of(&doc, check), "passed");
+        assert_eq!(repo.result_of(check)["body"]["outcome"], "passed");
+    }
+    assert_eq!(repo.records().len(), 4);
+    assert!(stamp(&run, "holder", "started") < stamp(&run, "adapter", "exited"));
+}
+
+#[test]
+fn the_commit_lane_stops_a_launch_at_its_suite_limit() {
+    let repo = tree("orphan", Some(1));
+    let mut run = LiveRun::start(
+        &repo,
+        &["run", "--lane", "commit", "--json"],
+        "commit-timeout",
+    );
+    let output = run.finish(Duration::from_secs(90));
+    no_results(&repo, &output);
+    assert_eq!(output.json()["lane"], "commit");
+    limit_bounds(&run, "adapter", 60);
+    assert_tree_stopped(&run, "adapter");
+}
+
+#[test]
+fn check_run_stops_a_launch_at_its_suite_limit() {
+    let repo = tree("orphan", Some(1));
+    let mut run = LiveRun::start(
+        &repo,
+        &["check", "run", SIXTH_LOAN, "--json"],
+        "check-timeout",
+    );
+    let output = run.finish(Duration::from_secs(90));
+    output.expect_status(1);
+    let doc = output.json();
+    assert_eq!(doc["format"], "run-1");
+    assert_eq!(doc["suites"].as_array().unwrap().len(), 1);
+    assert_eq!(doc["suites"][0]["launch"], "timed out");
+    assert_eq!(doc["checks"].as_array().unwrap().len(), 1);
+    assert_eq!(state_of(&doc, SIXTH_LOAN), "owed");
+    assert_eq!(reason_of(&doc, SIXTH_LOAN), "no result");
+    assert!(repo.store_files().is_empty() && repo.outbox_files().is_empty());
+    limit_bounds(&run, "adapter", 60);
+    assert_tree_stopped(&run, "adapter");
+}
+
+#[test]
+fn an_omitted_limit_allows_a_launch_longer_than_one_minute() {
+    let repo = Repo::sample();
+    assert!(!repo.read(PROJECT_FILE).contains("time_limit_minutes"));
+    repo.append(LATE_FINE_TESTS, "adapter: sleeps 70000\n");
+    let mut run = LiveRun::start(&repo, &["run", "--json"], "default-over-one-minute");
+    let output = run.finish(Duration::from_secs(100));
+    output.expect_status(0);
+    let doc = output.json();
+    assert_eq!(doc["suites"][0]["launch"], "ok");
+    assert!(doc["suites"][0]["duration_ms"].as_u64().unwrap() >= 70_000);
+    for check in ALL_CHECKS {
+        assert_eq!(state_of(&doc, check), "passed");
+        assert_eq!(repo.result_of(check)["body"]["outcome"], "passed");
+    }
+    assert_eq!(repo.records().len(), 4);
 }
 // behavior-2: A process of the group that is still alive after the grace is killed with SIGKILL, together with the rest of the group
 // behavior-2: The grace is 10 seconds and no setting changes it

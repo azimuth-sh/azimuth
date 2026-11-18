@@ -1,4 +1,4 @@
-//! Group "`azimuth change show`" of docs/increments/1.md.
+//! The change comparison behaviors of docs/increments/1.md and docs/increments/2.md.
 
 use azimuth_tests::*;
 
@@ -15,12 +15,17 @@ fn change_diff(repo: &Repo, args: &[&str]) -> serde_json::Value {
 /// One list of a `change-1` document. Lists hold ids, and a Scenario as `requirement/scenario`.
 fn listed(document: &serde_json::Value, kind: &str, which: &str) -> Vec<String> {
     let list = &document[kind][which];
-    assert!(list.is_array(), "`{kind}.{which}` is not a list: {document:#}");
+    assert!(
+        list.is_array(),
+        "`{kind}.{which}` is not a list: {document:#}"
+    );
     strings_of(list)
 }
 
 fn names(document: &serde_json::Value, kind: &str, which: &str, id: &str) -> bool {
-    listed(document, kind, which).iter().any(|entry| entry == id)
+    listed(document, kind, which)
+        .iter()
+        .any(|entry| entry == id)
 }
 
 fn class(document: &serde_json::Value) -> String {
@@ -38,7 +43,10 @@ fn add_check(repo: &Repo, id: &str) {
         "  After one return the desk lends again to a borrower who held five loans.\n",
         &format!("  After one return the desk lends again to a borrower who held five loans.\n\n- Check: {id}\n  A claim of the new Check {id}.\n"),
     );
-    repo.write(&format!("suites/desk-checks/{id}.test"), &format!("# Check: {id}\noutcome: passed\n"));
+    repo.write(
+        &format!("suites/desk-checks/{id}.test"),
+        &format!("# Check: {id}\noutcome: passed\n"),
+    );
 }
 
 fn remove_returned_book_check(repo: &Repo) {
@@ -47,7 +55,11 @@ fn remove_returned_book_check(repo: &Repo) {
         "- Check: returned-book-frees-a-slot\n  After one return the desk lends again to a borrower who held five loans.\n",
         "",
     );
-    repo.replace(LOAN_LIMIT_TESTS, "# Check: returned-book-frees-a-slot\n", "");
+    repo.replace(
+        LOAN_LIMIT_TESTS,
+        "# Check: returned-book-frees-a-slot\n",
+        "",
+    );
 }
 
 // behavior: By default it compares the branch with its target
@@ -59,7 +71,10 @@ fn change_diff_compares_the_branch_with_main() {
     repo.commit_all("add a Check");
     let document = change_diff(&repo, &[]);
     assert_eq!(document["target"], "main", "{document:#}");
-    assert!(names(&document, "checks", "added", "renewal-keeps-the-count"), "{document:#}");
+    assert!(
+        names(&document, "checks", "added", "renewal-keeps-the-count"),
+        "{document:#}"
+    );
 }
 
 // behavior: It lists added, changed and removed Requirements, Scenarios and Checks
@@ -68,26 +83,76 @@ fn change_diff_lists_what_the_change_did_to_the_model() {
     let repo = Repo::sample();
     on_branch(&repo);
     add_check(&repo, "renewal-keeps-the-count");
-    repo.append(LENDING_SPEC, "\n### Requirement: renewals-are-limited\nA loan is renewed at most twice.\n");
-    repo.replace(LENDING_SPEC, "A borrower holds at most five loans at a time.", "A borrower holds at most five loans at once.");
+    repo.append(
+        LENDING_SPEC,
+        "\n### Requirement: renewals-are-limited\nA loan is renewed at most twice.\n",
+    );
+    repo.replace(
+        LENDING_SPEC,
+        "A borrower holds at most five loans at a time.",
+        "A borrower holds at most five loans at once.",
+    );
     repo.replace(
         LENDING_SPEC,
         "#### Scenario: returned-book-frees-a-slot\nA borrower who holds five loans returns one book and asks for another.\nThe desk lends it.\n",
         "",
     );
-    repo.replace(LENDING_VERIFICATION, "#### Scenario: returned-book-frees-a-slot\n", "");
+    repo.replace(
+        LENDING_VERIFICATION,
+        "#### Scenario: returned-book-frees-a-slot\n",
+        "",
+    );
     remove_returned_book_check(&repo);
-    repo.replace(RETURNS_SPEC, "The desk records a fine of three days.", "The desk records a fine for each of the three days.");
-    repo.replace(RETURNS_VERIFICATION, "A return three days late records a fine of three days.", "A return three days late records three days of fine.");
+    repo.replace(
+        RETURNS_SPEC,
+        "The desk records a fine of three days.",
+        "The desk records a fine for each of the three days.",
+    );
+    repo.replace(
+        RETURNS_VERIFICATION,
+        "A return three days late records a fine of three days.",
+        "A return three days late records three days of fine.",
+    );
     repo.commit_all("rework lending");
     let document = change_diff(&repo, &[]);
-    assert!(names(&document, "requirements", "added", "renewals-are-limited"), "{document:#}");
-    assert!(names(&document, "requirements", "changed", LOAN_LIMIT), "{document:#}");
-    assert!(names(&document, "scenarios", "removed", &format!("{LOAN_LIMIT}/{RETURNED_BOOK}")), "{document:#}");
-    assert!(names(&document, "scenarios", "changed", &format!("{LATE_FINE}/{LATE_RETURN}")), "{document:#}");
-    assert!(names(&document, "checks", "removed", RETURNED_BOOK), "{document:#}");
-    assert!(names(&document, "checks", "changed", LATE_RETURN), "{document:#}");
-    assert!(names(&document, "checks", "added", "renewal-keeps-the-count"), "{document:#}");
+    assert!(
+        names(&document, "requirements", "added", "renewals-are-limited"),
+        "{document:#}"
+    );
+    assert!(
+        names(&document, "requirements", "changed", LOAN_LIMIT),
+        "{document:#}"
+    );
+    assert!(
+        names(
+            &document,
+            "scenarios",
+            "removed",
+            &format!("{LOAN_LIMIT}/{RETURNED_BOOK}")
+        ),
+        "{document:#}"
+    );
+    assert!(
+        names(
+            &document,
+            "scenarios",
+            "changed",
+            &format!("{LATE_FINE}/{LATE_RETURN}")
+        ),
+        "{document:#}"
+    );
+    assert!(
+        names(&document, "checks", "removed", RETURNED_BOOK),
+        "{document:#}"
+    );
+    assert!(
+        names(&document, "checks", "changed", LATE_RETURN),
+        "{document:#}"
+    );
+    assert!(
+        names(&document, "checks", "added", "renewal-keeps-the-count"),
+        "{document:#}"
+    );
 }
 
 // behavior: It stores nothing
@@ -99,7 +164,11 @@ fn change_diff_stores_nothing() {
     let before = repo.snapshot();
     change_diff(&repo, &[]);
     repo.azimuth(&["change", "diff"]).expect_status(0);
-    assert_eq!(repo.snapshot(), before, "change diff wrote into the worktree");
+    assert_eq!(
+        repo.snapshot(),
+        before,
+        "change diff wrote into the worktree"
+    );
     assert!(repo.store_files().is_empty(), "change diff wrote the store");
 }
 
@@ -108,7 +177,11 @@ fn change_diff_stores_nothing() {
 fn change_diff_uses_the_target_of_the_project_file() {
     let repo = Repo::sample_with(|root| {
         let project = std::fs::read_to_string(root.join(PROJECT_FILE)).unwrap();
-        std::fs::write(root.join(PROJECT_FILE), project.replace("target = \"main\"", "target = \"release\"")).unwrap();
+        std::fs::write(
+            root.join(PROJECT_FILE),
+            project.replace("target = \"main\"", "target = \"release\""),
+        )
+        .unwrap();
     });
     repo.git(&["checkout", "--quiet", "-b", "release"]);
     add_check(&repo, "release-only-check");
@@ -117,8 +190,14 @@ fn change_diff_uses_the_target_of_the_project_file() {
     add_check(&repo, "renewal-keeps-the-count");
     let document = change_diff(&repo, &[]);
     assert_eq!(document["target"], "release");
-    assert!(names(&document, "checks", "added", "renewal-keeps-the-count"), "{document:#}");
-    assert!(!names(&document, "checks", "added", "release-only-check"), "the change was compared with main: {document:#}");
+    assert!(
+        names(&document, "checks", "added", "renewal-keeps-the-count"),
+        "{document:#}"
+    );
+    assert!(
+        !names(&document, "checks", "added", "release-only-check"),
+        "the change was compared with main: {document:#}"
+    );
 }
 
 // behavior: It compares with the common ancestor of the current commit and the target branch
@@ -134,8 +213,17 @@ fn change_diff_compares_with_the_common_ancestor() {
     repo.commit_all("work that landed on main after the branch started");
     repo.git(&["checkout", "--quiet", "change"]);
     let document = change_diff(&repo, &[]);
-    assert_eq!(document["base"].as_str().map(|base| start.starts_with(base)), Some(true), "{document:#}");
-    assert!(!names(&document, "checks", "removed", "landed-on-main-later"), "{document:#}");
+    assert_eq!(
+        document["base"]
+            .as_str()
+            .map(|base| start.starts_with(base)),
+        Some(true),
+        "{document:#}"
+    );
+    assert!(
+        !names(&document, "checks", "removed", "landed-on-main-later"),
+        "{document:#}"
+    );
     assert_eq!(class(&document), "C", "{document:#}");
 }
 
@@ -144,27 +232,53 @@ fn change_diff_compares_with_the_common_ancestor() {
 fn change_diff_uses_the_last_fetched_target_and_never_fetches() {
     let origin = Repo::sample();
     let clone = origin.beside("clone");
-    origin.git_in(&origin.beside(""), &["clone", "--quiet", origin.root().to_str().unwrap(), clone.to_str().unwrap()]);
+    origin.git_in(
+        &origin.beside(""),
+        &[
+            "clone",
+            "--quiet",
+            origin.root().to_str().unwrap(),
+            clone.to_str().unwrap(),
+        ],
+    );
     let fetched = origin.git_in(&clone, &["rev-parse", "origin/main"]);
 
     // Local main moves ahead of origin/main, so the two copies of the target disagree.
     let in_clone = |args: &[&str]| origin.git_in(&clone, args);
     let write = |relative: &str, text: &str| std::fs::write(clone.join(relative), text).unwrap();
     let verification = std::fs::read_to_string(clone.join(LENDING_VERIFICATION)).unwrap();
-    write(LENDING_VERIFICATION, &format!("{verification}\n- Check: local-main-only\n  A Check committed to local main only.\n"));
-    write("suites/desk-checks/local-main-only.test", "# Check: local-main-only\noutcome: passed\n");
+    write(
+        LENDING_VERIFICATION,
+        &format!(
+            "{verification}\n- Check: local-main-only\n  A Check committed to local main only.\n"
+        ),
+    );
+    write(
+        "suites/desk-checks/local-main-only.test",
+        "# Check: local-main-only\noutcome: passed\n",
+    );
     in_clone(&["add", "-A"]);
     in_clone(&["commit", "--quiet", "-m", "local main moves"]);
     in_clone(&["checkout", "--quiet", "-b", "change"]);
 
-    origin.append(PRODUCT_FILE, "a commit on the remote that was never fetched\n");
+    origin.append(
+        PRODUCT_FILE,
+        "a commit on the remote that was never fetched\n",
+    );
     origin.commit_all("remote moves");
 
     let output = origin.azimuth_in(&clone, &["change", "diff", "--json"], &[]);
     output.expect_status(0);
     let document = output.json();
-    assert!(names(&document, "checks", "added", "local-main-only"), "the local copy was used: {document:#}");
-    assert_eq!(origin.git_in(&clone, &["rev-parse", "origin/main"]), fetched, "change show fetched");
+    assert!(
+        names(&document, "checks", "added", "local-main-only"),
+        "the local copy was used: {document:#}"
+    );
+    assert_eq!(
+        origin.git_in(&clone, &["rev-parse", "origin/main"]),
+        fetched,
+        "change diff fetched"
+    );
 }
 
 // behavior: On the target branch itself it compares the working tree with the last commit
@@ -173,11 +287,23 @@ fn on_the_target_branch_the_working_tree_is_the_change() {
     let repo = Repo::sample();
     add_check(&repo, "renewal-keeps-the-count");
     let document = change_diff(&repo, &[]);
-    assert!(names(&document, "checks", "added", "renewal-keeps-the-count"), "{document:#}");
-    assert_eq!(document["base"].as_str().map(|base| repo.head().starts_with(base)), Some(true), "{document:#}");
+    assert!(
+        names(&document, "checks", "added", "renewal-keeps-the-count"),
+        "{document:#}"
+    );
+    assert_eq!(
+        document["base"]
+            .as_str()
+            .map(|base| repo.head().starts_with(base)),
+        Some(true),
+        "{document:#}"
+    );
     repo.commit_all("commit the Check");
     let committed = change_diff(&repo, &[]);
-    assert!(listed(&committed, "checks", "added").is_empty(), "{committed:#}");
+    assert!(
+        listed(&committed, "checks", "added").is_empty(),
+        "{committed:#}"
+    );
 }
 
 // behavior: `--target <ref>` compares with the common ancestor of another ref
@@ -191,10 +317,19 @@ fn another_target_can_be_named() {
     add_check(&repo, "second-change-check");
     repo.commit_all("second change");
     let stacked = change_diff(&repo, &["--target", "first"]);
-    assert!(names(&stacked, "checks", "added", "second-change-check"), "{stacked:#}");
-    assert!(!names(&stacked, "checks", "added", "first-change-check"), "{stacked:#}");
+    assert!(
+        names(&stacked, "checks", "added", "second-change-check"),
+        "{stacked:#}"
+    );
+    assert!(
+        !names(&stacked, "checks", "added", "first-change-check"),
+        "{stacked:#}"
+    );
     let whole = change_diff(&repo, &[]);
-    assert!(names(&whole, "checks", "added", "first-change-check") && names(&whole, "checks", "added", "second-change-check"));
+    assert!(
+        names(&whole, "checks", "added", "first-change-check")
+            && names(&whole, "checks", "added", "second-change-check")
+    );
 }
 
 fn shallow_clone_without_ancestor() -> (Repo, std::path::PathBuf) {
@@ -209,7 +344,18 @@ fn shallow_clone_without_ancestor() -> (Repo, std::path::PathBuf) {
     origin.commit_all("main moves");
     let shallow = origin.beside("shallow");
     let url = format!("file://{}", origin.root().display());
-    origin.git_in(&origin.beside(""), &["clone", "--quiet", "--depth", "1", "--no-single-branch", &url, shallow.to_str().unwrap()]);
+    origin.git_in(
+        &origin.beside(""),
+        &[
+            "clone",
+            "--quiet",
+            "--depth",
+            "1",
+            "--no-single-branch",
+            &url,
+            shallow.to_str().unwrap(),
+        ],
+    );
     origin.git_in(&shallow, &["checkout", "--quiet", "change"]);
     (origin, shallow)
 }
@@ -218,8 +364,12 @@ fn shallow_clone_without_ancestor() -> (Repo, std::path::PathBuf) {
 #[test]
 fn a_missing_ancestor_ends_with_two() {
     let (origin, shallow) = shallow_clone_without_ancestor();
-    origin.azimuth_in(&shallow, &["change", "diff"], &[]).expect_status(2);
-    origin.azimuth_in(&shallow, &["change", "diff", "--json"], &[]).expect_status(2);
+    origin
+        .azimuth_in(&shallow, &["change", "diff"], &[])
+        .expect_status(2);
+    origin
+        .azimuth_in(&shallow, &["change", "diff", "--json"], &[])
+        .expect_status(2);
 }
 
 // behavior: When the common ancestor is not in the clone it says so and prints no class
@@ -227,9 +377,19 @@ fn a_missing_ancestor_ends_with_two() {
 fn a_missing_ancestor_is_named_and_no_class_is_guessed() {
     let (origin, shallow) = shallow_clone_without_ancestor();
     let output = origin.azimuth_in(&shallow, &["change", "diff"], &[]);
-    assert!(output.text().contains("the common commit is not in this clone"), "{}", output.text());
+    assert!(
+        output
+            .text()
+            .contains("the common commit is not in this clone"),
+        "{}",
+        output.text()
+    );
     let lower = output.text().to_lowercase();
-    assert!(!lower.contains("class"), "a class was printed:\n{}", output.text());
+    assert!(
+        !lower.contains("class"),
+        "a class was printed:\n{}",
+        output.text()
+    );
     let json = origin.azimuth_in(&shallow, &["change", "diff", "--json"], &[]);
     assert!(!json.stdout.contains("\"class\""), "{}", json.stdout);
 }
@@ -241,12 +401,25 @@ fn change_document_has_its_fields() {
     on_branch(&repo);
     add_check(&repo, "renewal-keeps-the-count");
     let document = change_diff(&repo, &[]);
-    for field in ["target", "base", "class", "requirements", "scenarios", "checks", "markers_removed", "not_compared", "rigor_lowered"] {
+    for field in [
+        "target",
+        "base",
+        "class",
+        "requirements",
+        "scenarios",
+        "checks",
+        "markers_removed",
+        "not_compared",
+        "rigor_lowered",
+    ] {
         assert!(has(&document, field), "no `{field}`: {document:#}");
     }
     for kind in ["requirements", "scenarios", "checks"] {
         for which in ["added", "changed", "removed"] {
-            assert!(has(&document[kind], which), "no `{kind}.{which}`: {document:#}");
+            assert!(
+                has(&document[kind], which),
+                "no `{kind}.{which}`: {document:#}"
+            );
         }
     }
 }
@@ -258,7 +431,10 @@ fn the_preview_reads_the_working_tree() {
     on_branch(&repo);
     add_check(&repo, "renewal-keeps-the-count");
     let document = change_diff(&repo, &[]);
-    assert!(names(&document, "checks", "added", "renewal-keeps-the-count"), "{document:#}");
+    assert!(
+        names(&document, "checks", "added", "renewal-keeps-the-count"),
+        "{document:#}"
+    );
     assert_eq!(class(&document), "C");
 }
 
@@ -283,7 +459,8 @@ fn the_class_is_printed() {
 #[test]
 fn an_installed_skill_change_is_class_d() {
     let repo = Repo::sample();
-    repo.azimuth(&["skills", "install", "codex"]).expect_status(0);
+    repo.azimuth(&["skills", "install", "codex"])
+        .expect_status(0);
     repo.commit_all("install the default process");
     on_branch(&repo);
     repo.replace(SKILL_FILE, "\n", "\nThe person also reads the build log.\n");
@@ -294,21 +471,29 @@ fn an_installed_skill_change_is_class_d() {
 // behavior: A change to `specification.md`, a rigor declaration, the project file or an installed skill file makes the class D
 #[test]
 fn a_specification_change_is_class_d() {
-    let (class, document, _) = class_of(|repo| repo.replace(LENDING_SPEC, "at most five loans", "at most six loans"));
+    let (class, document, _) =
+        class_of(|repo| repo.replace(LENDING_SPEC, "at most five loans", "at most six loans"));
     assert_eq!(class, "D", "{document:#}");
 }
 
 // behavior: A change to `specification.md`, a rigor declaration, the project file or an installed skill file makes the class D
 #[test]
 fn a_prose_only_specification_change_is_class_d() {
-    let (class, document, _) = class_of(|repo| repo.replace(LENDING_SPEC, "A loan is one book", "A loan is a single book"));
+    let (class, document, _) = class_of(|repo| {
+        repo.replace(
+            LENDING_SPEC,
+            "A loan is one book",
+            "A loan is a single book",
+        )
+    });
     assert_eq!(class, "D", "{document:#}");
 }
 
 // behavior: A change to `specification.md`, a rigor declaration, the project file or an installed skill file makes the class D
 #[test]
 fn a_project_file_change_is_class_d() {
-    let (class, document, _) = class_of(|repo| repo.append(PROJECT_FILE, "# a comment is a change too\n"));
+    let (class, document, _) =
+        class_of(|repo| repo.append(PROJECT_FILE, "# a comment is a change too\n"));
     assert_eq!(class, "D", "{document:#}");
 }
 
@@ -318,42 +503,79 @@ fn a_rigor_declaration_change_is_class_d() {
     let repo = Repo::sample_with(|root| {
         let path = root.join(RETURNS_VERIFICATION);
         let text = std::fs::read_to_string(&path).unwrap();
-        std::fs::write(&path, format!("{text}  Reuse: never, the desk reads today's date\n")).unwrap();
+        std::fs::write(
+            &path,
+            format!("{text}  Reuse: never, the desk reads today's date\n"),
+        )
+        .unwrap();
     });
     on_branch(&repo);
-    repo.replace(RETURNS_VERIFICATION, "  Reuse: never, the desk reads today's date\n", "");
+    repo.replace(
+        RETURNS_VERIFICATION,
+        "  Reuse: never, the desk reads today's date\n",
+        "",
+    );
     assert_eq!(class(&change_diff(&repo, &[])), "D");
 }
 
 // behavior: A change to `verification.md`, a file with a marker or any file inside a suite's folder makes the class at least C
 #[test]
 fn a_verification_change_is_class_c() {
-    let (class, document, _) = class_of(|repo| repo.replace(LENDING_VERIFICATION, "The desk refuses a sixth loan", "The desk turns down a sixth loan"));
+    let (class, document, _) = class_of(|repo| {
+        repo.replace(
+            LENDING_VERIFICATION,
+            "The desk refuses a sixth loan",
+            "The desk turns down a sixth loan",
+        )
+    });
     assert_eq!(class, "C", "{document:#}");
 }
 
 // behavior: A change to `verification.md`, a file with a marker or any file inside a suite's folder makes the class at least C
 #[test]
 fn a_change_to_a_marked_file_is_class_c() {
-    let (class, document, _) = class_of(|repo| repo.replace(LATE_FINE_TESTS, "outcome: passed", "outcome: passed\nduration: 3"));
+    let (class, document, _) = class_of(|repo| {
+        repo.replace(
+            LATE_FINE_TESTS,
+            "outcome: passed",
+            "outcome: passed\nduration: 3",
+        )
+    });
     assert_eq!(class, "C", "{document:#}");
 }
 
 // behavior: A change to `verification.md`, a file with a marker or any file inside a suite's folder makes the class at least C
 #[test]
 fn a_change_to_an_unmarked_file_in_a_suite_folder_is_class_c() {
-    let (class, document, _) = class_of(|repo| repo.write("suites/desk-checks/calendar.txt", "the desk is closed on Sundays\n"));
+    let (class, document, _) = class_of(|repo| {
+        repo.write(
+            "suites/desk-checks/calendar.txt",
+            "the desk is closed on Sundays\n",
+        )
+    });
     assert_eq!(class, "C", "{document:#}");
 }
 
 // behavior: A change to `realization.md` makes the class at least B
 #[test]
 fn a_realization_change_is_class_b() {
-    let (class, document, _) = class_of(|repo| repo.write("azimuth/model/lending/realization.md", "The limit is counted in desk/lending.txt.\n"));
+    let (class, document, _) = class_of(|repo| {
+        repo.write(
+            "azimuth/model/lending/realization.md",
+            "The limit is counted in desk/lending.txt.\n",
+        )
+    });
     assert_eq!(class, "B", "{document:#}");
     let (class, document, _) = class_of(|repo| {
-        repo.write("azimuth/model/lending/realization.md", "The limit is counted in desk/lending.txt.\n");
-        repo.replace(LENDING_VERIFICATION, "The desk refuses a sixth loan", "The desk turns down a sixth loan");
+        repo.write(
+            "azimuth/model/lending/realization.md",
+            "The limit is counted in desk/lending.txt.\n",
+        );
+        repo.replace(
+            LENDING_VERIFICATION,
+            "The desk refuses a sixth loan",
+            "The desk turns down a sixth loan",
+        );
     });
     assert_eq!(class, "C", "{document:#}");
 }
@@ -374,7 +596,10 @@ fn a_product_change_is_class_a() {
 fn removing_a_check_is_class_d() {
     let (class, document, text) = class_of(remove_returned_book_check);
     assert_eq!(class, "D", "{document:#}");
-    assert!(names(&document, "checks", "removed", RETURNED_BOOK), "{document:#}");
+    assert!(
+        names(&document, "checks", "removed", RETURNED_BOOK),
+        "{document:#}"
+    );
     assert!(text.stdout.contains(RETURNED_BOOK), "{}", text.stdout);
 }
 
@@ -401,16 +626,39 @@ fn removing_a_marker_line_is_class_d() {
 #[test]
 fn a_changed_marked_file_is_named_as_not_compared() {
     let (_, document, text) = class_of(|repo| {
-        repo.replace(FREE_RETURN_TESTS, "test: returned-early\noutcome: passed\n", "");
-        repo.replace(LATE_FINE_TESTS, "outcome: passed", "outcome: passed\nduration: 3");
+        repo.replace(
+            FREE_RETURN_TESTS,
+            "test: returned-early\noutcome: passed\n",
+            "",
+        );
+        repo.replace(
+            LATE_FINE_TESTS,
+            "outcome: passed",
+            "outcome: passed\nduration: 3",
+        );
         repo.append(PRODUCT_FILE, "renewals do not count\n");
     });
     let not_compared = all_strings(&document["not_compared"]);
     for file in [FREE_RETURN_TESTS, LATE_FINE_TESTS] {
-        assert!(not_compared.iter().any(|entry| entry.ends_with(file)), "{document:#}");
+        assert!(
+            not_compared.iter().any(|entry| entry.ends_with(file)),
+            "{document:#}"
+        );
     }
-    assert!(!not_compared.iter().any(|entry| entry.ends_with(PRODUCT_FILE)), "{document:#}");
-    assert_eq!(text.stdout.matches("tests in this file were not compared").count(), 2, "{}", text.stdout);
+    assert!(
+        !not_compared
+            .iter()
+            .any(|entry| entry.ends_with(PRODUCT_FILE)),
+        "{document:#}"
+    );
+    assert_eq!(
+        text.stdout
+            .matches("tests in this file were not compared")
+            .count(),
+        2,
+        "{}",
+        text.stdout
+    );
 }
 
 // behavior: It builds nothing and starts no adapter
@@ -428,12 +676,16 @@ fn change_diff_starts_no_adapter() {
 #[test]
 fn adding_or_editing_tests_stays_class_c() {
     let (added_test, document, _) = class_of(|repo| {
-        repo.write("suites/desk-checks/late-fine-weekend.test", "# Check: late-return-is-fined\noutcome: passed\n");
+        repo.write(
+            "suites/desk-checks/late-fine-weekend.test",
+            "# Check: late-return-is-fined\noutcome: passed\n",
+        );
     });
     assert_eq!(added_test, "C", "{document:#}");
     let (added_check, document, _) = class_of(|repo| add_check(repo, "renewal-keeps-the-count"));
     assert_eq!(added_check, "C", "{document:#}");
-    let (edited_test, document, _) = class_of(|repo| repo.replace(LATE_FINE_TESTS, "outcome: passed", "outcome: failed"));
+    let (edited_test, document, _) =
+        class_of(|repo| repo.replace(LATE_FINE_TESTS, "outcome: passed", "outcome: failed"));
     assert_eq!(edited_test, "C", "{document:#}");
 }
 
@@ -443,15 +695,30 @@ fn loosening_reuse_lowers_rigor() {
     let repo = Repo::sample_with(|root| {
         let path = root.join(RETURNS_VERIFICATION);
         let text = std::fs::read_to_string(&path).unwrap();
-        std::fs::write(&path, format!("{text}  Reuse: never, the desk reads today's date\n")).unwrap();
+        std::fs::write(
+            &path,
+            format!("{text}  Reuse: never, the desk reads today's date\n"),
+        )
+        .unwrap();
     });
     on_branch(&repo);
-    repo.replace(RETURNS_VERIFICATION, "  Reuse: never, the desk reads today's date\n", "");
+    repo.replace(
+        RETURNS_VERIFICATION,
+        "  Reuse: never, the desk reads today's date\n",
+        "",
+    );
     let document = change_diff(&repo, &[]);
     assert_eq!(class(&document), "D");
-    assert_eq!(document["rigor_lowered"], json!([{ "kind": "reuse", "check": ON_TIME_RETURN }]), "{document:#}");
+    assert_eq!(
+        document["rigor_lowered"],
+        json!([{ "kind": "reuse", "check": ON_TIME_RETURN }]),
+        "{document:#}"
+    );
     let text = repo.azimuth(&["change", "diff"]).stdout;
-    assert!(text.contains("rigor lowered") && text.contains(ON_TIME_RETURN), "{text}");
+    assert!(
+        text.contains("rigor lowered") && text.contains(ON_TIME_RETURN),
+        "{text}"
+    );
 }
 
 /// The sample with both reviews declared on the lending Requirement, on a branch.
@@ -476,9 +743,16 @@ fn removing_a_review_declaration_lowers_rigor() {
         repo.replace(LENDING_SPEC, line, "");
         let document = change_diff(&repo, &[]);
         assert_eq!(class(&document), "D", "{line:?}: {document:#}");
-        assert_eq!(count(&document["rigor_lowered"]), 1, "{line:?}: {document:#}");
+        assert_eq!(
+            count(&document["rigor_lowered"]),
+            1,
+            "{line:?}: {document:#}"
+        );
         let text = repo.azimuth(&["change", "diff"]).stdout;
-        assert!(text.contains("rigor lowered") && text.contains(LOAN_LIMIT), "{line:?}:\n{text}");
+        assert!(
+            text.contains("rigor lowered") && text.contains(LOAN_LIMIT),
+            "{line:?}:\n{text}"
+        );
     }
 }
 
@@ -494,13 +768,28 @@ fn each_lowered_declaration_is_an_entry_with_its_kind_and_owner() {
         std::fs::write(&spec, text).unwrap();
         let verification = root.join(RETURNS_VERIFICATION);
         let text = std::fs::read_to_string(&verification).unwrap();
-        std::fs::write(&verification, format!("{text}  Reuse: never, the desk reads today's date\n")).unwrap();
+        std::fs::write(
+            &verification,
+            format!("{text}  Reuse: never, the desk reads today's date\n"),
+        )
+        .unwrap();
     });
     on_branch(&repo);
-    repo.replace(LENDING_SPEC, "Verification: reviewed\nRealization: reviewed\n", "");
-    repo.replace(RETURNS_VERIFICATION, "  Reuse: never, the desk reads today's date\n", "");
+    repo.replace(
+        LENDING_SPEC,
+        "Verification: reviewed\nRealization: reviewed\n",
+        "",
+    );
+    repo.replace(
+        RETURNS_VERIFICATION,
+        "  Reuse: never, the desk reads today's date\n",
+        "",
+    );
     let document = change_diff(&repo, &[]);
-    let mut entries = document["rigor_lowered"].as_array().cloned().unwrap_or_else(|| panic!("not a list: {document:#}"));
+    let mut entries = document["rigor_lowered"]
+        .as_array()
+        .cloned()
+        .unwrap_or_else(|| panic!("not a list: {document:#}"));
     entries.sort_by_key(|entry| entry["kind"].as_str().unwrap_or_default().to_string());
     assert_eq!(
         entries,
@@ -526,7 +815,11 @@ fn a_removed_requirement_or_check_is_not_listed_as_lowered() {
         std::fs::write(&spec, text).unwrap();
         let verification = root.join(RETURNS_VERIFICATION);
         let text = std::fs::read_to_string(&verification).unwrap();
-        std::fs::write(&verification, format!("{text}  Reuse: never, the desk reads today's date\n")).unwrap();
+        std::fs::write(
+            &verification,
+            format!("{text}  Reuse: never, the desk reads today's date\n"),
+        )
+        .unwrap();
     });
     on_branch(&repo);
     repo.remove("azimuth/model/desk");
@@ -534,15 +827,25 @@ fn a_removed_requirement_or_check_is_not_listed_as_lowered() {
         repo.remove(file);
     }
     let document = change_diff(&repo, &[]);
-    assert!(names(&document, "requirements", "removed", LATE_FINE), "{document:#}");
-    assert!(names(&document, "checks", "removed", ON_TIME_RETURN), "{document:#}");
+    assert!(
+        names(&document, "requirements", "removed", LATE_FINE),
+        "{document:#}"
+    );
+    assert!(
+        names(&document, "checks", "removed", ON_TIME_RETURN),
+        "{document:#}"
+    );
     assert_eq!(document["rigor_lowered"], json!([]), "{document:#}");
 
     // A Check removed alone, with its Reuse line, is not lowered either.
     let check = Repo::sample_with(|root| {
         let verification = root.join(RETURNS_VERIFICATION);
         let text = std::fs::read_to_string(&verification).unwrap();
-        std::fs::write(&verification, format!("{text}  Reuse: never, the desk reads today's date\n")).unwrap();
+        std::fs::write(
+            &verification,
+            format!("{text}  Reuse: never, the desk reads today's date\n"),
+        )
+        .unwrap();
     });
     on_branch(&check);
     check.replace(
@@ -552,7 +855,10 @@ fn a_removed_requirement_or_check_is_not_listed_as_lowered() {
     );
     check.remove(FREE_RETURN_TESTS);
     let document = change_diff(&check, &[]);
-    assert!(names(&document, "checks", "removed", ON_TIME_RETURN), "{document:#}");
+    assert!(
+        names(&document, "checks", "removed", ON_TIME_RETURN),
+        "{document:#}"
+    );
     assert_eq!(document["rigor_lowered"], json!([]), "{document:#}");
 }
 
@@ -560,7 +866,10 @@ fn a_removed_requirement_or_check_is_not_listed_as_lowered() {
 #[test]
 fn tightening_reuse_is_not_class_d() {
     let (class, document, text) = class_of(|repo| {
-        repo.append(RETURNS_VERIFICATION, "  Reuse: never, the desk reads today's date\n");
+        repo.append(
+            RETURNS_VERIFICATION,
+            "  Reuse: never, the desk reads today's date\n",
+        );
     });
     assert_eq!(class, "C", "{document:#}");
     assert_eq!(document["rigor_lowered"], json!([]), "{document:#}");
@@ -571,7 +880,11 @@ fn tightening_reuse_is_not_class_d() {
 #[test]
 fn raising_the_pin_is_class_d() {
     let (class, document, _) = class_of(|repo| {
-        repo.replace(PROJECT_FILE, &format!("cli = \"{}\"", cli_version()), &format!("cli = \"{OTHER_CLI}\""));
+        repo.replace(
+            PROJECT_FILE,
+            &format!("cli = \"{}\"", cli_version()),
+            &format!("cli = \"{OTHER_CLI}\""),
+        );
     });
     assert_eq!(class, "D", "{document:#}");
 }
@@ -580,7 +893,8 @@ fn raising_the_pin_is_class_d() {
 #[test]
 fn editing_an_installed_skill_is_class_d() {
     let repo = Repo::sample();
-    repo.azimuth(&["skills", "install", "claude"]).expect_status(0);
+    repo.azimuth(&["skills", "install", "claude"])
+        .expect_status(0);
     repo.commit_all("install the default process");
     on_branch(&repo);
     repo.replace(SKILL_FILE, "\n", "\nNo stop after the intent.\n");
@@ -620,11 +934,22 @@ fn change_document_values_have_their_fixed_forms() {
         RETURNS_VERIFICATION,
         "\n#### Scenario: lost-book-is-charged\n- Check: lost-book-is-charged\n  A lost book is charged at its price.\n",
     );
-    repo.write("suites/desk-checks/lost-book.test", "# Check: lost-book-is-charged\noutcome: passed\n");
+    repo.write(
+        "suites/desk-checks/lost-book.test",
+        "# Check: lost-book-is-charged\noutcome: passed\n",
+    );
     let document = change_diff(&repo, &[]);
     assert_eq!(document["class"], "D", "{document:#}");
-    assert_eq!(listed(&document, "scenarios", "added"), vec![format!("{LATE_FINE}/lost-book-is-charged")], "{document:#}");
-    assert_eq!(listed(&document, "checks", "added"), vec!["lost-book-is-charged".to_string()], "{document:#}");
+    assert_eq!(
+        listed(&document, "scenarios", "added"),
+        vec![format!("{LATE_FINE}/lost-book-is-charged")],
+        "{document:#}"
+    );
+    assert_eq!(
+        listed(&document, "checks", "added"),
+        vec!["lost-book-is-charged".to_string()],
+        "{document:#}"
+    );
     assert_eq!(document["markers_removed"], 0, "{document:#}");
     assert_eq!(document["rigor_lowered"], json!([]), "{document:#}");
 }
@@ -948,39 +1273,14 @@ fn the_base_tree_contents_are_read_by_one_git_process() {
             repo.replace(file, "# Check: sixth-loan-is-refused\n", "");
         }
         repo.commit_all("remove three base markers");
-        let git = std::process::Command::new("/usr/bin/which")
-            .arg("git")
-            .output()
-            .unwrap();
-        assert!(git.status.success());
-        let git = String::from_utf8(git.stdout).unwrap().trim().to_string();
-        let front = repo.beside("git-front");
-        std::fs::create_dir_all(&front).unwrap();
-        std::fs::copy(binaries_dir().join("git-recorder"), front.join("git")).unwrap();
-        let path = format!(
-            "{}:{}",
-            front.display(),
-            std::env::var("PATH").unwrap_or_default()
-        );
-        let log = repo.beside("git-processes.jsonl");
-        let output = repo.azimuth_with_env(
-            &["change", "diff", "--json"],
-            &[
-                ("PATH", &path),
-                ("REAL_GIT", &git),
-                ("GIT_PROCESS_LOG", log.to_str().unwrap()),
-            ],
-        );
-        output.expect_status(0);
-        let doc = output.json();
+        let (doc, invocations, _) = recorded_base_reads(&repo);
         assert_eq!(doc["markers_removed"], 3);
         assert_eq!(doc["class"], "D");
-        let invocations: Vec<Vec<String>> = std::fs::read_to_string(log)
-            .unwrap()
-            .lines()
-            .map(|line| serde_json::from_str(line).unwrap())
-            .collect();
-        assert!(!invocations.is_empty());
+        assert_eq!(
+            content_readers(&invocations).len(),
+            1,
+            "exactly one git process must read base contents: {invocations:#?}"
+        );
         invocations.len()
     };
     let small = measure(0);
@@ -1002,6 +1302,150 @@ fn quiet_class_is_a(text: &str) {
                 pair[1].eq_ignore_ascii_case("a"),
                 "quiet change names another class: {text}"
             );
+        }
+    }
+}
+
+fn content_readers(invocations: &[Vec<String>]) -> Vec<&Vec<String>> {
+    invocations
+        .iter()
+        .filter(|args| {
+            (args.iter().any(|arg| arg == "cat-file")
+                && !args.iter().any(|arg| arg.starts_with("--batch-check")))
+                || args.iter().any(|arg| arg == "archive")
+                || (args.iter().any(|arg| arg == "show")
+                    && args.iter().any(|arg| arg.contains(':')))
+        })
+        .collect()
+}
+fn recorded_base_reads(repo: &Repo) -> (serde_json::Value, Vec<Vec<String>>, Vec<String>) {
+    let git = std::process::Command::new("/usr/bin/which")
+        .arg("git")
+        .output()
+        .unwrap();
+    assert!(git.status.success());
+    let git = String::from_utf8(git.stdout).unwrap().trim().to_string();
+    let front = repo.beside("git-front");
+    std::fs::create_dir_all(&front).unwrap();
+    std::fs::copy(binaries_dir().join("git-recorder"), front.join("git")).unwrap();
+    let path = format!(
+        "{}:{}",
+        front.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let log = repo.beside("git-processes.jsonl");
+    let objects = repo.beside("git-objects.jsonl");
+    let output = repo.azimuth_with_env(
+        &["change", "diff", "--json"],
+        &[
+            ("PATH", &path),
+            ("REAL_GIT", &git),
+            ("GIT_PROCESS_LOG", log.to_str().unwrap()),
+            ("GIT_OBJECT_LOG", objects.to_str().unwrap()),
+        ],
+    );
+    output.expect_status(0);
+    let invocations = std::fs::read_to_string(log)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let objects = std::fs::read_to_string(objects)
+        .unwrap_or_default()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    (output.json(), invocations, objects)
+}
+#[test]
+fn base_contents_outside_the_model_and_suites_are_not_requested() {
+    let repo = Repo::sample();
+    let irrelevant = "assets/unrelated-large.bin";
+    std::fs::create_dir_all(repo.path("assets")).unwrap();
+    std::fs::write(repo.path(irrelevant), vec![b'z'; 8 * 1024 * 1024]).unwrap();
+    let mut needed = Vec::new();
+    for index in 0..3 {
+        let path = format!("suites/desk-checks/base-marker-{index}.test");
+        repo.write(
+            &path,
+            &format!("# Check: sixth-loan-is-refused\n# distinct base {index}\noutcome: passed\n"),
+        );
+        needed.push(path);
+    }
+    repo.commit_all("base markers and an unrelated asset");
+    let irrelevant_oid = repo
+        .git(&["rev-parse", &format!("main:{irrelevant}")])
+        .trim()
+        .to_string();
+    let needed_oids: Vec<_> = needed
+        .iter()
+        .map(|path| {
+            repo.git(&["rev-parse", &format!("main:{path}")])
+                .trim()
+                .to_string()
+        })
+        .collect();
+    on_branch(&repo);
+    for path in needed {
+        repo.replace(&path, "# Check: sixth-loan-is-refused\n", "");
+    }
+    repo.commit_all("remove three distinct base markers");
+    let (doc, invocations, requests) = recorded_base_reads(&repo);
+    assert_eq!(doc["markers_removed"], 3);
+    assert_eq!(content_readers(&invocations).len(), 1);
+    let requested: Vec<_> = requests
+        .iter()
+        .flat_map(|request| request.split_whitespace())
+        .chain(
+            content_readers(&invocations)
+                .into_iter()
+                .flat_map(|args| args.iter().map(String::as_str)),
+        )
+        .collect();
+    assert!(
+        !requested.iter().any(|object| *object == irrelevant_oid
+            || object.ends_with(&format!(":{irrelevant}"))
+            || *object == "--batch-all-objects"),
+        "unneeded base object {irrelevant_oid} ({irrelevant}) was requested: {requests:#?}"
+    );
+    // Distinct removed markers prove this recorder saw base reads, rather than an unused wrapper.
+    for oid in needed_oids {
+        assert!(
+            requested.contains(&oid.as_str()),
+            "needed base object {oid} was not observed"
+        );
+    }
+}
+#[test]
+fn a_scenario_with_one_blank_body_line_does_not_crash_the_diff() {
+    let repo = Repo::sample_with(|root| {
+        let path = root.join(LENDING_SPEC);
+        let source = std::fs::read_to_string(&path).unwrap();
+        let body = "A borrower who holds five loans asks for a sixth book.\nThe desk refuses the loan and the borrower keeps five.\n";
+        assert!(source.contains(body));
+        let blank = source.replace(body, "");
+        assert!(blank.contains(
+            "#### Scenario: sixth-loan-is-refused\n\n#### Scenario: returned-book-frees-a-slot"
+        ));
+        std::fs::write(path, blank).unwrap();
+    });
+    on_branch(&repo);
+    repo.append(PRODUCT_FILE, "an unrelated product edit\n");
+    for json in [false, true] {
+        let args = if json {
+            vec!["change", "diff", "--json"]
+        } else {
+            vec!["change", "diff"]
+        };
+        let output = repo.azimuth(&args);
+        output.expect_status(0);
+        if json {
+            let doc = output.json();
+            assert_eq!(doc["format"], "change-1");
+            assert_eq!(doc["class"], "A");
+        } else {
+            assert_eq!(output.stdout.lines().count(), 1);
+            assert!(!output.stdout.trim().is_empty());
         }
     }
 }

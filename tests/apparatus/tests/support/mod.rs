@@ -85,15 +85,14 @@ impl LiveRun {
         let sample_started = monotonic_ns();
         let table = processes().unwrap_or_else(|error| panic!("{error}"));
         let sample_finished = monotonic_ns();
-        let first_term = events
-            .iter()
-            .filter(|event| event["event"] == "SIGTERM")
-            .map(|event| event["time_ns"].as_u64().unwrap())
-            .min();
         for e in &started {
             let pid = e["pid"].as_u64().unwrap() as u32;
+            let own_term = events
+                .iter()
+                .find(|event| event["event"] == "SIGTERM" && event["pid"] == e["pid"])
+                .map(|event| event["time_ns"].as_u64().unwrap());
             if !self.witnessed_alive.contains(&pid)
-                && first_term.is_some_and(|term| sample_started >= term + 9_000_000_000)
+                && own_term.is_some_and(|term| sample_started >= term + 9_000_000_000)
                 && table.get(&pid).is_some_and(|p| {
                     p.running()
                         && p.command
@@ -153,6 +152,21 @@ impl LiveRun {
             assert!(
                 self.started.elapsed() < limit,
                 "CLI or descendant exceeded watchdog {limit:?}:\n{}",
+                self.text().text()
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+    pub fn finish_cli(&mut self, limit: Duration) -> Output {
+        loop {
+            if let Some(status) = self.child.try_wait().unwrap() {
+                let mut output = self.text();
+                output.status = status.code().unwrap_or(-1);
+                return output;
+            }
+            assert!(
+                self.started.elapsed() < limit,
+                "CLI did not return within {limit:?} while a descendant retained stdout:\n{}",
                 self.text().text()
             );
             std::thread::sleep(Duration::from_millis(20));

@@ -357,3 +357,206 @@ fn held_output_is_on_disk_during_the_launch_and_removed_after_success() {
     assert!(held(&repo, &payload("desk-checks", "first")).is_empty());
     assert!(held(&repo, &payload("desk-checks", "second")).is_empty());
 }
+
+#[test]
+fn concurrent_clis_keep_their_held_output_separate() {
+    for json in [false, true] {
+        let repo = gated(true);
+        repo.replace(
+            "suites/returns-checks/late-fine.test",
+            "outcome: passed",
+            "outcome: failed",
+        );
+        let mut pass_args = vec!["check", "run", SIXTH_LOAN];
+        let mut trouble_args = vec!["check", "run", LATE_RETURN];
+        if json {
+            pass_args.push("--json");
+            trouble_args.push("--json");
+        }
+        let mut passing = LiveRun::start(&repo, &pass_args, "concurrent-pass");
+        let mut troubled = LiveRun::start(&repo, &trouble_args, "concurrent-trouble");
+        // Both files must coexist before either command is allowed to finish.
+        checkpoint(&repo, &mut passing, "desk-checks", "first");
+        checkpoint(&repo, &mut troubled, "returns-checks", "first");
+        let pass_files = held(&repo, &payload("desk-checks", "first"));
+        let trouble_files = held(&repo, &payload("returns-checks", "first"));
+        assert_eq!(pass_files.len(), 1);
+        assert_eq!(trouble_files.len(), 1);
+        assert_ne!(pass_files, trouble_files);
+        release(&repo, "desk-checks", "first");
+        release(&repo, "returns-checks", "first");
+        for phase in ["second", "exit"] {
+            checkpoint(&repo, &mut passing, "desk-checks", phase);
+            checkpoint(&repo, &mut troubled, "returns-checks", phase);
+            release(&repo, "desk-checks", phase);
+            release(&repo, "returns-checks", phase);
+        }
+        let passing = passing.finish(WATCHDOG);
+        let troubled = troubled.finish(WATCHDOG);
+        passing.expect_status(0);
+        troubled.expect_status(1);
+        for suite in ["desk-checks", "returns-checks"] {
+            no_payload(&passing, suite);
+        }
+        assert!(!passing.text().contains("text-suite-adapter:"));
+        no_payload(&troubled, "desk-checks");
+        assert!(!troubled.text().contains("text-suite-adapter: loan-limit."));
+        assert!(!troubled.stdout.contains("text-suite-adapter:"));
+        let expected = format!(
+            "{}\n{}\ntext-suite-adapter: late-fine failed\n",
+            payload("returns-checks", "first"),
+            payload("returns-checks", "second")
+        );
+        assert_eq!(
+            troubled.stderr.matches(&expected).count(),
+            1,
+            "concurrent trouble output was lost or split:\n{}",
+            troubled.stderr
+        );
+        for phase in ["first", "second"] {
+            assert_eq!(
+                troubled
+                    .stderr
+                    .matches(&payload("returns-checks", phase))
+                    .count(),
+                1
+            );
+            assert!(!troubled.stdout.contains(&payload("returns-checks", phase)));
+        }
+        if json {
+            passing.json();
+            troubled.json();
+        }
+    }
+}
+
+#[test]
+fn an_unwritable_capture_directory_is_a_command_error_before_launch() {
+    let repo = Repo::sample();
+    make_unwritable(&repo.path(".azimuth"));
+    let output = repo.azimuth(&["run", "--json"]);
+    set_mode(&repo.path(".azimuth"), 0o755);
+    output.expect_status(2);
+    assert!(
+        !output.stderr.trim().is_empty(),
+        "command error has no standard-error message"
+    );
+    assert!(
+        repo.adapter_starts().is_empty(),
+        "capture failure started an adapter"
+    );
+    assert!(repo.store_files().is_empty() && repo.outbox_files().is_empty());
+    if !output.stdout.trim().is_empty() {
+        let doc = output.json();
+        assert!(
+            doc.get("suites").is_none(),
+            "capture failure reported a launch: {doc:#}"
+        );
+        assert_ne!(doc["format"], "run-1");
+    }
+}
+
+#[test]
+fn end_progress_is_a_separate_line_after_runner_output_without_a_newline() {
+    let mut repo = Repo::sample();
+    let tail = "FINAL-RUNNER-BYTES-WITHOUT-NEWLINE-8451";
+    repo.set_env("TEXT_ADAPTER_TAIL", tail);
+    repo.replace(LATE_FINE_TESTS, "outcome: passed", "outcome: failed");
+    let output = repo.azimuth(&["run", "--json"]);
+    output.expect_status(1);
+    assert_eq!(output.json()["suites"][0]["launch"], "ok");
+    assert!(
+        output.stderr.lines().any(|line| line == tail),
+        "runner tail and launch end must occupy separate lines:\n{}",
+        output.stderr
+    );
+    let progress: Vec<_> = output
+        .stderr
+        .lines()
+        .filter(|line| {
+            !line.is_empty() && *line != tail && !line.starts_with("text-suite-adapter:")
+        })
+        .collect();
+    assert_eq!(
+        progress.len(),
+        2,
+        "launch needs separate start and end lines: {progress:#?}"
+    );
+}
+
+#[test]
+fn launch_duration_excludes_slow_replay_of_large_held_output() {
+    use std::io::{Read, Write};
+    use std::process::Stdio;
+    use std::time::Instant;
+    let mut repo = Repo::sample();
+    repo.set_env("TEXT_ADAPTER_BULK_BYTES", "8388608");
+    repo.replace(LATE_FINE_TESTS, "outcome: passed", "outcome: failed");
+    let stdout = repo.beside("slow-reader.stdout");
+    let stderr = repo.beside("slow-reader.stderr");
+    let mut child = repo
+        .azimuth_command(&["run", "--json"])
+        .stdout(fs::File::create(&stdout).unwrap())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut pipe = child.stderr.take().unwrap();
+    let reader = std::thread::spawn(move || {
+        let mut file = fs::File::create(stderr).unwrap();
+        let mut buffer = [0; 65536];
+        let mut pending = 0;
+        let mut payload_bytes = 0;
+        loop {
+            let count = pipe.read(&mut buffer).unwrap();
+            if count == 0 {
+                break;
+            }
+            payload_bytes += buffer[..count].iter().filter(|byte| **byte == b'X').count();
+            file.write_all(&buffer[..count]).unwrap();
+            pending += count;
+            if pending >= buffer.len() {
+                pending -= buffer.len();
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        }
+        payload_bytes
+    });
+    let began = Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if began.elapsed() > Duration::from_secs(90) {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            reader.join().unwrap();
+            panic!("CLI did not finish replay within the independent reader watchdog");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    let returned = azimuth_tests::process::monotonic_ns();
+    assert_eq!(reader.join().unwrap(), 8 * 1024 * 1024);
+    assert_eq!(status.code(), Some(1));
+    let doc: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(stdout).unwrap()).unwrap();
+    assert_eq!(doc["suites"][0]["launch"], "ok");
+    let starts = repo.adapter_starts();
+    assert_eq!(starts.len(), 1);
+    let ends: Vec<_> = repo
+        .log_entries()
+        .into_iter()
+        .filter(|entry| entry["program"] == "text-suite-adapter" && entry["event"] == "exited")
+        .collect();
+    assert_eq!(ends.len(), 1);
+    let exited = ends[0]["time_ns"].as_u64().unwrap();
+    let adapter_ms = (exited - starts[0]["time_ns"].as_u64().unwrap()) / 1_000_000;
+    assert!(
+        returned - exited >= 4_000_000_000,
+        "slow consumer did not impose a measurable replay interval"
+    );
+    let reported_ms = doc["suites"][0]["duration_ms"].as_u64().unwrap();
+    // Journal entry/exit exclude exec and reaping; 1.5 s tolerates those scheduling gaps,
+    // while the synchronized slow consumer imposes at least four seconds after adapter exit.
+    assert!(reported_ms.abs_diff(adapter_ms) <= 1500,
+        "duration_ms includes output replay: reported {reported_ms} ms, adapter journal {adapter_ms} ms");
+}

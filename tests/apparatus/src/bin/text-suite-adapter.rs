@@ -107,6 +107,7 @@ fn main() {
             std::process::exit(64);
         }
     }
+    log(json!({"program": NAME, "event": "exited"}));
 }
 
 fn run(request: &Value, adapter: Value, args: Vec<String>) {
@@ -218,6 +219,19 @@ fn run(request: &Value, adapter: Value, args: Vec<String>) {
     }
 
     log(json!({ "program": NAME, "args": args, "request": request, "ran": ran }));
+    if let Ok(bytes) = std::env::var("TEXT_ADAPTER_BULK_BYTES") {
+        let mut remaining: usize = bytes.parse().unwrap();
+        let block = vec![b'X'; 65536];
+        while remaining != 0 {
+            let count = remaining.min(block.len());
+            std::io::stderr().write_all(&block[..count]).unwrap();
+            remaining -= count;
+        }
+    }
+    if let Ok(tail) = std::env::var("TEXT_ADAPTER_TAIL") {
+        std::io::stderr().write_all(tail.as_bytes()).unwrap();
+    }
+    std::io::stderr().flush().unwrap();
     let report = json!({ "format": "adapter-report-1", "adapter": adapter, "build": "ok", "tests": reported });
     emit(&report);
     if directives.two_reports {
@@ -258,9 +272,13 @@ fn read_directives(text: &str, directives: &mut Directives) {
             ["garbage"] => directives.garbage = true,
             ["two-reports"] => directives.two_reports = true,
             ["build-fails"] => directives.build_fails = true,
-            ["lists", name, check] => directives.extra_listed.push((name.to_string(), check.to_string())),
+            ["lists", name, check] => directives
+                .extra_listed
+                .push((name.to_string(), check.to_string())),
             ["edits", path] => directives.edits.push(path.to_string()),
-            ["sleeps", ms] => directives.sleep_ms += ms.parse::<u64>().expect("sleeps names whole milliseconds"),
+            ["sleeps", ms] => {
+                directives.sleep_ms += ms.parse::<u64>().expect("sleeps names whole milliseconds")
+            }
             _ => eprintln!("{NAME}: unknown directive {line:?}"),
         }
     }
@@ -268,7 +286,10 @@ fn read_directives(text: &str, directives: &mut Directives) {
 
 fn read_tests(relative: &Path, text: &str, key: &str) -> Vec<TextTest> {
     let marker_prefix = format!("# {key}:");
-    let stem = relative.with_extension("").to_string_lossy().replace('\\', "/");
+    let stem = relative
+        .with_extension("")
+        .to_string_lossy()
+        .replace('\\', "/");
 
     let mut is_helper = false;
     let mut file_checks = Vec::new();

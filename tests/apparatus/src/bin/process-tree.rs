@@ -1,4 +1,5 @@
 use std::io::{Read, Write};
+use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -52,11 +53,40 @@ fn main() {
         }
     }
     event("started", &role, &token);
+    if role == "build" {
+        let path = std::path::PathBuf::from(std::env::var("STOP_TEST_PID").unwrap());
+        let temporary = path.with_extension("tmp");
+        std::fs::write(&temporary, std::process::id().to_string()).unwrap();
+        std::fs::rename(temporary, path).unwrap();
+    }
     if role == "adapter" {
         let mut request = String::new();
         std::io::stdin().read_to_string(&mut request).unwrap();
         std::fs::write(std::env::var("TREE_REQUEST").unwrap(), &request).unwrap();
-        if mode == "partial" {
+        if mode == "escaped-output" || mode == "inherited-output" {
+            let mut command = Command::new(std::env::current_exe().unwrap());
+            command
+                .arg("holder")
+                .arg(&token)
+                .stdin(Stdio::null())
+                .stderr(Stdio::null());
+            if mode == "escaped-output" {
+                command.process_group(0);
+            }
+            // Waiting here would prevent the adapter exiting with its descendant's pipe open.
+            #[allow(clippy::zombie_processes)]
+            let _holder = command.spawn().unwrap();
+            // Do not let an adapter exit before the descriptor holder has established its identity.
+            while !std::fs::read_to_string(std::env::var("TREE_LOG").unwrap())
+                .unwrap()
+                .lines()
+                .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+                .any(|event| event["event"] == "started" && event["role"] == "holder")
+            {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+        if mode == "partial" || mode == "inherited-output" {
             let mut runner = Command::new("text-suite-adapter")
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
@@ -74,10 +104,18 @@ fn main() {
             std::io::stdout().write_all(&report.stdout).unwrap();
             std::io::stdout().flush().unwrap();
             event("finished-tests", &role, &token);
+            if mode == "inherited-output" {
+                event("exited", &role, &token);
+                return;
+            }
         }
         eprintln!("TREE-PAYLOAD-{token}");
     }
-    let mut child = if role != "grandchild" {
+    let mut child = if role != "grandchild"
+        && role != "holder"
+        && role != "build"
+        && mode != "escaped-output"
+    {
         Some(
             Command::new(std::env::current_exe().unwrap())
                 .arg(if role == "runner" {
@@ -106,6 +144,11 @@ fn main() {
                 &role,
                 json!({"group":group(),"token":token,"time_ns":received}),
             );
+            if role == "build" {
+                // A witness after cleanup work distinguishes a polite stop from TERM followed by force.
+                std::thread::sleep(Duration::from_millis(500));
+                std::fs::write(std::env::var("STOP_WITNESS").unwrap(), "polite stop\n").unwrap();
+            }
             if !ignores {
                 break;
             }

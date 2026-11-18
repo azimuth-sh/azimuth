@@ -26,9 +26,13 @@ fn requirement_show_prints_the_whole_requirement() {
         "realization: not reviewed",
         "approval: not recorded",
     ] {
-        assert!(text.contains(expected), "requirement show lacks {expected:?}:\n{text}");
+        assert!(
+            text.contains(expected),
+            "requirement show lacks {expected:?}:\n{text}"
+        );
     }
-    repo.azimuth(&["requirement", "show", "no-such-requirement"]).expect_status(2);
+    repo.azimuth(&["requirement", "show", "no-such-requirement"])
+        .expect_status(2);
 }
 
 // behavior: `azimuth check show <id>` prints the Check's state and the reason
@@ -37,8 +41,13 @@ fn check_show_prints_state_and_reason() {
     let repo = known_fail();
     let output = repo.azimuth(&["check", "show", LATE_RETURN]);
     output.expect_status(0);
-    assert!(output.stdout.contains("owed") && output.stdout.contains("failed on these inputs"), "{}", output.stdout);
-    repo.azimuth(&["check", "show", "no-such-check"]).expect_status(2);
+    assert!(
+        output.stdout.contains("owed") && output.stdout.contains("failed on these inputs"),
+        "{}",
+        output.stdout
+    );
+    repo.azimuth(&["check", "show", "no-such-check"])
+        .expect_status(2);
 }
 
 // behavior: The document of `azimuth requirement show` is `requirement-1`: `format`, and beside it the fields that one Requirement entry has in `status-1`
@@ -53,7 +62,11 @@ fn requirement_document_matches_its_status_entry() {
     let entry = requirement_in(&status, LATE_FINE).unwrap();
     let mut flat = document.as_object().unwrap().clone();
     flat.remove("format");
-    assert_eq!(serde_json::Value::Object(flat), *entry, "requirement-1 is not the status-1 entry beside `format`:\n{document:#}\n{entry:#}");
+    assert_eq!(
+        serde_json::Value::Object(flat),
+        *entry,
+        "requirement-1 is not the status-1 entry beside `format`:\n{document:#}\n{entry:#}"
+    );
 }
 
 // behavior: The document of `azimuth check show` is `check-1` with these fields
@@ -71,13 +84,26 @@ fn check_document_has_its_fields() {
     repo.append(PRODUCT_FILE, "renewals do not count\n");
     let document = repo.check_show(SIXTH_LOAN);
     for field in [
-        "id", "requirement", "scenario", "suite", "claim", "state", "reason", "detail", "parts_changed", "files_changed",
-        "failing_tests", "result",
+        "id",
+        "requirement",
+        "scenario",
+        "suite",
+        "claim",
+        "state",
+        "reason",
+        "detail",
+        "parts_changed",
+        "files_changed",
+        "failing_tests",
+        "result",
     ] {
         assert!(has(&document, field), "no `{field}`: {document:#}");
     }
     for field in ["where", "commit", "edited_paths", "at"] {
-        assert!(has(&document["result"], field), "no `result.{field}`: {document:#}");
+        assert!(
+            has(&document["result"], field),
+            "no `result.{field}`: {document:#}"
+        );
     }
     assert_eq!(document["id"], SIXTH_LOAN);
     assert_eq!(document["requirement"], LOAN_LIMIT);
@@ -96,7 +122,10 @@ fn a_kept_pass_is_shown_with_its_origin() {
     let result = &document["result"];
     assert_eq!(result["where"], "this machine", "{document:#}");
     assert_eq!(result["commit"], head.as_str(), "{document:#}");
-    assert!(!result["at"].as_str().unwrap_or_default().is_empty(), "{document:#}");
+    assert!(
+        !result["at"].as_str().unwrap_or_default().is_empty(),
+        "{document:#}"
+    );
     let text = repo.azimuth(&["check", "show", SIXTH_LOAN]).stdout;
     assert!(text.contains(&head[..7]), "{text}");
     assert!(text.contains("ago"), "{text}");
@@ -113,7 +142,11 @@ fn kept_from_an_edited_tree() -> (Repo, String) {
     repo.remove("desk/returns.txt");
     repo.run_json(&[], 0);
     repo.commit_all("the edits of the run");
-    assert_eq!(repo.git(&["status", "--porcelain"]), "", "the tree is not clean, so the test proves nothing");
+    assert_eq!(
+        repo.git(&["status", "--porcelain"]),
+        "",
+        "the tree is not clean, so the test proves nothing"
+    );
     assert_ne!(repo.head(), commit_of_the_run);
     (repo, commit_of_the_run)
 }
@@ -125,7 +158,11 @@ fn a_result_from_an_edited_tree_says_so() {
     let output = repo.azimuth(&["check", "show", SIXTH_LOAN]);
     output.expect_status(0);
     let phrase = format!("commit {} with uncommitted edits", &commit[..7]);
-    assert!(output.stdout.contains(&phrase), "check show does not say {phrase:?}:\n{}", output.stdout);
+    assert!(
+        output.stdout.contains(&phrase),
+        "check show does not say {phrase:?}:\n{}",
+        output.stdout
+    );
 }
 
 // behavior: `result.edited_paths` is the number of edited, new and deleted paths the run saw, and 0 for a run on exactly the commit, where the text names the commit alone
@@ -134,7 +171,11 @@ fn edited_paths_counts_what_the_run_saw() {
     let (repo, commit) = kept_from_an_edited_tree();
     let document = repo.check_show(SIXTH_LOAN);
     assert_eq!(document["state"], "kept", "{document:#}");
-    assert_eq!(document["result"]["commit"], commit.as_str(), "{document:#}");
+    assert_eq!(
+        document["result"]["commit"],
+        commit.as_str(),
+        "{document:#}"
+    );
     assert_eq!(document["result"]["edited_paths"], 3, "{document:#}");
 
     let clean = Repo::sample();
@@ -144,8 +185,14 @@ fn edited_paths_counts_what_the_run_saw() {
     assert!(document["result"]["edited_paths"].is_u64(), "{document:#}");
     assert_eq!(document["result"]["edited_paths"], 0, "{document:#}");
     let text = clean.azimuth(&["check", "show", SIXTH_LOAN]).stdout;
-    assert!(text.contains(&format!("commit {}", &head[..7])), "the commit is not named:\n{text}");
-    assert!(!text.contains("uncommitted"), "a run on exactly the commit is shown with edits:\n{text}");
+    assert!(
+        text.contains(&format!("commit {}", &head[..7])),
+        "the commit is not named:\n{text}"
+    );
+    assert!(
+        !text.contains("uncommitted"),
+        "a run on exactly the commit is shown with edits:\n{text}"
+    );
 }
 
 // behavior: A failed Check is shown with its failing tests
@@ -153,7 +200,11 @@ fn edited_paths_counts_what_the_run_saw() {
 fn a_failed_check_is_shown_with_its_failing_tests() {
     let repo = known_fail();
     let document = repo.check_show(LATE_RETURN);
-    assert_eq!(strings_of(&document["failing_tests"]), vec!["late-fine"], "{document:#}");
+    assert_eq!(
+        strings_of(&document["failing_tests"]),
+        vec!["late-fine"],
+        "{document:#}"
+    );
     let text = repo.azimuth(&["check", "show", LATE_RETURN]).stdout;
     assert!(text.contains("late-fine"), "{text}");
 }
@@ -170,9 +221,15 @@ fn an_owed_check_has_a_named_reason() {
     changed.run_json(&[], 0);
     changed.append(PRODUCT_FILE, "renewals do not count\n");
     let failing = known_fail();
-    for (repo, check, reason) in [(&changed, SIXTH_LOAN, "an input changed"), (&failing, LATE_RETURN, "failed on these inputs")] {
+    for (repo, check, reason) in [
+        (&changed, SIXTH_LOAN, "an input changed"),
+        (&failing, LATE_RETURN, "failed on these inputs"),
+    ] {
         let document = repo.check_show(check);
-        assert!(OWED_REASONS.contains(&document["reason"].as_str().unwrap_or_default()), "{document:#}");
+        assert!(
+            OWED_REASONS.contains(&document["reason"].as_str().unwrap_or_default()),
+            "{document:#}"
+        );
         assert_eq!(document["reason"], reason, "{document:#}");
     }
 }
@@ -189,6 +246,19 @@ fn check_show_names_the_files_that_differ() {
     assert_eq!(files_changed(&repo.check_show(ON_TIME_RETURN)), expected);
     let output = repo.azimuth(&["check", "show", ON_TIME_RETURN]);
     output.expect_status(0);
+    for path in &expected {
+        let base = std::path::Path::new(path)
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert_eq!(
+            output.stdout.matches(base).count(),
+            1,
+            "changed file {path} must be named exactly once:\n{}",
+            output.stdout
+        );
+    }
     let mut candidates = repo.tracked_paths();
     candidates.push("desk/shelves.txt".into());
     candidates.sort();
@@ -230,12 +300,19 @@ fn an_input_changed_names_its_part() {
 fn a_pass_and_a_fail_on_one_fingerprint_are_contradicted() {
     let repo = Repo::sample();
     repo.run_json(&[], 0);
-    let output = repo.azimuth_with_env(&["check", "run", LATE_RETURN, "--json"], &[("TEXT_ADAPTER_FAIL", "late-fine")]);
+    let output = repo.azimuth_with_env(
+        &["check", "run", LATE_RETURN, "--json"],
+        &[("TEXT_ADAPTER_FAIL", "late-fine")],
+    );
     output.expect_status(1);
     let document = repo.check_show(LATE_RETURN);
     assert_eq!(document["reason"], "contradicted", "{document:#}");
     let status = repo.status_json();
-    assert_eq!(status_checks(&status)[LATE_RETURN]["reason"], "contradicted", "{status:#}");
+    assert_eq!(
+        status_checks(&status)[LATE_RETURN]["reason"],
+        "contradicted",
+        "{status:#}"
+    );
     let text = repo.azimuth(&["check", "show", LATE_RETURN]).stdout;
     assert!(text.contains("contradicted"), "{text}");
 }
@@ -243,7 +320,11 @@ fn a_pass_and_a_fail_on_one_fingerprint_are_contradicted() {
 fn contradicted() -> Repo {
     let repo = Repo::sample();
     repo.run_json(&[], 0);
-    repo.azimuth_with_env(&["check", "run", LATE_RETURN, "--json"], &[("TEXT_ADAPTER_FAIL", "late-fine")]).expect_status(1);
+    repo.azimuth_with_env(
+        &["check", "run", LATE_RETURN, "--json"],
+        &[("TEXT_ADAPTER_FAIL", "late-fine")],
+    )
+    .expect_status(1);
     repo
 }
 
@@ -252,10 +333,18 @@ fn contradicted() -> Repo {
 fn a_contradicted_check_is_owed() {
     let repo = contradicted();
     let document = repo.check_show(LATE_RETURN);
-    assert_eq!((document["state"].as_str(), document["reason"].as_str()), (Some("owed"), Some("contradicted")), "{document:#}");
+    assert_eq!(
+        (document["state"].as_str(), document["reason"].as_str()),
+        (Some("owed"), Some("contradicted")),
+        "{document:#}"
+    );
     let status = repo.status_json();
     let entry = &status_checks(&status)[LATE_RETURN];
-    assert_eq!((entry["state"].as_str(), entry["reason"].as_str()), (Some("owed"), Some("contradicted")), "{status:#}");
+    assert_eq!(
+        (entry["state"].as_str(), entry["reason"].as_str()),
+        (Some("owed"), Some("contradicted")),
+        "{status:#}"
+    );
 }
 
 // behavior: `parts_changed` is a list of part names and `files_changed` a list of paths from the repository root
@@ -263,11 +352,26 @@ fn a_contradicted_check_is_owed() {
 fn the_changed_parts_and_files_are_plain_lists() {
     let repo = Repo::sample();
     repo.run_json(&[], 0);
-    repo.replace(LENDING_VERIFICATION, "The desk refuses a sixth loan", "The desk turns down a sixth loan");
+    repo.replace(
+        LENDING_VERIFICATION,
+        "The desk refuses a sixth loan",
+        "The desk turns down a sixth loan",
+    );
     repo.write("desk/shelves/north.txt", "novels\n");
     let document = repo.check_show(SIXTH_LOAN);
-    assert_eq!(parts_changed_set(&document), set_of(&["claim", "files"]), "{document:#}");
-    assert_eq!(files_changed(&document), vec![LENDING_VERIFICATION.to_string(), "desk/shelves/north.txt".to_string()], "{document:#}");
+    assert_eq!(
+        parts_changed_set(&document),
+        set_of(&["claim", "files"]),
+        "{document:#}"
+    );
+    assert_eq!(
+        files_changed(&document),
+        vec![
+            LENDING_VERIFICATION.to_string(),
+            "desk/shelves/north.txt".to_string()
+        ],
+        "{document:#}"
+    );
     let untouched = repo.check_show(RETURNED_BOOK);
     assert_eq!(parts_changed(&untouched), vec!["files"], "{untouched:#}");
 }
@@ -278,10 +382,16 @@ fn the_commit_is_full_in_the_document_and_short_in_the_text() {
     let repo = Repo::sample();
     repo.run_json(&[], 0);
     let head = repo.head();
-    assert_eq!(repo.check_show(SIXTH_LOAN)["result"]["commit"], head.as_str());
+    assert_eq!(
+        repo.check_show(SIXTH_LOAN)["result"]["commit"],
+        head.as_str()
+    );
     let text = repo.azimuth(&["check", "show", SIXTH_LOAN]).stdout;
     assert!(text.contains(&head[..7]), "{text}");
-    assert!(!text.contains(&head[..8]), "the text shows more than 7 characters of the commit:\n{text}");
+    assert!(
+        !text.contains(&head[..8]),
+        "the text shows more than 7 characters of the commit:\n{text}"
+    );
 }
 
 // behavior: `reuse` is absent for a Check with no `Reuse:` line, and otherwise holds `value` and `reason`
@@ -296,10 +406,15 @@ fn reuse_is_absent_or_a_value_and_a_reason() {
     let plain = repo.check_show(LATE_RETURN);
     assert!(plain.get("reuse").is_none(), "{plain:#}");
     let strict = repo.check_show(ON_TIME_RETURN);
-    let reuse = strict["reuse"].as_object().unwrap_or_else(|| panic!("no `reuse`: {strict:#}"));
+    let reuse = strict["reuse"]
+        .as_object()
+        .unwrap_or_else(|| panic!("no `reuse`: {strict:#}"));
     assert_eq!(reuse.len(), 2, "{strict:#}");
     assert_eq!(reuse["value"], "never");
-    assert_eq!(reuse["reason"].as_str().map(str::trim), Some("the desk reads today's date"));
+    assert_eq!(
+        reuse["reason"].as_str().map(str::trim),
+        Some("the desk reads today's date")
+    );
 }
 
 // behavior-2: The text of `azimuth requirement show` does the same
@@ -323,6 +438,23 @@ fn requirement_show_counts_files_on_each_owed_check_line() {
             &[PRODUCT_FILE, "desk/shelves.txt", "desk/catalog.txt"],
         );
     }
+    repo.azimuth(&["check", "run", RETURNED_BOOK, "--json"])
+        .expect_status(0);
+    repo.write("desk/loans.txt", "one more changed file\n");
+    let output = repo.azimuth(&["requirement", "show", LOAN_LIMIT]);
+    output.expect_status(0);
+    for (check, expected) in [(SIXTH_LOAN, 4), (RETURNED_BOOK, 1)] {
+        assert_owed_file_count(&output.stdout, check, expected);
+    }
+    assert_no_file_names(
+        &output.stdout,
+        &[
+            PRODUCT_FILE,
+            "desk/shelves.txt",
+            "desk/catalog.txt",
+            "desk/loans.txt",
+        ],
+    );
 }
 
 // behavior-2: With `--json` all three still hold `files_changed` for every Check
