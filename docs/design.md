@@ -2481,7 +2481,7 @@ The Check ids are real. The states are invented for the example.
 
 **The cost.** An export holds personal data: who approved, who wrote which file. It leaves the server's access control the moment it is written, so where it is stored is the team's responsibility.
 
-Example: drim-dev starts on its own server and later moves to the hosted one. The owner exports from the first and imports into the second. Every Requirement keeps its status, because the content digests are the same. The pages say "imported from" the old server, and the owner accepts that origin once. The grant for `Features/CliAuth/` does not arrive as active. The runner class is registered again and the grant is given again, with the old cases visible as evidence.
+Example: a team starts on a server of its own and later moves to the hosted one. Its owner exports from the first and imports into the second. Every Requirement keeps its status, because the content digests are the same. The pages say "imported from" the old server, and the owner accepts that origin once. The grant for the area `billing` does not arrive as active. The runner class is registered again and the grant is given again, with the old cases visible as evidence.
 
 Later: a signed archive per merged change inside `changes/finished/`. It makes the repository grow, and it publishes names in a public repository.
 
