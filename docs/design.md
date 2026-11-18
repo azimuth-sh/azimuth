@@ -2277,6 +2277,23 @@ A link counts by where it stands. pnpm keeps every package in a store and puts a
 
 **The adapter names the versions of Playwright it works with.** Its package states them. With another version the adapter ends with a failure that says so, and the launch is `crashed`.
 
+The reason is how the adapter reads the resolved config. It uses a file of Playwright that Playwright does not document, because the documented way leaves out the entries of a config that starts several servers. A version that nobody ran the tests against could read a config wrongly, and then a suite would run against a server that the adapter should have refused.
+
+**Keeping the range current is recurring work.** Playwright brings out a new minor version about once a month, and the adapter refuses a version above its range. So an application that moves to a new Playwright waits for a release of Azimuth. Whoever maintains Azimuth does this for each new minor version:
+
+| Step | What is done |
+| --- | --- |
+| 1 | the version of Playwright in the lock file of Azimuth's own tests is raised to the new one |
+| 2 | the tests with the real runner are run at both ends of the range. They pass, or the adapter is repaired first |
+| 3 | the upper end of the range in the adapter's package and in its readme is raised, in a change of its own |
+| 4 | Azimuth is released, and an application raises Azimuth and Playwright together |
+
+The lower end moves only when an old version stops passing or costs too much to keep. The release that drops it says so.
+
+The cost. It is about one release a month that nothing else asked for, and an application cannot take a new Playwright on the day it appears. Skipping the work does not break anything silently: the adapter refuses and names the version and the range.
+
+Unmeasured: how often a new minor version really breaks the adapter, and so whether a version above the range could run with a warning instead.
+
 For Playwright the install line is `npm install --save-dev --save-exact @azimuth-sh/playwright@<version>`. `--save-exact` writes the one version into `package.json`, as the tool manifest of .NET holds one version.
 
 The cost. A scoped name is longer to type, and the line in the project file is longer than the one for .NET. A new package under the scope is published by a person the first time, because the registry binds trusted publishing to a package that exists.
