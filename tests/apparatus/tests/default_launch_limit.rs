@@ -39,7 +39,7 @@ fn an_omitted_limit_stops_a_launch_at_thirty_minutes() {
             .as_u64()
             .unwrap()
     };
-    let elapsed = stamp("SIGTERM") - stamp("entered");
+    let elapsed = stamp("SIGINT") - stamp("entered");
     assert!(
         (1_799_250_000_000..=1_803_000_000_000).contains(&elapsed),
         "default after {elapsed} ns"

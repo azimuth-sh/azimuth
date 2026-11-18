@@ -44,6 +44,67 @@ fn main() {
         record["verb"] = json!("stage publish");
         record["file"] = json!(file);
         record["bytes"] = json!(bytes);
+        let mut registries = Vec::new();
+        for (index, arg) in args.iter().enumerate() {
+            if arg == "--registry" {
+                registries.push(args[index + 1].clone());
+            } else if let Some(value) = arg.strip_prefix("--registry=") {
+                registries.push(value.into());
+            }
+        }
+        for (key, value) in std::env::vars() {
+            let key = key.to_uppercase();
+            if key.starts_with("NPM_CONFIG_") && key.ends_with("REGISTRY") {
+                registries.push(value);
+            }
+        }
+        let mut configs = Vec::new();
+        for folder in folder.ancestors() {
+            configs.push(folder.join(".npmrc"));
+        }
+        if let Some(home) = std::env::var_os("HOME") {
+            configs.push(PathBuf::from(home).join(".npmrc"));
+        }
+        for key in [
+            "npm_config_userconfig",
+            "NPM_CONFIG_USERCONFIG",
+            "npm_config_globalconfig",
+            "NPM_CONFIG_GLOBALCONFIG",
+        ] {
+            if let Some(path) = std::env::var_os(key) {
+                configs.push(folder.join(path));
+            }
+        }
+        for config in configs {
+            if let Ok(text) = std::fs::read_to_string(config) {
+                for line in text
+                    .lines()
+                    .map(str::trim)
+                    .filter(|line| !line.starts_with(['#', ';']))
+                {
+                    if let Some((key, value)) = line.split_once('=') {
+                        let key = key.trim().to_lowercase();
+                        if key == "registry" || key.ends_with(":registry") {
+                            registries.push(value.trim().to_string());
+                        }
+                    }
+                }
+            }
+        }
+        let artifact: Value = serde_json::from_slice(&bytes).unwrap();
+        if let Some(config) = artifact["packed_manifest"]["publishConfig"].as_object() {
+            for (key, value) in config {
+                if key.eq_ignore_ascii_case("registry") || key.to_lowercase().ends_with(":registry")
+                {
+                    registries.push(value.as_str().unwrap().into());
+                }
+            }
+        }
+        record["registry"] = json!(registries
+            .last()
+            .map(String::as_str)
+            .unwrap_or("https://registry.npmjs.org"));
+        record["registries"] = json!(registries);
     } else {
         assert_ne!(
             args[index], "publish",

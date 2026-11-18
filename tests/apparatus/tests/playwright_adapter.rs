@@ -214,18 +214,26 @@ fn start(repo: &Repo, folder: &str, request: &Value, env: &[(&str, &str)]) -> Ou
     )
 }
 
-fn report(repo: &Repo, checks: &[&str], key: &str) -> Value {
-    let output = start(repo, SUITE, &request(checks, key), &[]);
-    output.expect_status(0);
-    let document = output.json();
+fn assert_report_identity(document: &Value) {
     assert_eq!(document["format"], "adapter-report-1", "{document:#}");
     assert!(
         document["adapter"]["name"]
             .as_str()
-            .is_some_and(|v| !v.is_empty()),
+            .is_some_and(|name| !name.is_empty()),
         "{document:#}"
     );
-    assert_eq!(document["adapter"]["version"], packed().manifest["version"]);
+    assert_eq!(
+        document["adapter"]["version"],
+        packed().manifest["version"],
+        "{document:#}"
+    );
+}
+
+fn report(repo: &Repo, checks: &[&str], key: &str) -> Value {
+    let output = start(repo, SUITE, &request(checks, key), &[]);
+    output.expect_status(0);
+    let document = output.json();
+    assert_report_identity(&document);
     document
 }
 
@@ -454,6 +462,7 @@ test.describe('loan group',{tag:'@KEY:group-loan'},()=>{
  test('group second',{tag:['@KEY:direct-loan','@KEY:extra-loan']},async()=>{ran('group second');});
 });
 test('direct pass',{tag:'@KEY:direct-loan'},async()=>{ran('direct pass');});
+test('title-only @KEY:title-loan',async()=>{ran('title-only');});
 test('direct failure',{tag:'@KEY:broken-loan'},async()=>{ran('direct failure');expect(1).toBe(2);});
 test.skip('unavailable loan',{tag:'@KEY:skip-loan'},async()=>{ran('unavailable loan');});
 test('unasked loan',{tag:'@KEY:unasked-loan'},async()=>{ran('unasked loan');});
@@ -467,14 +476,20 @@ test('other key',{tag:'@OTHER:direct-loan'},async()=>{ran('other key');});
             &repo,
             SUITE,
             &request(
-                &["group-loan", "direct-loan", "broken-loan", "skip-loan"],
+                &[
+                    "group-loan",
+                    "direct-loan",
+                    "broken-loan",
+                    "skip-loan",
+                    "title-loan",
+                ],
                 key,
             ),
             &[("EXECUTED", journal.to_str().unwrap())],
         );
         output.expect_status(0);
         let document = output.json();
-        assert_eq!(document["format"], "adapter-report-1");
+        assert_report_identity(&document);
         assert_eq!(document["build"], "ok");
         complete_names(
             &document,
@@ -486,6 +501,7 @@ test('other key',{tag:'@OTHER:direct-loan'},async()=>{ran('other key');});
                 "unavailable loan",
                 "unasked loan",
                 "longer id",
+                "title-only",
             ],
         );
         for (name, checks, outcome) in [
@@ -500,6 +516,7 @@ test('other key',{tag:'@OTHER:direct-loan'},async()=>{ran('other key');});
             ("unavailable loan", vec!["skip-loan"], "skipped"),
             ("unasked loan", vec!["unasked-loan"], "not_run"),
             ("longer id", vec!["direct-loan-extra"], "not_run"),
+            ("title-only", vec!["title-loan"], "passed"),
         ] {
             let entry = named(&document, name);
             let mut actual = strings_of(&entry["checks"]);
@@ -519,7 +536,8 @@ test('other key',{tag:'@OTHER:direct-loan'},async()=>{ran('other key');});
                 "direct failure",
                 "direct pass",
                 "group first",
-                "group second"
+                "group second",
+                "title-only"
             ]
         );
         let before = fs::read(&journal).unwrap();
@@ -532,6 +550,8 @@ test('other key',{tag:'@OTHER:direct-loan'},async()=>{ran('other key');});
         );
         empty_output.expect_status(0);
         let empty = empty_output.json();
+        assert_report_identity(&empty);
+        assert_eq!(empty["adapter"], document["adapter"]);
         complete_names(
             &empty,
             &[
@@ -542,6 +562,7 @@ test('other key',{tag:'@OTHER:direct-loan'},async()=>{ran('other key');});
                 "unavailable loan",
                 "unasked loan",
                 "longer id",
+                "title-only",
             ],
         );
         assert!(
@@ -621,12 +642,12 @@ module.exports=test=>test.afterEach(async({},info)=>{
     spec(
         &repo,
         r#"const {test,expect}=require('@playwright/test');require('./duration-hooks.cjs')(test);
-for(const [name,id] of [['north fails','north-failure'],['south fails','south-failure'],['both pass','both-pass'],['pass and skip','pass-skip'],['same title','file-alpha']]) {
+for(const [name,id] of [['north fails','project-failure'],['south fails','project-failure'],['both pass','both-pass'],['pass and skip','pass-skip'],['same title','file-alpha']]) {
  test(name,{tag:'@Check:'+id},async({},info)=>{
   if(id==='pass-skip') test.skip(info.project.name==='south','the south setting is unavailable');
   await new Promise(r=>setTimeout(r,info.project.name==='north'?600:2400));
-  if(id==='north-failure') expect(info.project.name).toBe('south');
-  if(id==='south-failure') expect(info.project.name).toBe('north');
+  if(name==='north fails') expect(info.project.name).toBe('south');
+  if(name==='south fails') expect(info.project.name).toBe('north');
  });
 }
 "#,
@@ -635,8 +656,7 @@ for(const [name,id] of [['north fails','north-failure'],['south fails','south-fa
 test('same title',{tag:'@Check:file-beta'},async({},info)=>{await new Promise(r=>setTimeout(r,info.project.name==='north'?1000:3500));});
 "#);
     let ids = [
-        "north-failure",
-        "south-failure",
+        "project-failure",
         "both-pass",
         "pass-skip",
         "file-alpha",
@@ -651,11 +671,30 @@ test('same title',{tag:'@Check:file-beta'},async({},info)=>{await new Promise(r=
     output.expect_status(0);
     let document = output.json();
     assert_eq!(tests(&document).len(), 6, "{document:#}");
+    let sharing: Vec<_> = tests(&document)
+        .iter()
+        .filter(|t| t["checks"] == json!(["project-failure"]))
+        .collect();
+    assert_eq!(
+        sharing.len(),
+        2,
+        "two tests sharing a Check must keep both report entries: {document:#}"
+    );
+    for name in ["north fails", "south fails"] {
+        assert_eq!(
+            sharing
+                .iter()
+                .filter(|t| t["name"].as_str().unwrap().contains(name))
+                .count(),
+            1,
+            "{document:#}"
+        );
+    }
     let observations = read_events(&journal);
     assert_eq!(observations.len(), 12, "{observations:#?}");
     for (id, name, file, outcome) in [
-        ("north-failure", "north fails", "desk.spec.cjs", "failed"),
-        ("south-failure", "south fails", "desk.spec.cjs", "failed"),
+        ("project-failure", "north fails", "desk.spec.cjs", "failed"),
+        ("project-failure", "south fails", "desk.spec.cjs", "failed"),
         ("both-pass", "both pass", "desk.spec.cjs", "passed"),
         ("pass-skip", "pass and skip", "desk.spec.cjs", "incomplete"),
         ("file-alpha", "same title", "desk.spec.cjs", "passed"),
@@ -663,13 +702,16 @@ test('same title',{tag:'@Check:file-beta'},async({},info)=>{await new Promise(r=
     ] {
         let entries: Vec<_> = tests(&document)
             .iter()
-            .filter(|t| t["checks"] == json!([id]))
+            .filter(|t| {
+                t["checks"] == json!([id])
+                    && t["name"].as_str().is_some_and(|title| title.contains(name))
+            })
             .collect();
         assert_eq!(entries.len(), 1, "{document:#}");
         let entry = entries[0];
         if outcome == "incomplete" {
             assert!(
-                    ["failed", "skipped", "not_run"].contains(&entry["outcome"].as_str().unwrap()),
+                ["failed", "skipped", "not_run"].contains(&entry["outcome"].as_str().unwrap()),
                 "{entry:#}"
             );
         } else {
@@ -718,8 +760,8 @@ fn unsafe_resolved_configs_are_refused_before_starting_a_test_or_server() {
             &repo,
             r#"const {test,expect}=require('@playwright/test');
 test('resolved server',{tag:'@Check:resolved-server'},async()=>{
- const response=await fetch(`http://127.0.0.1:${process.env.DESK_PORT}`);expect(await response.text()).toBe('library desk');
  require('node:fs').writeFileSync(process.env.CONFIG_TEST,'ran');
+ const response=await fetch(`http://127.0.0.1:${process.env.DESK_PORT}`);expect(await response.text()).toBe('library desk');
 });
 "#,
         );
@@ -846,6 +888,11 @@ test('server answer',{tag:'@Check:occupied'},async()=>{
     );
     let output = start(&repo, SUITE, &request(&["occupied"], "Check"), &env);
     assert!(!witness.exists(), "a test ran against the old application");
+    assert!(
+        !output.stderr.trim().is_empty(),
+        "the occupied-port refusal must be visible: {}",
+        output.text()
+    );
     assert!(
         !old.requests().is_empty(),
         "the runner never encountered the occupied server: {}",
@@ -1157,6 +1204,14 @@ fn a_missing_adapter_through_real_npx_crashes_without_downloading_a_package() {
         "adapter = \"text-suite-adapter\"",
         "adapter = \"npx --no @azimuth-sh/playwright\"",
     );
+    let host = start(&repo, SUITE, &request(&ALL_CHECKS, "Check"), &[]);
+    assert_ne!(host.status, 0, "{}", host.text());
+    let host_message = host
+        .stderr
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .expect("npx must explain the missing package")
+        .to_string();
     let output = repo.azimuth(&["run", "--json"]);
     output.expect_status(1);
     let document = output.json();
@@ -1167,18 +1222,26 @@ fn a_missing_adapter_through_real_npx_crashes_without_downloading_a_package() {
         .iter()
         .map(|p| p.replace("%2f", "/").replace("%2F", "/"))
         .collect();
-    assert_eq!(
-        paths,
-        vec!["/@azimuth-sh/playwright"],
-        "the registry must answer metadata, not a tarball request"
+    assert!(
+        paths.iter().all(|path| path == "/@azimuth-sh/playwright"),
+        "only metadata is allowed, never a tarball: {paths:?}"
     );
     assert!(
         !witness.exists(),
         "npx executed a package from the registry"
     );
     assert!(
-        output.stderr.contains("@azimuth-sh/playwright"),
-        "the host's diagnostic was lost: {}",
+        output.stderr.contains(&host_message),
+        "the real host diagnostic was replaced: expected {host_message:?}; {}",
+        output.text()
+    );
+    let cli_line = format!(
+        "npm install --save-dev --save-exact {PACKAGE}@{}",
+        cli_version()
+    );
+    assert!(
+        !output.text().contains(&cli_line),
+        "a host that started and failed must retain its own diagnostic: {}",
         output.text()
     );
     assert!(!repo.path("node_modules").exists());
@@ -1275,7 +1338,7 @@ fn entry_under(modules: &Path) -> PathBuf {
     modules.join("@azimuth-sh/playwright").join(relative)
 }
 
-fn run_entry(repo: &Repo, entry: &Path, request: &Value) -> Output {
+fn run_entry_in(repo: &Repo, entry: &Path, folder: &str, request: &Value) -> Output {
     let environment = repo.azimuth_command(&[]);
     let mut command = Command::new(entry);
     command
@@ -1285,7 +1348,7 @@ fn run_entry(repo: &Repo, entry: &Path, request: &Value) -> Output {
                 .get_envs()
                 .filter_map(|(k, v)| v.map(|v| (k, v))),
         )
-        .current_dir(repo.path(SUITE));
+        .current_dir(repo.path(folder));
     run_with_time_limit(
         command,
         Duration::from_secs(120),
@@ -1293,28 +1356,23 @@ fn run_entry(repo: &Repo, entry: &Path, request: &Value) -> Output {
     )
 }
 
+fn run_entry(repo: &Repo, entry: &Path, request: &Value) -> Output {
+    run_entry_in(repo, entry, SUITE, request)
+}
+
 // behavior-2: Started from a copy outside the application's installation, the adapter ends with a failure and says that the package is not installed in this application
 #[test]
 fn a_copy_outside_the_application_refuses_even_with_all_its_dependencies() {
     let repo = sample();
     let inside = report(&repo, &[SIXTH_LOAN, RETURNED_BOOK], "Check");
-    assert!(tests(&inside).iter().all(|t| t["outcome"] == "passed"));
-    let outside = repo.beside("detached/node_modules");
-    copy_tree(&repo.path("playwright/node_modules"), &outside);
-    let output = run_entry(
-        &repo,
-        &entry_under(&outside),
-        &request(&[SIXTH_LOAN], "Check"),
-    );
-    assert_ne!(output.status, 0, "{}", output.text());
-    assert!(output.stdout.is_empty());
-    let message = output.stderr.to_lowercase();
-    assert!(
-        message.contains("not installed") && message.contains("application"),
-        "{}",
-        output.text()
-    );
+    assert!(tests(&inside)
+        .iter()
+        .all(|test| test["outcome"] == "passed"));
+    let discovery = json!({"format":"adapter-request-1","verb":"discover","folder":APP});
+    start(&repo, APP, &discovery, &[]).expect_status(0);
     core_suites(&repo);
+    let outside = repo.path("reading-room/application/node_modules");
+    copy_tree(&repo.path("playwright/node_modules"), &outside);
     let mut project = parse_toml(&repo.read(PROJECT_FILE));
     for suite in project["suite"].as_array_mut().unwrap() {
         if suite["name"].as_str() == Some("loans") {
@@ -1322,17 +1380,36 @@ fn a_copy_outside_the_application_refuses_even_with_all_its_dependencies() {
         }
     }
     repo.write(PROJECT_FILE, &toml::to_string(&project).unwrap());
-    let document = repo.run_json(&[], 1);
-    assert_eq!(
-        document["suites"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|s| s["name"] == "loans")
-            .unwrap()["launch"],
-        "crashed"
-    );
-    no_results(&repo, &document, &[SIXTH_LOAN, RETURNED_BOOK]);
+    for local in [true, false] {
+        if !local {
+            repo.remove("playwright/node_modules/@azimuth-sh/playwright");
+        }
+        for (folder, request) in [
+            (SUITE, request(&[SIXTH_LOAN], "Check")),
+            (APP, discovery.clone()),
+        ] {
+            let output = run_entry_in(&repo, &entry_under(&outside), folder, &request);
+            assert_ne!(output.status, 0, "local={local}, {}", output.text());
+            assert!(output.stdout.is_empty());
+            let message = output.stderr.to_lowercase();
+            assert!(
+                message.contains("not installed") && message.contains("application"),
+                "local={local}: {}",
+                output.text()
+            );
+        }
+        let document = repo.run_json(&[], 1);
+        assert_eq!(
+            document["suites"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|suite| suite["name"] == "loans")
+                .unwrap()["launch"],
+            "crashed"
+        );
+        no_results(&repo, &document, &[SIXTH_LOAN, RETURNED_BOOK]);
+    }
 }
 
 // behavior-2: It runs from a `node_modules` folder of the folder named in the request or of a folder above it
@@ -1356,6 +1433,42 @@ fn the_adapter_runs_from_the_request_folder_installation_and_an_ancestor() {
             "{document:#}"
         );
     }
+}
+
+// behavior-2: It runs from a `node_modules` folder of the folder named in the request or of a folder above it
+#[test]
+fn a_suite_two_levels_below_its_only_installation_runs() {
+    let repo = sample();
+    let folder = "playwright/browser/journeys";
+    repo.write(
+        &format!("{folder}/playwright.config.cjs"),
+        &repo
+            .read("playwright/lending/playwright.config.cjs")
+            .replace("node ../server.cjs", "node ../../server.cjs"),
+    );
+    repo.write(
+        &format!("{folder}/desk.spec.cjs"),
+        &repo.read("playwright/lending/desk.spec.cjs"),
+    );
+    assert!(!repo.path("playwright/browser/node_modules").exists());
+    assert!(!repo.path(&format!("{folder}/node_modules")).exists());
+    let mut request = request(&[SIXTH_LOAN, RETURNED_BOOK], "Check");
+    request["suite"] = json!(folder);
+    let output = run_entry_in(
+        &repo,
+        &entry_under(&repo.path("playwright/node_modules")),
+        folder,
+        &request,
+    );
+    output.expect_status(0);
+    let document = output.json();
+    complete_names(&document, &["refuses sixth loan", "lends after return"]);
+    assert!(
+        tests(&document)
+            .iter()
+            .all(|test| test["outcome"] == "passed"),
+        "{document:#}"
+    );
 }
 
 #[test]
@@ -1405,65 +1518,236 @@ fn init_with_a_real_npx_host_and_missing_package_stays_offline() {
     assert!(parse_toml(&repo.read(PROJECT_FILE)).get("suite").is_none());
 }
 
-// behavior-2: An adapter that receives SIGTERM stops its runner and exits, and writes no report
-#[test]
-fn the_core_timeout_gives_the_real_runner_and_server_a_polite_stop_within_the_grace() {
-    use azimuth_tests::process::{processes, Process};
-    use std::process::{Child, Stdio};
-    use std::time::Instant;
-    struct Running {
-        child: Child,
-        owned: BTreeMap<u32, Process>,
-    }
-    impl Running {
-        fn observe(&mut self) -> BTreeMap<u32, Process> {
-            let table = processes().unwrap_or_else(|error| panic!("{error}"));
-            let mut descendants = BTreeSet::new();
-            if self.owned.is_empty() {
-                descendants.insert(self.child.id());
+struct PlaywrightLaunch {
+    child: std::process::Child,
+    owned: BTreeMap<u32, azimuth_tests::process::Process>,
+}
+
+impl PlaywrightLaunch {
+    fn observe(&mut self) -> BTreeMap<u32, azimuth_tests::process::Process> {
+        let table = azimuth_tests::process::processes().unwrap_or_else(|error| panic!("{error}"));
+        let mut descendants = BTreeSet::new();
+        if self.owned.is_empty() {
+            descendants.insert(self.child.id());
+        }
+        for old in self.owned.values() {
+            if table.get(&old.pid).is_some_and(|now| {
+                now.running() && now.birth == old.birth && now.command == old.command
+            }) {
+                descendants.insert(old.pid);
             }
-            for old in self.owned.values() {
-                if table.get(&old.pid).is_some_and(|now| {
+        }
+        loop {
+            let before = descendants.len();
+            for process in table.values() {
+                if descendants.contains(&process.parent) {
+                    descendants.insert(process.pid);
+                }
+            }
+            if before == descendants.len() {
+                break;
+            }
+        }
+        for pid in descendants {
+            if let Some(process) = table.get(&pid) {
+                self.owned.insert(pid, process.clone());
+            }
+        }
+        table
+    }
+
+    fn alive(&mut self) -> Vec<azimuth_tests::process::Process> {
+        let table = self.observe();
+        self.owned
+            .values()
+            .filter(|old| {
+                table.get(&old.pid).is_some_and(|now| {
                     now.running() && now.birth == old.birth && now.command == old.command
-                }) {
-                    descendants.insert(old.pid);
-                }
-            }
-            loop {
-                let before = descendants.len();
-                for p in table.values() {
-                    if descendants.contains(&p.parent) {
-                        descendants.insert(p.pid);
-                    }
-                }
-                if before == descendants.len() {
-                    break;
-                }
-            }
-            for pid in descendants {
-                if let Some(p) = table.get(&pid) {
-                    self.owned.insert(pid, p.clone());
-                }
-            }
-            table
-        }
+                })
+            })
+            .cloned()
+            .collect()
     }
-    impl Drop for Running {
-        fn drop(&mut self) {
-            for p in self.owned.values() {
-                p.signal_if_same("-KILL");
-            }
-            if matches!(self.child.try_wait(), Ok(None)) {
-                let _ = self.child.kill();
-            }
-            let _ = self.child.wait();
+
+    fn interrupt_group(&mut self) {
+        let table = self.observe();
+        let host = table
+            .get(&self.child.id())
+            .expect("the group host exited before the interrupt");
+        assert!(host.running() && host.group == self.child.id() as i32);
+        for member in table
+            .values()
+            .filter(|process| process.running() && process.group == host.group)
+        {
+            assert_eq!(
+                self.owned.get(&member.pid),
+                Some(member),
+                "refusing to signal an unowned group member"
+            );
         }
+        let output = Command::new("/bin/kill")
+            .args(["-INT", "--", &format!("-{}", host.group)])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
+}
+
+impl Drop for PlaywrightLaunch {
+    fn drop(&mut self) {
+        for process in self.owned.values() {
+            process.signal_if_same("-KILL");
+        }
+        if matches!(self.child.try_wait(), Ok(None)) {
+            let _ = self.child.kill();
+        }
+        let _ = self.child.wait();
+    }
+}
+
+struct StopWitnesses {
+    runner: PathBuf,
+    server: PathBuf,
+    worker: PathBuf,
+    group: PathBuf,
+}
+
+fn hanging_playwright_suite(repo: &mut Repo) -> StopWitnesses {
+    azimuth_tests::process::processes().unwrap_or_else(|error| {
+        panic!("process supervision unavailable before starting the launch: {error}")
+    });
+    let witnesses = StopWitnesses {
+        runner: repo.beside("stop-runner.jsonl"),
+        server: repo.beside("stop-server.jsonl"),
+        worker: repo.beside("stop-test.jsonl"),
+        group: repo.beside("stop-group.jsonl"),
+    };
+    for (name, path) in [
+        ("RUNNER_JOURNAL", &witnesses.runner),
+        ("LOAN_SERVER_JOURNAL", &witnesses.server),
+        ("WORKER_JOURNAL", &witnesses.worker),
+        ("GROUP_JOURNAL", &witnesses.group),
+        ("GROUP_SERVER_JOURNAL", &witnesses.server),
+    ] {
+        repo.set_env(name, path.to_str().unwrap());
+    }
+    repo.write("playwright/lending/stop-setup.cjs","module.exports=async()=>require('node:fs').appendFileSync(process.env.RUNNER_JOURNAL,JSON.stringify({event:'started',pid:process.pid,time_ms:Date.now()})+'\\n');\n");
+    repo.append("playwright/lending/playwright.config.cjs","module.exports.webServer.env={SERVER_JOURNAL:process.env.LOAN_SERVER_JOURNAL};\nmodule.exports.globalSetup='./stop-setup.cjs';\nmodule.exports.timeout=180000;\n");
+    repo.append("playwright/lending/desk.spec.cjs",r#"
+test.afterEach(async({},info)=>{
+ require('node:fs').appendFileSync(process.env.WORKER_JOURNAL,JSON.stringify({event:'finished',name:info.title,status:info.status,pid:process.pid,time_ms:Date.now()})+'\n');
+});
+test('wait for the launch stop', {tag:'@Check:sixth-loan-is-refused'},async()=>{
+ require('node:fs').appendFileSync(process.env.WORKER_JOURNAL,JSON.stringify({event:'hanging',pid:process.pid,time_ms:Date.now()})+'\n');
+ await new Promise(()=>{});
+});
+"#);
+    witnesses
+}
+
+fn wait_for_hanging_test(
+    running: &mut PlaywrightLaunch,
+    witnesses: &StopWitnesses,
+    stderr: &Path,
+) -> (u32, u32) {
+    let watchdog = std::time::Instant::now();
+    while !read_events(&witnesses.worker)
+        .iter()
+        .any(|event| event["event"] == "hanging")
+        || !read_events(&witnesses.group).iter().any(|event| {
+            event["event"] == "server-observed"
+                && event["folder"]
+                    .as_str()
+                    .is_some_and(|folder| folder.ends_with(SUITE))
+        })
+    {
+        running.observe();
+        assert!(
+            running.child.try_wait().unwrap().is_none(),
+            "launch exited before the hanging test: {}",
+            fs::read_to_string(stderr).unwrap()
+        );
+        assert!(
+            watchdog.elapsed() < Duration::from_secs(120),
+            "runner readiness watchdog expired"
+        );
+        std::thread::sleep(Duration::from_millis(30));
+    }
+    let table = running.observe();
+    let mut pids = Vec::new();
+    for journal in [&witnesses.runner, &witnesses.server, &witnesses.worker] {
+        let pid = read_events(journal)[0]["pid"].as_u64().unwrap() as u32;
+        assert!(
+            running.owned.contains_key(&pid) && table[&pid].running(),
+            "unowned journal PID {pid}"
+        );
+        pids.push(pid);
+    }
+    assert_ne!(
+        table[&pids[0]].group, table[&pids[1]].group,
+        "the server must be outside the runner's process group"
+    );
+    for member in table
+        .values()
+        .filter(|process| process.running() && process.group == table[&pids[1]].group)
+    {
+        assert_eq!(
+            running.owned.get(&member.pid),
+            Some(member),
+            "unowned member of the server's group"
+        );
+    }
+    let completed: Vec<_> = read_events(&witnesses.worker)
+        .into_iter()
+        .filter(|event| event["event"] == "finished")
+        .map(|event| {
+            (
+                event["name"].as_str().unwrap().to_string(),
+                event["status"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        completed,
+        vec![
+            ("refuses sixth loan".into(), "passed".into()),
+            ("lends after return".into(), "passed".into())
+        ]
+    );
+    (pids[0], pids[1])
+}
+
+fn wait_for_launch_exit(running: &mut PlaywrightLaunch, stderr: &Path) -> std::process::ExitStatus {
+    let watchdog = std::time::Instant::now();
+    loop {
+        running.observe();
+        if let Some(status) = running.child.try_wait().unwrap() {
+            return status;
+        }
+        assert!(
+            watchdog.elapsed() < Duration::from_secs(145),
+            "launch watchdog expired: {}",
+            fs::read_to_string(stderr).unwrap()
+        );
+        std::thread::sleep(Duration::from_millis(30));
+    }
+}
+
+fn assert_launch_tree_is_gone(running: &mut PlaywrightLaunch) {
+    let alive = running.alive();
+    assert!(alive.is_empty(), "launch processes survived: {alive:#?}");
+}
+
+// behavior-2: A Playwright launch that is stopped at its limit leaves no web server behind
+#[test]
+fn a_playwright_timeout_leaves_no_server_or_launch_process_behind() {
+    use std::process::Stdio;
     let mut repo = sample();
     core_suites(&repo);
-    processes().unwrap_or_else(|error| {
-        panic!("process supervision unavailable before starting the CLI: {error}")
-    });
     let mut project = parse_toml(&repo.read(PROJECT_FILE));
     for suite in project["suite"].as_array_mut().unwrap() {
         if suite["name"].as_str() == Some("loans") {
@@ -1474,12 +1758,7 @@ fn the_core_timeout_gives_the_real_runner_and_server_a_polite_stop_within_the_gr
         }
     }
     repo.write(PROJECT_FILE, &toml::to_string(&project).unwrap());
-    let runner_journal = repo.beside("timeout-runner.jsonl");
-    let server_journal = repo.beside("timeout-server.jsonl");
-    let observer_journal = repo.beside("timeout-observer.jsonl");
-    repo.set_env("RUNNER_JOURNAL", runner_journal.to_str().unwrap());
-    repo.set_env("LOAN_SERVER_JOURNAL", server_journal.to_str().unwrap());
-    repo.set_env("GROUP_JOURNAL", observer_journal.to_str().unwrap());
+    let witnesses = hanging_playwright_suite(&mut repo);
     let target = Command::new("which").arg("npx").output().unwrap();
     repo.set_env(
         "GROUP_TARGET",
@@ -1500,21 +1779,6 @@ fn the_core_timeout_gives_the_real_runner_and_server_a_polite_stop_within_the_gr
             repo.path_without_programs(&["npx", "dotnet"])
         ),
     );
-    let worker_journal = repo.beside("hanging-test.jsonl");
-    repo.set_env("WORKER_JOURNAL", worker_journal.to_str().unwrap());
-    repo.write("playwright/lending/timeout-setup.cjs","module.exports=async()=>require('node:fs').appendFileSync(process.env.RUNNER_JOURNAL,JSON.stringify({event:'started',pid:process.pid,time_ms:Date.now()})+'\\n');\n");
-    repo.write("playwright/lending/timeout-teardown.cjs",r#"module.exports=async()=>{
- const event=name=>require('node:fs').appendFileSync(process.env.RUNNER_JOURNAL,JSON.stringify({event:name,pid:process.pid,time_ms:Date.now()})+'\n');
- event('teardown');await new Promise(r=>setTimeout(r,500));event('cleaned');
-};
-"#);
-    repo.append("playwright/lending/playwright.config.cjs","module.exports.webServer.env={SERVER_JOURNAL:process.env.LOAN_SERVER_JOURNAL};\nmodule.exports.globalSetup='./timeout-setup.cjs';\nmodule.exports.globalTeardown='./timeout-teardown.cjs';\nmodule.exports.timeout=180000;\n");
-    repo.append("playwright/lending/desk.spec.cjs",r#"
-test('wait for the launch stop', {tag:'@Check:sixth-loan-is-refused'},async()=>{
- require('node:fs').appendFileSync(process.env.WORKER_JOURNAL,JSON.stringify({event:'started',pid:process.pid,time_ms:Date.now()})+'\n');
- await new Promise(()=>{});
-});
-"#);
     assert!(repo.lint_findings(0).is_empty());
     let stdout = repo.beside("timeout.stdout");
     let stderr = repo.beside("timeout.stderr");
@@ -1524,44 +1788,12 @@ test('wait for the launch stop', {tag:'@Check:sixth-loan-is-refused'},async()=>{
         .stderr(Stdio::from(fs::File::create(&stderr).unwrap()))
         .spawn()
         .unwrap();
-    let mut running = Running {
+    let mut running = PlaywrightLaunch {
         child,
         owned: BTreeMap::new(),
     };
-    let watchdog = Instant::now();
-    while read_events(&worker_journal).is_empty() {
-        running.observe();
-        assert!(
-            running.child.try_wait().unwrap().is_none(),
-            "CLI exited before the hanging test: {}",
-            fs::read_to_string(&stderr).unwrap()
-        );
-        assert!(
-            watchdog.elapsed() < Duration::from_secs(120),
-            "runner readiness watchdog expired"
-        );
-        std::thread::sleep(Duration::from_millis(30));
-    }
-    let table = running.observe();
-    for journal in [&runner_journal, &server_journal, &worker_journal] {
-        let pid = read_events(journal)[0]["pid"].as_u64().unwrap() as u32;
-        assert!(
-            running.owned.contains_key(&pid) && table[&pid].running(),
-            "unowned journal PID {pid}"
-        );
-    }
-    let status = loop {
-        running.observe();
-        if let Some(status) = running.child.try_wait().unwrap() {
-            break status;
-        }
-        assert!(
-            watchdog.elapsed() < Duration::from_secs(145),
-            "core timeout watchdog expired: {}",
-            fs::read_to_string(&stderr).unwrap()
-        );
-        std::thread::sleep(Duration::from_millis(30));
-    };
+    let (_, server_pid) = wait_for_hanging_test(&mut running, &witnesses, &stderr);
+    let status = wait_for_launch_exit(&mut running, &stderr);
     assert_eq!(status.code(), Some(1));
     let document: Value = serde_json::from_str(&fs::read_to_string(stdout).unwrap()).unwrap();
     assert_eq!(
@@ -1569,43 +1801,130 @@ test('wait for the launch stop', {tag:'@Check:sixth-loan-is-refused'},async()=>{
             .as_array()
             .unwrap()
             .iter()
-            .find(|s| s["name"] == "loans")
+            .find(|suite| suite["name"] == "loans")
             .unwrap()["launch"],
         "timed out"
     );
+    // The finished Check exposes accepting a partial report from a timed-out launch.
     no_results(&repo, &document, &[SIXTH_LOAN, RETURNED_BOOK]);
-    let observer = read_events(&observer_journal);
-    let term = observer
-        .iter()
-        .find(|e| {
-            e["event"] == "SIGTERM" && e["folder"].as_str().is_some_and(|f| f.ends_with(SUITE))
-        })
-        .expect("the core did not signal the actual adapter group")["time_ms"]
-        .as_u64()
-        .unwrap();
-    for (journal, event) in [(&runner_journal, "cleaned"), (&server_journal, "exited")] {
-        let events = read_events(journal);
-        let cleaned=events.iter().find(|e|e["event"]==event).unwrap_or_else(||panic!("the polite stop did not finish {event}; raw group TERM also failed this measurement: {events:#?}"));
-        assert!(
-            cleaned["time_ms"].as_u64().unwrap() >= term
-                && cleaned["time_ms"].as_u64().unwrap() - term < 10_000,
-            "cleanup exceeded the fixed grace: {events:#?}"
-        );
-    }
-    let table = running.observe();
-    let alive: Vec<_> = running
-        .owned
-        .values()
-        .filter(|old| {
-            table.get(&old.pid).is_some_and(|now| {
-                now.running() && now.birth == old.birth && now.command == old.command
-            })
+    let events: Vec<_> = read_events(&witnesses.group)
+        .into_iter()
+        .filter(|event| {
+            event["folder"]
+                .as_str()
+                .is_some_and(|folder| folder.ends_with(SUITE))
         })
         .collect();
+    let interrupt = events
+        .iter()
+        .find(|event| event["event"] == "SIGINT")
+        .expect("the core did not send SIGINT to the launch group")["time_ns"]
+        .as_u64()
+        .unwrap();
+    let gone = events
+        .iter()
+        .find(|event| event["event"] == "server-gone" && event["server_pid"] == server_pid)
+        .expect("the separate server group survived the launch stop")["time_ns"]
+        .as_u64()
+        .unwrap();
     assert!(
-        alive.is_empty(),
-        "owned runner/server processes survived the core's timeout: {alive:#?}"
+        gone >= interrupt && gone - interrupt < 10_000_000_000,
+        "the server survived the fixed grace: {events:#?}"
     );
+    assert_launch_tree_is_gone(&mut running);
+}
+
+// behavior-2: An adapter that receives SIGINT writes no report and exits
+#[test]
+fn an_adapter_interrupted_with_its_group_exits_without_a_report() {
+    use std::io::Write;
+    use std::os::unix::process::CommandExt;
+    use std::process::Stdio;
+    let mut repo = sample();
+    let witnesses = hanging_playwright_suite(&mut repo);
+    let environment = repo.azimuth_command(&[]);
+    let stdout = repo.beside("interrupted.stdout");
+    let stderr = repo.beside("interrupted.stderr");
+    let mut command = Command::new(env!("CARGO_BIN_EXE_group-signal-recorder"));
+    command
+        .env_clear()
+        .envs(
+            environment
+                .get_envs()
+                .filter_map(|(key, value)| value.map(|value| (key, value))),
+        )
+        .env(
+            "GROUP_TARGET",
+            entry_under(&repo.path("playwright/node_modules")),
+        )
+        .current_dir(repo.path(SUITE))
+        .process_group(0)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::from(fs::File::create(&stdout).unwrap()))
+        .stderr(Stdio::from(fs::File::create(&stderr).unwrap()));
+    let child = command.spawn().unwrap();
+    let mut running = PlaywrightLaunch {
+        child,
+        owned: BTreeMap::new(),
+    };
+    running
+        .child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(
+            request(&[SIXTH_LOAN, RETURNED_BOOK], "Check")
+                .to_string()
+                .as_bytes(),
+        )
+        .unwrap();
+    let (runner_pid, _) = wait_for_hanging_test(&mut running, &witnesses, &stderr);
+    let events = read_events(&witnesses.group);
+    let adapter_pid = events
+        .iter()
+        .find(|event| event["event"] == "target-started")
+        .unwrap()["target_pid"]
+        .as_u64()
+        .unwrap() as u32;
+    let table = running.observe();
+    let group = table[&running.child.id()].group;
+    assert!(running.owned.contains_key(&adapter_pid) && table[&adapter_pid].running());
+    assert_eq!(table[&adapter_pid].group, group);
+    assert_eq!(table[&runner_pid].group, group);
+    running.interrupt_group();
+    wait_for_launch_exit(&mut running, &stderr);
+    let watchdog = std::time::Instant::now();
+    while !read_events(&witnesses.group)
+        .iter()
+        .any(|event| event["event"] == "target-exited" && event["target_pid"] == adapter_pid)
+        || !running.alive().is_empty()
+    {
+        assert!(
+            watchdog.elapsed() < Duration::from_secs(120),
+            "interrupted launch watchdog expired: {}",
+            fs::read_to_string(&stderr).unwrap()
+        );
+        std::thread::sleep(Duration::from_millis(30));
+    }
+    let events = read_events(&witnesses.group);
+    assert!(
+        events
+            .iter()
+            .any(|event| event["event"] == "SIGINT" && event["group"] == group),
+        "the whole group did not receive SIGINT: {events:#?}"
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| event["event"] == "target-exited" && event["target_pid"] == adapter_pid),
+        "the adapter did not exit: {events:#?}"
+    );
+    assert!(
+        fs::read(&stdout).unwrap().is_empty(),
+        "the interrupted adapter wrote a report: {}",
+        fs::read_to_string(&stdout).unwrap()
+    );
+    assert_launch_tree_is_gone(&mut running);
 }
 
 #[test]
@@ -1628,4 +1947,59 @@ fn the_locked_runner_uses_the_sample_server_without_a_browser() {
     let output = run_with_time_limit(command, Duration::from_secs(120), None);
     output.expect_status(0);
     assert_eq!(output.json()["stats"]["expected"], 2, "{}", output.text());
+}
+
+#[test]
+fn the_locked_runner_lists_and_selects_a_tag_written_only_in_the_title() {
+    let mut repo = Repo::sample();
+    copy_tree(&runner().modules, &repo.path("playwright/node_modules"));
+    isolate_npm(&mut repo);
+    let journal = repo.beside("title-body");
+    spec(
+        &repo,
+        r#"const {test}=require('@playwright/test');
+test('title token @Check:title-only',async()=>{require('node:fs').writeFileSync(process.env.TITLE_BODY,'entered');});
+test('unmarked title',async()=>{throw new Error('the filter admitted an unmarked test');});
+"#,
+    );
+    let environment = repo.azimuth_command(&[]);
+    for listing in [true, false] {
+        let mut command = Command::new("node");
+        command
+            .env_clear()
+            .envs(
+                environment
+                    .get_envs()
+                    .filter_map(|(key, value)| value.map(|value| (key, value))),
+            )
+            .env("TITLE_BODY", &journal)
+            .arg(repo.path("playwright/node_modules/@playwright/test/cli.js"))
+            .args([
+                "test",
+                "--retries=0",
+                "--reporter=json",
+                "--grep",
+                "@Check:title-only",
+            ])
+            .current_dir(repo.path(SUITE));
+        if listing {
+            command.arg("--list");
+        }
+        let output = run_with_time_limit(command, Duration::from_secs(120), None);
+        output.expect_status(0);
+        let document = output.json();
+        let specs = document["suites"][0]["specs"].as_array().unwrap();
+        assert_eq!(specs.len(), 1, "{document:#}");
+        assert_eq!(specs[0]["title"], "title token @Check:title-only");
+        assert_eq!(
+            specs[0]["tags"],
+            json!(["Check:title-only"]),
+            "{document:#}"
+        );
+        assert_eq!(journal.exists(), !listing);
+        if !listing {
+            assert_eq!(fs::read_to_string(&journal).unwrap(), "entered");
+            assert_eq!(document["stats"]["expected"], 1);
+        }
+    }
 }

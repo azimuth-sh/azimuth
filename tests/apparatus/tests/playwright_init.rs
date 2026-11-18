@@ -137,8 +137,16 @@ fn only_a_manifest_dependency_identifies_a_missing_playwright_stack() {
         let output = repo.azimuth(&["init"]);
         output.expect_status(0);
         assert_install(&output.text());
+        let text = output.text().to_lowercase();
+        let omissions: Vec<_> = text
+            .lines()
+            .filter(|line| line.contains("not in the project file"))
+            .collect();
+        assert_eq!(omissions.len(), 1, "{}", output.text());
         assert!(
-            output.text().contains("not in the project file"),
+            text.contains("playwright")
+                && !omissions[0].contains("xunit")
+                && !omissions[0].contains("dotnet"),
             "{}",
             output.text()
         );

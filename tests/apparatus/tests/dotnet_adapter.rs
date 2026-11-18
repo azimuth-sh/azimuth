@@ -989,35 +989,139 @@ fn the_printed_install_line_installs_the_adapter() {
     );
 }
 
-// behavior-2: An adapter that receives SIGTERM stops its runner and exits, and writes no report
 #[test]
-fn sigterm_stops_the_real_runner_without_writing_a_report() {
-    assert_real_adapter_stops_politely(false);
+fn a_dotnet_test_launch_times_out_and_its_tree_exits_before_the_grace_ends() {
+    assert_dotnet_launch_times_out(false);
 }
 
 #[test]
-fn sigterm_during_build_gives_the_build_tree_a_polite_stop() {
-    assert_real_adapter_stops_politely(true);
+fn a_dotnet_build_launch_times_out_and_its_tree_exits_before_the_grace_ends() {
+    assert_dotnet_launch_times_out(true);
 }
 
-fn assert_real_adapter_stops_politely(during_build: bool) {
-    use std::io::Write;
-    use std::process::Stdio;
+// behavior-2: An adapter that receives SIGINT writes no report and exits
+#[test]
+fn sigint_to_the_real_adapter_group_exits_without_a_report() {
     use std::time::Instant;
+    let repo = hanging_dotnet_suite(false);
+    let entry = installed_adapter_entry(&repo);
+    let (mut run, stdout, stderr) = start_dotnet_process_tree(&repo, true);
+    let (adapter, _) = wait_for_dotnet_phase(&repo, &mut run, &entry, false, &stdout, &stderr);
+    let now = run.observe();
+    for process in run.owned.values().filter(|old| still_running(old, &now)) {
+        assert_eq!(process.group, adapter.group);
+    }
+    assert_ne!(adapter.group, azimuth_tests::process::group());
+    let fresh = processes().unwrap_or_else(|error| panic!("{error}"));
+    assert!(still_running(&adapter, &fresh));
+    assert_eq!(fresh[&adapter.pid].group, adapter.group);
+    // The live group leader is our unreaped direct child, so its group cannot have been reused.
+    unsafe extern "C" {
+        fn kill(pid: i32, signal: i32) -> i32;
+    }
+    assert_eq!(unsafe { kill(-adapter.group, 2) }, 0);
+    let interrupted = Instant::now();
+    loop {
+        run.observe();
+        if run.child.try_wait().unwrap().is_some() {
+            break;
+        }
+        assert!(
+            interrupted.elapsed() < Duration::from_secs(10),
+            "adapter did not exit within the grace after group SIGINT"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(
+        std::fs::read_to_string(stdout).unwrap(),
+        "",
+        "interrupted adapter wrote a report"
+    );
+}
 
-    let repo = sample();
-    let journal = repo.beside("hanging-test.pid");
-    let witness = repo.beside("polite-stop.witness");
-    let build_token = repo.beside("build-token");
+fn hanging_dotnet_suite(during_build: bool) -> Repo {
+    let mut repo = sample();
+    for path in ["LoanLimitTests.cs", "FineTests.cs", "CatalogTests.cs"] {
+        repo.remove(&format!("{DOTNET_SUITE}/{path}"));
+    }
+    repo.write(
+        "dotnet/LibraryDesk.Tests/HangingTests.cs",
+        r#"
+using System;
+using System.IO;
+using System.Threading;
+using Xunit;
+namespace LibraryDesk.Tests;
+public class HangingTests {
+    [Fact]
+    [Trait("Check", "sixth-loan-is-refused")]
+    [Trait("Check", "returned-book-frees-a-slot")]
+    [Trait("Check", "late-return-is-fined")]
+    [Trait("Check", "on-time-return-is-free")]
+    public void Hangs_until_the_launch_is_stopped() {
+        var path = Environment.GetEnvironmentVariable("STOP_TEST_PID")!;
+        File.WriteAllText(path + ".tmp", Environment.ProcessId.ToString());
+        File.Move(path + ".tmp", path);
+        Thread.Sleep(300000);
+    }
+}
+"#,
+    );
+    // Prepare the assembly first, so the test-phase case cannot spend its minute restoring.
+    dotnet_for(
+        &repo,
+        &repo.path(DOTNET_SUITE),
+        &[
+            "build",
+            "--nologo",
+            "-p:UseSharedCompilation=false",
+            "-nodeReuse:false",
+        ],
+    )
+    .expect_status(0);
+    let token = repo.beside("tree-token");
+    let entry = installed_adapter_entry(&repo);
+    repo.write(
+        PROJECT_FILE,
+        &format!(
+            r#"cli = "{}"
+[repository]
+name = "library-desk"
+target = "main"
+[[area]]
+name = "all"
+mounts = ["."]
+[[suite]]
+name = "dotnet-checks"
+area = "all"
+path = "dotnet/LibraryDesk.Tests"
+adapter = "process-tree dotnet-adapter {}"
+marker = '[Trait("Check", "<id>")]'
+needs = []
+time_limit_minutes = 1
+"#,
+            cli_version(),
+            token.display()
+        ),
+    );
+    repo.set_env("DOTNET_ADAPTER_ENTRY", entry.to_str().unwrap());
+    repo.set_env("TREE_MODE", "orphan");
+    repo.set_env("TREE_LOG", repo.beside("tree.jsonl").to_str().unwrap());
+    repo.set_env(
+        "STOP_TEST_PID",
+        repo.beside("hanging-phase.pid").to_str().unwrap(),
+    );
+    repo.set_env("UseSharedCompilation", "false");
+    repo.set_env("MSBUILDDISABLENODEREUSE", "1");
+    repo.set_env("DOTNET_CLI_USE_MSBUILD_SERVER", "0");
     if during_build {
-        // An MSBuild target is a real part of this sample build, not a stand-in for dotnet.
         let target = format!(
-            r#"<Target Name="WaitForPoliteStop" BeforeTargets="BeforeBuild">
+            r#"<Target Name="WaitForTheLaunchLimit" BeforeTargets="BeforeBuild">
   <Exec Command="&quot;{}&quot; build &quot;{}&quot;" />
 </Target>
 </Project>"#,
             binaries_dir().join("process-tree").display(),
-            build_token.display()
+            token.display()
         );
         repo.replace(
             "dotnet/LibraryDesk.Tests/LibraryDesk.Tests.csproj",
@@ -1025,159 +1129,224 @@ fn assert_real_adapter_stops_politely(during_build: bool) {
             &target,
         );
     }
-    repo.write(
-        "dotnet/LibraryDesk.Tests/StopTests.cs",
-        r#"
-using System;
-using System.Diagnostics;
-using System.IO;
-using System.Runtime.InteropServices;
-using System.Threading;
-using Xunit;
-namespace LibraryDesk.Tests;
-public class StopTests {
-    [Fact]
-    [Trait("Check", "desk-stops-when-asked")]
-    public void Waits_for_the_runner_to_stop() {
-        var path = Environment.GetEnvironmentVariable("STOP_TEST_PID")!;
-        void Stopped(PosixSignalContext context) {
-            context.Cancel = true;
-            // Cleanup needs time; an immediate forced stop must not produce this witness.
-            Thread.Sleep(500);
-            File.WriteAllText(Environment.GetEnvironmentVariable("STOP_WITNESS")!, "polite stop\n");
-            Environment.Exit(0);
-        }
-        using var term = PosixSignalRegistration.Create(PosixSignal.SIGTERM, Stopped);
-        using var interrupt = PosixSignalRegistration.Create(PosixSignal.SIGINT, Stopped);
-        File.WriteAllText(path + ".tmp", Process.GetCurrentProcess().Id.ToString());
-        File.Move(path + ".tmp", path);
-        Thread.Sleep(300000);
-    }
+    repo
 }
-"#,
-    );
-    let entry = installed_adapter_entry(&repo);
-    let stdout = repo.beside("stop.stdout");
-    let stderr = repo.beside("stop.stderr");
-    let child = Command::new("dotnet")
-        .arg(&entry)
-        .current_dir(repo.path(DOTNET_SUITE))
-        .envs(own_folders(&repo))
-        .env("STOP_TEST_PID", &journal)
-        .env("STOP_WITNESS", &witness)
-        .env("TREE_LOG", repo.beside("build.jsonl"))
-        .env("TREE_MODE", "polite")
-        .env("UseSharedCompilation", "false")
-        .env("MSBUILDDISABLENODEREUSE", "1")
-        .env("DOTNET_CLI_USE_MSBUILD_SERVER", "0")
-        .stdin(Stdio::piped())
+
+fn start_dotnet_process_tree(repo: &Repo, direct: bool) -> (RunningDotnetTree, PathBuf, PathBuf) {
+    use std::io::Write;
+    use std::os::unix::process::CommandExt;
+    use std::process::Stdio;
+    processes().unwrap_or_else(|error| panic!("process supervision unavailable: {error}"));
+    let stdout = repo.beside("timeout.stdout");
+    let stderr = repo.beside("timeout.stderr");
+    let mut command = if direct {
+        let mut command = Command::new("dotnet");
+        command
+            .arg(installed_adapter_entry(repo))
+            .current_dir(repo.path(DOTNET_SUITE))
+            .envs(own_folders(repo))
+            .env("STOP_TEST_PID", repo.beside("hanging-phase.pid"))
+            .env("UseSharedCompilation", "false")
+            .env("MSBUILDDISABLENODEREUSE", "1")
+            .env("DOTNET_CLI_USE_MSBUILD_SERVER", "0");
+        command
+    } else {
+        repo.azimuth_command(&["run", "--json"])
+    };
+    let child = command
+        .process_group(0)
+        .stdin(if direct {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(std::fs::File::create(&stdout).unwrap())
         .stderr(std::fs::File::create(&stderr).unwrap())
         .spawn()
         .unwrap();
-    let mut run = RunningAdapter {
+    let mut run = RunningDotnetTree {
         child,
         owned: BTreeMap::new(),
+        token: repo.beside("tree-token"),
     };
-    run.child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(
-            run_request(&["desk-stops-when-asked"])
-                .to_string()
-                .as_bytes(),
-        )
-        .unwrap();
-    let start = Instant::now();
-    while !journal.exists() && start.elapsed() < Duration::from_secs(180) {
-        run.observe();
-        if run.child.try_wait().unwrap().is_some() {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(50));
+    if direct {
+        run.child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(run_request(&ALL_CHECKS).to_string().as_bytes())
+            .unwrap();
     }
-    assert!(
-        journal.exists(),
-        "real marked test did not start:\n{}\n{}",
-        std::fs::read_to_string(&stdout).unwrap(),
-        std::fs::read_to_string(&stderr).unwrap()
-    );
-    let runner: u32 = std::fs::read_to_string(&journal).unwrap().parse().unwrap();
-    let table = run.observe();
-    assert!(
-        run.owned.contains_key(&runner),
-        "published runner is not a descendant of our adapter"
-    );
-    if during_build {
-        let mut ancestor = table[&runner].parent;
-        let mut build_seen = false;
-        while ancestor != run.child.id() {
-            let parent = &table[&ancestor];
-            build_seen |= parent.command.split_whitespace().any(|arg| arg == "build");
-            ancestor = parent.parent;
-        }
-        assert!(
-            build_seen,
-            "the gate is not inside the adapter's dotnet build tree"
-        );
-    }
-    let adapter = table.get(&run.child.id()).unwrap();
-    assert!(adapter
-        .command
-        .split_whitespace()
-        .any(|arg| arg == entry.to_str().unwrap()));
-    assert!(
-        adapter.signal_if_same("-TERM"),
-        "could not signal the identified adapter"
-    );
-    let stop = Instant::now();
-    let survivors = loop {
-        let table = run.observe();
-        let survivors: Vec<_> = run
-            .owned
-            .values()
-            .filter(|old| {
-                table.get(&old.pid).is_some_and(|now| {
-                    now.running() && now.birth == old.birth && now.command == old.command
-                })
-            })
-            .cloned()
-            .collect();
-        let exited = run.child.try_wait().unwrap().is_some();
-        if exited && survivors.is_empty() {
-            break survivors;
-        }
-        if stop.elapsed() >= Duration::from_secs(30) {
-            break survivors;
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    };
-    assert!(
-        survivors.is_empty(),
-        "adapter left owned runner processes alive after SIGTERM: {survivors:#?}"
-    );
-    assert!(
-        run.child.try_wait().unwrap().is_some(),
-        "adapter did not exit after SIGTERM"
-    );
-    assert_eq!(
-        std::fs::read_to_string(stdout).unwrap(),
-        "",
-        "stopped adapter wrote a report"
-    );
-    assert_eq!(
-        std::fs::read_to_string(witness).unwrap_or_default(),
-        "polite stop\n",
-        "runner tree exited without its polite-stop witness (during_build={during_build})"
-    );
+    (run, stdout, stderr)
 }
 
-struct RunningAdapter {
+fn still_running(old: &Process, table: &BTreeMap<u32, Process>) -> bool {
+    table
+        .get(&old.pid)
+        .is_some_and(|now| now.running() && now.birth == old.birth && now.command == old.command)
+}
+fn wait_for_dotnet_phase(
+    repo: &Repo,
+    run: &mut RunningDotnetTree,
+    entry: &Path,
+    during_build: bool,
+    stdout: &Path,
+    stderr: &Path,
+) -> (Process, Process) {
+    let began = std::time::Instant::now();
+    let pid_file = repo.beside("hanging-phase.pid");
+    loop {
+        run.observe();
+        if pid_file.exists() {
+            let pid: u32 = std::fs::read_to_string(&pid_file).unwrap().parse().unwrap();
+            // Publication can happen after the preceding ps snapshot; inspect again after reading it.
+            let table = run.observe();
+            assert!(
+                run.owned.contains_key(&pid),
+                "published phase is not in our launch tree"
+            );
+            let phase = table[&pid].clone();
+            let adapters: Vec<_> = table
+                .values()
+                .filter(|process| {
+                    run.owned.contains_key(&process.pid)
+                        && process.running()
+                        && process
+                            .command
+                            .split_whitespace()
+                            .any(|arg| arg == entry.to_str().unwrap())
+                })
+                .cloned()
+                .collect();
+            assert_eq!(
+                adapters.len(),
+                1,
+                "installed adapter is not uniquely identified"
+            );
+            let adapter = adapters[0].clone();
+            assert!(phase.running());
+            assert_eq!(phase.group, adapter.group);
+            if during_build {
+                let mut ancestor = phase.parent;
+                let mut build_seen = false;
+                while ancestor != adapter.pid {
+                    let process = &table[&ancestor];
+                    build_seen |= process.command.split_whitespace().any(|arg| arg == "build");
+                    ancestor = process.parent;
+                }
+                assert!(build_seen, "the build gate is not inside dotnet build");
+                assert!(!run
+                    .owned
+                    .values()
+                    .any(|process| still_running(process, &table)
+                        && process.command.contains("testhost.dll")));
+            } else {
+                assert!(
+                    phase
+                        .command
+                        .split_whitespace()
+                        .any(|arg| arg.ends_with("testhost.dll")),
+                    "published phase is not the real test host: {phase:#?}"
+                );
+            }
+            return (adapter, phase);
+        }
+        let exited = run.child.try_wait().unwrap().is_some();
+        assert!(
+            !exited && began.elapsed() < Duration::from_secs(150),
+            "real .NET phase did not start:
+{}
+{}",
+            std::fs::read_to_string(stdout).unwrap(),
+            std::fs::read_to_string(stderr).unwrap()
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn assert_dotnet_launch_times_out(during_build: bool) {
+    use azimuth_tests::process::monotonic_ns;
+    let repo = hanging_dotnet_suite(during_build);
+    let entry = installed_adapter_entry(&repo);
+    let (mut run, stdout, stderr) = start_dotnet_process_tree(&repo, false);
+    let (adapter, _) =
+        wait_for_dotnet_phase(&repo, &mut run, &entry, during_build, &stdout, &stderr);
+    let table = run.observe();
+    assert_ne!(adapter.group, table[&run.child.id()].group);
+    for process in run
+        .owned
+        .values()
+        .filter(|old| old.pid != run.child.id() && still_running(old, &table))
+    {
+        assert_eq!(process.group, adapter.group);
+    }
+    let watchdog = std::time::Instant::now();
+    let mut all_gone = None;
+    let status = loop {
+        let table = run.observe();
+        if all_gone.is_none()
+            && !run
+                .owned
+                .values()
+                .any(|old| old.pid != run.child.id() && still_running(old, &table))
+        {
+            all_gone = Some(monotonic_ns());
+        }
+        if let Some(status) = run.child.try_wait().unwrap() {
+            if all_gone.is_some() {
+                break status;
+            }
+        }
+        assert!(
+            watchdog.elapsed() < Duration::from_secs(120),
+            "CLI or launch tree did not finish after its one-minute limit:
+{}",
+            std::fs::read_to_string(&stderr).unwrap()
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    let output = Output {
+        status: status.code().unwrap_or(-1),
+        stdout: std::fs::read_to_string(stdout).unwrap(),
+        stderr: std::fs::read_to_string(stderr).unwrap(),
+    };
+    output.expect_status(1);
+    let doc = output.json();
+    assert_eq!(doc["format"], "run-1");
+    assert_eq!(doc["suites"].as_array().unwrap().len(), 1);
+    assert_eq!(doc["suites"][0]["name"], "dotnet-checks");
+    assert_eq!(doc["suites"][0]["launch"], "timed out");
+    assert_eq!(doc["checks"].as_array().unwrap().len(), ALL_CHECKS.len());
+    for check in ALL_CHECKS {
+        assert_eq!(state_of(&doc, check), "owed");
+        assert_eq!(reason_of(&doc, check), "no result");
+    }
+    assert!(
+        repo.store_files().is_empty() && repo.outbox_files().is_empty(),
+        "timed-out .NET launch used a report to write results"
+    );
+    let events: Vec<Value> = std::fs::read_to_string(repo.beside("tree.jsonl"))
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let interrupted = events
+        .iter()
+        .filter(|event| event["role"] == "observer" && event["event"] == "SIGINT")
+        .map(|event| event["time_ns"].as_u64().unwrap())
+        .min()
+        .expect("the .NET launch group received no SIGINT");
+    let all_gone = all_gone.unwrap();
+    assert!(all_gone >= interrupted && all_gone - interrupted < 10_000_000_000,
+        "the .NET launch tree was not observed gone before the ten-second grace ended (during_build={during_build})");
+}
+
+struct RunningDotnetTree {
     child: Child,
     owned: BTreeMap<u32, Process>,
+    token: PathBuf,
 }
-impl RunningAdapter {
+impl RunningDotnetTree {
     fn observe(&mut self) -> BTreeMap<u32, Process> {
         let table = processes().unwrap_or_else(|error| panic!("{error}"));
         let mut descendants = std::collections::BTreeSet::new();
@@ -1210,8 +1379,11 @@ impl RunningAdapter {
         table
     }
 }
-impl Drop for RunningAdapter {
+impl Drop for RunningDotnetTree {
     fn drop(&mut self) {
+        // The instrumentation can stop independently even if its parent exits before a snapshot.
+        std::fs::write(self.token.with_extension("stop"), "").unwrap();
+        self.observe();
         for p in self.owned.values() {
             p.signal_if_same("-KILL");
         }
@@ -1219,6 +1391,18 @@ impl Drop for RunningAdapter {
             let _ = self.child.kill();
         }
         let _ = self.child.wait();
+        let began = std::time::Instant::now();
+        loop {
+            let table = self.observe();
+            if !self.owned.values().any(|old| still_running(old, &table)) {
+                break;
+            }
+            assert!(
+                began.elapsed() < Duration::from_secs(10),
+                "owned .NET fixture processes survived cleanup"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
     }
 }
 
@@ -1248,189 +1432,6 @@ fn installed_adapter_entry(repo: &Repo) -> PathBuf {
     let entry = settings[0].parent().unwrap().join(attribute("EntryPoint"));
     assert!(entry.is_file());
     entry
-}
-
-#[test]
-fn a_resistant_runner_child_does_not_withhold_the_stop_from_its_sibling() {
-    let observed: Vec<_> = [false, true]
-        .into_iter()
-        .map(assert_sibling_receives_stop)
-        .collect();
-    assert_eq!(observed, vec![true, true], "a resistant process prevented a sibling receiving the polite stop (both child creation orders)");
-}
-fn assert_sibling_receives_stop(reverse: bool) -> bool {
-    use std::io::Write;
-    use std::process::Stdio;
-    use std::time::Instant;
-    let repo = sample();
-    let token = repo.beside("sibling-token");
-    let pid_file = repo.beside("sibling-test.pid");
-    let witness = repo.beside("sibling-stop.witness");
-    repo.write("dotnet/LibraryDesk.Tests/SiblingStopTests.cs", r#"
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Runtime.InteropServices;
-using System.Threading;
-using Xunit;
-namespace LibraryDesk.Tests;
-public class SiblingStopTests {
-    [Fact]
-    [Trait("Check", "runner-stops-its-siblings")]
-    public void Keeps_siblings_alive_until_the_adapter_is_asked_to_stop() {
-        var token = Environment.GetEnvironmentVariable("SIBLING_TOKEN")!;
-        var helper = Environment.GetEnvironmentVariable("SIBLING_HELPER")!;
-        using var term = PosixSignalRegistration.Create(PosixSignal.SIGTERM, context => context.Cancel = true);
-        var roles = Environment.GetEnvironmentVariable("SIBLING_REVERSE") == "yes"
-            ? new[] { "witness-leaf", "resistant-leaf" } : new[] { "resistant-leaf", "witness-leaf" };
-        var children = new List<Process>();
-        foreach (var role in roles) {
-            var start = new ProcessStartInfo(helper) { UseShellExecute = false };
-            start.ArgumentList.Add(role); start.ArgumentList.Add(token);
-            children.Add(Process.Start(start)!);
-        }
-        foreach (var role in roles) {
-            while (!File.Exists(Path.ChangeExtension(token, role + ".ready"))) Thread.Sleep(10);
-        }
-        var pid = Environment.GetEnvironmentVariable("STOP_TEST_PID")!;
-        File.WriteAllText(pid + ".tmp", Environment.ProcessId.ToString());
-        File.Move(pid + ".tmp", pid);
-        while (!File.Exists(Path.ChangeExtension(token, "stop"))) {
-            foreach (var child in children) { if (child.HasExited) child.WaitForExit(); }
-            Thread.Sleep(10);
-        }
-        foreach (var child in children) child.WaitForExit();
-    }
-}
-"#);
-    let entry = installed_adapter_entry(&repo);
-    let stdout = repo.beside("sibling.stdout");
-    let stderr = repo.beside("sibling.stderr");
-    let child = Command::new("dotnet")
-        .arg(&entry)
-        .current_dir(repo.path(DOTNET_SUITE))
-        .envs(own_folders(&repo))
-        .env("STOP_TEST_PID", &pid_file)
-        .env("STOP_WITNESS", &witness)
-        .env("SIBLING_TOKEN", &token)
-        .env("SIBLING_HELPER", binaries_dir().join("process-tree"))
-        .env("SIBLING_REVERSE", if reverse { "yes" } else { "no" })
-        .env("TREE_MODE", "split-stop")
-        .env("TREE_LOG", repo.beside("siblings.jsonl"))
-        .env("UseSharedCompilation", "false")
-        .env("MSBUILDDISABLENODEREUSE", "1")
-        .env("DOTNET_CLI_USE_MSBUILD_SERVER", "0")
-        .stdin(Stdio::piped())
-        .stdout(std::fs::File::create(&stdout).unwrap())
-        .stderr(std::fs::File::create(&stderr).unwrap())
-        .spawn()
-        .unwrap();
-    let mut run = RunningAdapter {
-        child,
-        owned: BTreeMap::new(),
-    };
-    run.child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(
-            run_request(&["runner-stops-its-siblings"])
-                .to_string()
-                .as_bytes(),
-        )
-        .unwrap();
-    let began = Instant::now();
-    while !pid_file.exists() && began.elapsed() < Duration::from_secs(180) {
-        run.observe();
-        if run.child.try_wait().unwrap().is_some() {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(25));
-    }
-    assert!(
-        pid_file.exists(),
-        "real marked sibling test did not start:\n{}\n{}",
-        std::fs::read_to_string(stdout).unwrap(),
-        std::fs::read_to_string(stderr).unwrap()
-    );
-    let table = run.observe();
-    let leaves: Vec<_> = ["resistant-leaf", "witness-leaf"]
-        .into_iter()
-        .map(|role| {
-            let pid: u32 = std::fs::read_to_string(token.with_extension(format!("{role}.ready")))
-                .unwrap()
-                .parse()
-                .unwrap();
-            assert!(run.owned.contains_key(&pid));
-            let process = table[&pid].clone();
-            assert!(process.running());
-            assert!(process.command.split_whitespace().any(|arg| arg == role));
-            assert!(process
-                .command
-                .split_whitespace()
-                .any(|arg| arg == token.to_str().unwrap()));
-            process
-        })
-        .collect();
-    let adapter = table[&run.child.id()].clone();
-    assert!(adapter
-        .command
-        .split_whitespace()
-        .any(|arg| arg == entry.to_str().unwrap()));
-    assert!(adapter.signal_if_same("-TERM"));
-    let asked = Instant::now();
-    let log = repo.beside("siblings.jsonl");
-    let resistant_received = || {
-        std::fs::read_to_string(&log)
-            .unwrap_or_default()
-            .lines()
-            .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-            .any(|event| event["role"] == "resistant-leaf" && event["event"] == "SIGTERM")
-    };
-    while (!witness.exists() || !resistant_received()) && asked.elapsed() < Duration::from_secs(15)
-    {
-        run.observe();
-        std::thread::sleep(Duration::from_millis(25));
-    }
-    let received = std::fs::read_to_string(&witness).unwrap_or_default() == "polite sibling stop\n"
-        && resistant_received();
-    if resistant_received() {
-        let table = run.observe();
-        assert!(
-            table
-                .get(&leaves[0].pid)
-                .is_some_and(|process| process.running()
-                    && process.birth == leaves[0].birth
-                    && process.command == leaves[0].command),
-            "the resistant fixture did not survive its recorded polite stop"
-        );
-    }
-    // Neither cleanup signal is inferred from a stale PID or from another process's identity.
-    for leaf in &leaves {
-        leaf.signal_if_same("-KILL");
-    }
-    std::fs::write(token.with_extension("stop"), "").unwrap();
-    let owned: Vec<_> = run.owned.values().cloned().collect();
-    drop(run);
-    let cleanup = Instant::now();
-    loop {
-        let table = processes().unwrap_or_else(|error| panic!("{error}"));
-        let alive = owned.iter().any(|old| {
-            table.get(&old.pid).is_some_and(|now| {
-                now.running() && now.birth == old.birth && now.command == old.command
-            })
-        });
-        if !alive {
-            break;
-        }
-        assert!(
-            cleanup.elapsed() < Duration::from_secs(10),
-            "real adapter fixture left an owned process behind"
-        );
-        std::thread::sleep(Duration::from_millis(25));
-    }
-    received
 }
 
 #[test]

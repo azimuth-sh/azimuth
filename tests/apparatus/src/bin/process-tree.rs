@@ -46,10 +46,40 @@ fn main() {
         finished(&role, &token);
         return;
     }
+    if role == "dotnet-adapter" {
+        // A sibling of the runner records signal receipt without depending on .NET teardown.
+        // exec preserves the real adapter's PID, group, stdin and report stream.
+        // The observer must survive exec; the test's tree guard supervises its termination.
+        #[allow(clippy::zombie_processes)]
+        let mut observer = Command::new(std::env::current_exe().unwrap())
+            .arg("observer")
+            .arg(&token)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let ready = std::path::Path::new(&token).with_extension("observer.ready");
+        let watchdog = monotonic_ns() + 30_000_000_000;
+        while !ready.exists() {
+            assert!(
+                observer.try_wait().unwrap().is_none(),
+                "signal observer exited before exec"
+            );
+            assert!(
+                monotonic_ns() < watchdog,
+                "signal observer did not become ready"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let error = Command::new("dotnet")
+            .arg(std::env::var("DOTNET_ADAPTER_ENTRY").unwrap())
+            .exec();
+        panic!("could not exec the installed .NET adapter: {error}");
+    }
     let mode = std::env::var("TREE_MODE").unwrap();
     let ignores = (mode == "resists" && role != "grandchild")
-        || (mode == "orphan-resists" && role == "grandchild")
-        || role == "resistant-leaf";
+        || (mode == "orphan-resists" && role == "grandchild");
     if ignores {
         // SIGKILL cannot be ignored; accepting another terminating signal would hide a wrong stop.
         for number in 1..=31 {
@@ -59,7 +89,10 @@ fn main() {
         }
     }
     unsafe {
-        signal(15, stop as *const () as usize);
+        // Opposite SIGTERM dispositions make a wrong stop signal observable, rather than
+        // allowing both signals to lead to the same apparent timeout and escalation.
+        signal(15, if ignores { 0 } else { 1 });
+        signal(2, stop as *const () as usize);
     }
     if role == "adapter" || role == "proof" {
         if let Ok(delay) = std::env::var("TREE_SETUP_DELAY_MS") {
@@ -67,8 +100,8 @@ fn main() {
         }
     }
     event("started", &role, &token);
-    if role.ends_with("-leaf") {
-        let ready = std::path::Path::new(&token).with_extension(format!("{role}.ready"));
+    if role == "observer" {
+        let ready = std::path::Path::new(&token).with_extension("observer.ready");
         let temporary = ready.with_extension("tmp");
         std::fs::write(&temporary, std::process::id().to_string()).unwrap();
         std::fs::rename(temporary, ready).unwrap();
@@ -153,7 +186,7 @@ fn main() {
     let mut child = if role != "grandchild"
         && role != "holder"
         && role != "build"
-        && !role.ends_with("-leaf")
+        && role != "observer"
         && mode != "escaped-output"
     {
         Some(
@@ -205,23 +238,11 @@ fn main() {
         if received != 0 {
             journal(
                 std::path::Path::new(&std::env::var("TREE_LOG").unwrap()),
-                "SIGTERM",
+                "SIGINT",
                 std::process::id(),
                 &role,
                 json!({"group":group(),"token":token,"time_ns":received}),
             );
-            if role == "build" {
-                // A witness after cleanup work distinguishes a polite stop from TERM followed by force.
-                std::thread::sleep(Duration::from_millis(500));
-                std::fs::write(std::env::var("STOP_WITNESS").unwrap(), "polite stop\n").unwrap();
-            }
-            if role == "witness-leaf" {
-                std::fs::write(
-                    std::env::var("STOP_WITNESS").unwrap(),
-                    "polite sibling stop\n",
-                )
-                .unwrap();
-            }
             if !ignores {
                 break;
             }

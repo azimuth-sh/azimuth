@@ -144,12 +144,13 @@ impl LiveRun {
         let sample_finished = monotonic_ns();
         for e in &started {
             let pid = e["pid"].as_u64().unwrap() as u32;
-            let own_term = events
+            let own_interrupt = events
                 .iter()
-                .find(|event| event["event"] == "SIGTERM" && event["pid"] == e["pid"])
+                .find(|event| event["event"] == "SIGINT" && event["pid"] == e["pid"])
                 .map(|event| event["time_ns"].as_u64().unwrap());
             if !self.witnessed_alive.contains(&pid)
-                && own_term.is_some_and(|term| sample_started >= term + 5_000_000_000)
+                && own_interrupt
+                    .is_some_and(|interrupted| sample_started >= interrupted + 5_000_000_000)
                 && table.get(&pid).is_some_and(|p| {
                     p.running()
                         && p.command
@@ -196,8 +197,7 @@ impl LiveRun {
     pub fn finish(&mut self, limit: Duration) -> Output {
         loop {
             let status = self.child.try_wait().unwrap();
-            let stopping =
-                status.is_some() || self.events().iter().any(|e| e["event"] == "SIGTERM");
+            let stopping = status.is_some() || self.events().iter().any(|e| e["event"] == "SIGINT");
             let gone = !stopping || self.observe_exits();
             if let Some(status) = status {
                 if gone {

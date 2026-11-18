@@ -600,34 +600,94 @@ fn all_jobs() -> Vec<Job> {
     all
 }
 
-fn expanded_commands(script: &str) -> Vec<Vec<String>> {
-    let mut commands = shell::commands(script);
-    let direct = commands.clone();
-    for words in direct {
+fn run_step_sources(script: &str) -> Vec<String> {
+    let mut sources = vec![script.to_string()];
+    for words in shell::commands(script) {
         let path = if words
             .first()
-            .is_some_and(|w| ["sh", "bash"].contains(&w.as_str()))
+            .is_some_and(|word| ["sh", "bash"].contains(&word.as_str()))
         {
             words.get(1)
         } else {
             words.first()
         };
         if let Some(path) =
-            path.filter(|p| p.starts_with("release/") || p.starts_with("./release/"))
+            path.filter(|path| path.starts_with("release/") || path.starts_with("./release/"))
         {
             let source = repository_root().join(path);
             if source.is_file() {
-                let script = fs::read_to_string(source).unwrap();
-                if script.contains("npm ")
-                    || script.contains("gh release ")
-                    || script.contains("dotnet nuget ")
-                {
-                    commands.extend(shell::commands(&script));
-                }
+                sources.push(fs::read_to_string(source).unwrap());
             }
         }
     }
+    sources
+}
+
+fn expanded_commands(script: &str) -> Vec<Vec<String>> {
+    let sources = run_step_sources(script);
+    let mut commands = shell::commands(script);
+    for source in sources.iter().skip(1) {
+        if source.contains("npm ")
+            || source.contains("gh release ")
+            || source.contains("dotnet nuget ")
+        {
+            commands.extend(shell::commands(source));
+        }
+    }
     commands
+}
+
+fn assert_default_conditions(root: &Node) {
+    for job in jobs(root) {
+        for node in std::iter::once(job).chain(
+            job.child("steps")
+                .into_iter()
+                .flat_map(|steps| &steps.children),
+        ) {
+            assert!(
+                node.child("continue-on-error").is_none(),
+                "release job/step continues after failure: {}:{}",
+                job.key,
+                node.line
+            );
+            if let Some(condition) = node.child("if") {
+                let value = condition.value.as_deref().unwrap_or_default().trim();
+                let value = value
+                    .strip_prefix("${{")
+                    .and_then(|value| value.strip_suffix("}}"))
+                    .unwrap_or(value)
+                    .trim();
+                assert_eq!(
+                    value, "success()",
+                    "release job/step overrides its default success condition: {}:{}",
+                    job.key, node.line
+                );
+            }
+        }
+    }
+}
+
+fn assert_no_npm_publish(root: &Node) {
+    for job in jobs(root) {
+        for run in job
+            .descendants()
+            .into_iter()
+            .filter(|node| node.key == "run")
+        {
+            for source in run_step_sources(run.value.as_deref().unwrap_or_default()) {
+                let text = shell::without_comments(&source)
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                assert!(
+                    !text.contains("npm publish"),
+                    "a run step contains npm publish: {}:{}",
+                    job.key,
+                    run.line
+                );
+            }
+        }
+    }
 }
 
 fn role<'a>(all: &'a [Job], name: &str, matches: impl Fn(&[String]) -> bool) -> &'a Job {
@@ -1174,6 +1234,15 @@ fn npm_job(root: &Node) -> &Node {
 fn the_release_stages_exactly_the_packed_file_and_bytes_at_the_tag_version() {
     let root = release_workflow();
     npm_job(&root);
+    let all = all_jobs();
+    let packing = role(&all, "npm packing", |words| {
+        shell::invokes(words, &["npm", "pack"])
+    });
+    let staging = role(&all, "npm staging", stage);
+    assert!(
+        packing.name == staging.name || depends_on(&all, staging, packing),
+        "staging must depend on the job that packs its file"
+    );
     let mut artifacts = Vec::new();
     for version in ["0.2.0-alpha.73", "0.3.1-alpha.5"] {
         let calls = release_replay::pack_and_stage(&root, version);
@@ -1213,26 +1282,26 @@ fn the_release_stages_exactly_the_packed_file_and_bytes_at_the_tag_version() {
 // behavior-2: The workflow runs `npm stage publish` and never `npm publish`
 #[test]
 fn only_the_tag_workflow_stages_at_npm_and_no_workflow_publishes_directly() {
+    for (_, _, root) in workflows() {
+        assert_no_npm_publish(&root);
+    }
     let all = all_jobs();
     let staging = role(&all, "npm staging", stage);
     assert_eq!(staging.workflow, "publish.yml");
     assert_eq!(
         all.iter()
-            .flat_map(|j| &j.commands)
-            .filter(|w| stage(w))
+            .flat_map(|job| &job.commands)
+            .filter(|words| stage(words))
             .count(),
         1
     );
-    for job in &all {
-        assert!(
-            !job.commands
-                .iter()
-                .any(|w| shell::invokes(w, &["npm", "publish"])),
-            "{}/{} publishes directly to npm",
-            job.workflow,
-            job.name
-        );
-    }
+}
+
+fn npm_credential_name(name: &str) -> bool {
+    let name = name.to_uppercase();
+    ["NODE_AUTH_TOKEN", "NPM_TOKEN", "NPM_AUTH_TOKEN"].contains(&name.as_str())
+        || (name.starts_with("NPM_CONFIG_")
+            && (name.contains("TOKEN") || name.ends_with("_AUTH") || name.ends_with("_PASSWORD")))
 }
 
 fn npm_credentials(root: &Node, job: &Node, base: &Path) -> Vec<String> {
@@ -1248,11 +1317,7 @@ fn npm_credentials(root: &Node, job: &Node, base: &Path) -> Vec<String> {
             let name = item.key.to_uppercase();
             let value = item.value.as_deref().unwrap_or_default();
             values.insert(item.key.clone(), value.to_string());
-            if !value.trim().is_empty()
-                && (["NODE_AUTH_TOKEN", "NPM_TOKEN", "NPM_AUTH_TOKEN"].contains(&name.as_str())
-                    || (name.starts_with("NPM_CONFIG_")
-                        && (name.contains("AUTH") || name.ends_with("TOKEN"))))
-            {
+            if !value.trim().is_empty() && npm_credential_name(&name) {
                 errors.push(format!("npm credential input {}", item.key));
             }
             if ["NPM_CONFIG_USERCONFIG", "NPM_CONFIG_GLOBALCONFIG"].contains(&name.as_str())
@@ -1263,16 +1328,58 @@ fn npm_credentials(root: &Node, job: &Node, base: &Path) -> Vec<String> {
         }
     }
     for node in job.descendants().into_iter().filter(|n| n.key == "run") {
-        let script = node.value.as_deref().unwrap_or_default();
+        let script = shell::without_comments(node.value.as_deref().unwrap_or_default());
+        for word in script.split_whitespace() {
+            if word
+                .split_once('=')
+                .is_some_and(|(name, value)| npm_credential_name(name) && !value.is_empty())
+            {
+                errors.push("npm credential assigned in a run step".into());
+            }
+        }
         if script.to_lowercase().contains("_authtoken") || script.to_lowercase().contains(":_auth=")
         {
             errors.push("npm credential configured by a run step".into());
         }
-        for words in expanded_commands(script) {
+        for words in expanded_commands(&script) {
             if shell::invokes(&words, &["npm", "login"])
                 || shell::invokes(&words, &["npm", "adduser"])
             {
                 errors.push("npm registry login".into());
+            }
+        }
+    }
+    for node in job
+        .descendants()
+        .into_iter()
+        .filter(|node| node.key == "run")
+    {
+        let script = shell::without_comments(node.value.as_deref().unwrap_or_default());
+        for words in shell::commands(&script) {
+            let command = words.join(" ");
+            let secret = command.contains("secrets.")
+                || values.iter().any(|(name, value)| {
+                    value.contains("secrets.")
+                        && (command.contains(&format!("${name}"))
+                            || command.contains(&format!("${{{name}}}")))
+                });
+            let config = command.contains(".npmrc")
+                || [
+                    "NPM_CONFIG_USERCONFIG",
+                    "NPM_CONFIG_GLOBALCONFIG",
+                    "npm_config_userconfig",
+                    "npm_config_globalconfig",
+                ]
+                .iter()
+                .any(|name| command.contains(name));
+            if secret
+                && config
+                && (command.contains('>')
+                    || ["tee", "cp", "install"]
+                        .iter()
+                        .any(|program| shell::invokes(&words, &[program])))
+            {
+                errors.push("npm configuration written from a stored secret".into());
             }
         }
     }
@@ -1321,8 +1428,10 @@ fn npm_staging_uses_the_job_identity_without_registry_credentials() {
             .and_then(|n| n.value.as_deref()),
         Some("write")
     );
-    let errors = npm_credentials(&root, job, &repository_root());
-    assert!(errors.is_empty(), "{errors:#?}");
+    for job in jobs(&root) {
+        let errors = npm_credentials(&root, job, &repository_root());
+        assert!(errors.is_empty(), "{errors:#?}");
+    }
 }
 
 #[test]
@@ -1378,53 +1487,61 @@ fn staging_and_draft_creation_precede_the_release_approval_environment() {
 fn the_first_release_creation_is_a_draft_with_all_release_files() {
     let all = all_jobs();
     let job = role(&all, "draft release", draft);
-    let creates: Vec<_> = all
-        .iter()
-        .flat_map(|j| &j.commands)
-        .filter(|w| shell::invokes(w, &["gh", "release", "create"]))
-        .collect();
-    assert_eq!(creates.len(), 1);
-    assert!(draft(creates[0]));
     assert_eq!(job.workflow, "publish.yml");
-    let words = creates[0];
-    let mut files = Vec::new();
-    let mut skip = false;
-    for word in words.iter().skip(4) {
-        if skip {
-            skip = false;
-            continue;
-        }
-        if [
-            "--title",
-            "--notes",
-            "--notes-file",
-            "--repo",
-            "-R",
-            "--target",
-            "--discussion-category",
-        ]
-        .contains(&word.as_str())
-        {
-            skip = true;
-            continue;
-        }
-        if !word.starts_with('-') {
-            files.push(word.as_str());
-        }
+    assert_eq!(
+        all.iter()
+            .flat_map(|job| &job.commands)
+            .filter(|words| shell::invokes(words, &["gh", "release", "create"]))
+            .count(),
+        1
+    );
+    let root = release_workflow();
+    for version in ["0.2.0-alpha.73", "0.3.1-alpha.5"] {
+        let (calls, assembled) = release_replay::create_draft(&root, version);
+        assert_draft_attachments(&calls, &assembled, version);
     }
-    assert_eq!(files.len(), 4, "{words:?}");
-    for suffix in [
-        "-aarch64-apple-darwin",
-        "-x86_64-unknown-linux-musl",
-        "/SHA256SUMS",
-        "/VERSION",
-    ] {
-        assert_eq!(
-            files.iter().filter(|name| name.ends_with(suffix)).count(),
-            1,
-            "missing or repeated release file {suffix}: {words:?}"
-        );
-    }
+}
+
+fn assert_draft_attachments(
+    calls: &[serde_json::Value],
+    assembled: &std::collections::BTreeMap<String, Vec<u8>>,
+    version: &str,
+) {
+    let creates: Vec<_> = calls
+        .iter()
+        .filter(|call| call["verb"] == "create")
+        .collect();
+    assert_eq!(creates.len(), 1, "{calls:#?}");
+    let call = creates[0];
+    assert_eq!(call["tag"], format!("v{version}"));
+    assert!(
+        call["args"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|value| value == "--draft" || value == "--draft=true"),
+        "{call:#}"
+    );
+    let attachments = call["attachments"].as_array().unwrap();
+    assert_eq!(attachments.len(), assembled.len(), "{call:#}");
+    let actual: std::collections::BTreeMap<String, Vec<u8>> = attachments
+        .iter()
+        .map(|file| {
+            (
+                file["name"].as_str().unwrap().to_string(),
+                file["bytes"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|byte| byte.as_u64().unwrap() as u8)
+                    .collect(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        &actual, assembled,
+        "gh was not given the assembled files: {call:#}"
+    );
 }
 
 // behavior-2: The job that pushes to NuGet starts only after the draft is made and the npm package is staged
@@ -1538,8 +1655,12 @@ fn ci_runs_the_real_playwright_adapter_on_both_runners() {
 
 #[test]
 fn staging_records_the_transferred_artifact_without_a_working_directory_manifest() {
-    let text = r#"jobs:
+    let text = r#"env:
+  UNRELATED_WORKFLOW_KEY: '${{ secrets.WORKFLOW_KEY }}'
+jobs:
   pack:
+    env:
+      UNRELATED_PACK_KEY: '${{ secrets.PACK_KEY }}'
     steps:
       - run: |
           mkdir -p adapters/playwright
@@ -1551,12 +1672,15 @@ fn staging_records_the_transferred_artifact_without_a_working_directory_manifest
           name: npm-package
           path: artifacts/*.tgz
   stage:
+    needs: pack
     steps:
       - uses: actions/download-artifact@abc
         with:
           name: npm-package
           path: received
       - run: npm stage publish received/*.tgz
+        env:
+          UNRELATED_STAGE_KEY: '${{ secrets.STAGE_KEY }}'
 "#;
     let root = Node {
         key: String::new(),
@@ -1572,4 +1696,266 @@ fn staging_records_the_transferred_artifact_without_a_working_directory_manifest
         assert!(stage["file"].as_str().unwrap().contains("/stage/received/"));
         assert_eq!(pack["manifest"]["version"], version);
     }
+    for invalid in [
+        text.replace("    needs: pack\n", ""),
+        text.replace(
+            "npm stage publish received/*.tgz",
+            "npm stage publish received/*.tgz --registry https://example.invalid",
+        ),
+        text.replace(
+            "  UNRELATED_WORKFLOW_KEY:",
+            "  npm_config_registry: https://example.invalid\n  UNRELATED_WORKFLOW_KEY:",
+        ),
+    ] {
+        let root = Node {
+            key: String::new(),
+            value: None,
+            children: read_yaml(&invalid, "invalid staging control"),
+            line: 0,
+        };
+        assert!(std::panic::catch_unwind(|| release_replay::pack_and_stage(
+            &root,
+            "0.2.0-alpha.37"
+        ))
+        .is_err());
+    }
+}
+
+#[test]
+fn the_release_keeps_default_success_conditions_on_every_job_and_step() {
+    assert_default_conditions(&release_workflow());
+}
+
+#[test]
+fn failure_condition_overrides_are_rejected_without_replaying_failures() {
+    for guard in [
+        "if: false",
+        "if: always()",
+        "if: failure()",
+        "if: cancelled()",
+        "if: '${{ !cancelled() }}'",
+        "continue-on-error: true",
+    ] {
+        for scope in ["job", "step"] {
+            let text = if scope == "job" {
+                format!("jobs:\n  stage:\n    {guard}\n    steps:\n      - run: npm stage publish package.tgz\n")
+            } else {
+                format!("jobs:\n  stage:\n    steps:\n      - run: npm stage publish package.tgz\n        {guard}\n")
+            };
+            let root = Node {
+                key: String::new(),
+                value: None,
+                children: read_yaml(&text, "condition control"),
+                line: 0,
+            };
+            assert!(
+                std::panic::catch_unwind(|| assert_default_conditions(&root)).is_err(),
+                "{scope}: {guard}"
+            );
+        }
+    }
+}
+
+#[test]
+fn shell_wrappers_cannot_hide_direct_npm_publication_text() {
+    let root = Node {
+        key: String::new(),
+        value: None,
+        children: read_yaml(
+            "jobs:\n  extra:\n    steps:\n      - run: sh -c 'npm publish another.tgz'\n",
+            "wrapper control",
+        ),
+        line: 0,
+    };
+    assert!(std::panic::catch_unwind(|| assert_no_npm_publish(&root)).is_err());
+    let root=Node{key:String::new(),value:None,children:read_yaml("jobs:\n  stage:\n    steps:\n      - run: |\n          # npm publish is forbidden\n          npm stage publish package.tgz\n","comment control"),line:0};
+    assert_no_npm_publish(&root);
+}
+
+#[test]
+fn no_release_job_has_a_stored_npm_credential() {
+    let root = release_workflow();
+    for job in jobs(&root) {
+        let errors = npm_credentials(&root, job, &repository_root());
+        assert!(errors.is_empty(), "{errors:#?}");
+    }
+}
+
+#[test]
+fn npm_credentials_in_another_job_or_a_secret_config_are_rejected() {
+    let base = tempfile::tempdir().unwrap();
+    for key in [
+        "NODE_AUTH_TOKEN",
+        "NPM_TOKEN",
+        "npm_config_scoped_token_file",
+    ] {
+        let text=format!("jobs:\n  stage:\n    steps:\n      - run: npm stage publish package.tgz\n  other:\n    env:\n      {key}: '${{{{ secrets.UNRELATED_NAME }}}}'\n    steps:\n      - run: echo built\n");
+        let root = Node {
+            key: String::new(),
+            value: None,
+            children: read_yaml(&text, "other-job credential"),
+            line: 0,
+        };
+        assert_eq!(
+            jobs(&root)
+                .into_iter()
+                .flat_map(|job| npm_credentials(&root, job, base.path()))
+                .count(),
+            1
+        );
+    }
+    let root=Node{key:String::new(),value:None,children:read_yaml("jobs:\n  pack:\n    steps:\n      - run: printf '%s' '${{ secrets.COMPLETE_NPMRC }}' > .npmrc\n","secret-config control"),line:0};
+    assert_eq!(npm_credentials(&root, jobs(&root)[0], base.path()).len(), 1);
+    let root=Node{key:String::new(),value:None,children:read_yaml("jobs:\n  pack:\n    steps:\n      - run: |\n          printf '%s' '${{ secrets.UNRELATED }}' > other-service-key\n          printf '%s' 'registry=https://registry.npmjs.org' > .npmrc\n","unrelated secret control"),line:0};
+    assert!(npm_credentials(&root, jobs(&root)[0], base.path()).is_empty());
+}
+
+#[test]
+fn the_nuget_push_uses_login_output_instead_of_a_stored_key() {
+    let root = release_workflow();
+    let pushes: Vec<_> = jobs(&root)
+        .into_iter()
+        .filter(|job| {
+            job.descendants()
+                .into_iter()
+                .filter(|node| node.key == "run")
+                .any(|node| {
+                    expanded_commands(node.value.as_deref().unwrap())
+                        .iter()
+                        .any(|words| nuget(words))
+                })
+        })
+        .collect();
+    assert_eq!(pushes.len(), 1);
+    let job = pushes[0];
+    let steps = &job.child("steps").unwrap().children;
+    let login: Vec<_> = steps
+        .iter()
+        .filter(|step| {
+            step.child("uses")
+                .and_then(|node| node.value.as_deref())
+                .is_some_and(|action| action.starts_with("NuGet/login@"))
+        })
+        .collect();
+    assert_eq!(
+        login.len(),
+        1,
+        "the identified NuGet push job must use trusted login"
+    );
+    let login_id = login[0]
+        .child("id")
+        .and_then(|node| node.value.as_deref())
+        .expect("NuGet/login must expose its output");
+    let output = format!("${{{{ steps.{login_id}.outputs.NUGET_API_KEY }}}}");
+    let mut pushed = 0;
+    for step in steps {
+        let Some(script) = step.child("run").and_then(|node| node.value.as_deref()) else {
+            continue;
+        };
+        for words in expanded_commands(script)
+            .into_iter()
+            .filter(|words| nuget(words))
+        {
+            pushed += 1;
+            let value = words
+                .iter()
+                .enumerate()
+                .find_map(|(index, word)| {
+                    if word == "--api-key" {
+                        words.get(index + 1).cloned()
+                    } else {
+                        word.strip_prefix("--api-key=").map(str::to_string)
+                    }
+                })
+                .expect("the NuGet push must receive the login key");
+            let mut environment = std::collections::BTreeMap::new();
+            for block in [root.child("env"), job.child("env"), step.child("env")]
+                .into_iter()
+                .flatten()
+            {
+                for entry in &block.children {
+                    let value = entry.value.clone().unwrap_or_default();
+                    if entry.key.eq_ignore_ascii_case("NUGET_API_KEY") {
+                        assert!(
+                            !value.contains("secrets."),
+                            "the push job carries a stored NuGet key"
+                        );
+                    }
+                    environment.insert(entry.key.clone(), value);
+                }
+            }
+            let resolved = if let Some(variable) = value
+                .strip_prefix("${")
+                .and_then(|v| v.strip_suffix('}'))
+                .filter(|v| !v.contains('{'))
+            {
+                environment.get(variable).map(String::as_str).unwrap_or("")
+            } else if let Some(variable) = value.strip_prefix('$').filter(|v| !v.starts_with('{')) {
+                environment.get(variable).map(String::as_str).unwrap_or("")
+            } else {
+                value.as_str()
+            };
+            assert_eq!(
+                resolved, output,
+                "the NuGet push does not use NuGet/login's output"
+            );
+        }
+    }
+    assert_eq!(pushed, 1);
+}
+
+#[test]
+fn the_published_draft_uses_the_same_tag_expression_as_creation() {
+    let all = all_jobs();
+    let creating = role(&all, "draft release", draft);
+    let publishing = role(&all, "publish draft", publish_draft);
+    let created = creating.commands.iter().find(|words| draft(words)).unwrap();
+    let published = publishing
+        .commands
+        .iter()
+        .find(|words| publish_draft(words))
+        .unwrap();
+    assert_eq!(
+        created.get(3),
+        published.get(3),
+        "draft creation and publication target different tag expressions"
+    );
+}
+
+#[test]
+fn gh_records_empty_notes_and_the_exact_assembled_attachment_bytes() {
+    let text = r#"jobs:
+  draft:
+    steps:
+      - uses: actions/download-artifact@abc
+        with:
+          pattern: binary-*
+          merge-multiple: true
+          path: dist
+      - run: sh release/assemble.sh "${GITHUB_REF_NAME#v}" dist
+      - run: |
+          version="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" --draft --title "azimuth $version" --notes "" \
+            "dist/azimuth-$version-aarch64-apple-darwin" \
+            "dist/azimuth-$version-x86_64-unknown-linux-musl" dist/SHA256SUMS dist/VERSION
+"#;
+    let root = Node {
+        key: String::new(),
+        value: None,
+        children: read_yaml(text, "draft control"),
+        line: 0,
+    };
+    let (calls, assembled) = release_replay::create_draft(&root, "0.2.0-alpha.77");
+    assert_draft_attachments(&calls, &assembled, "0.2.0-alpha.77");
+    let args = calls[0]["args"].as_array().unwrap();
+    let notes = args.iter().position(|value| value == "--notes").unwrap();
+    assert_eq!(args[notes + 1], "");
+    let mut stale = calls.clone();
+    stale[0]["attachments"][0]["bytes"] = serde_json::json!(b"stale binary".to_vec());
+    assert!(std::panic::catch_unwind(|| assert_draft_attachments(
+        &stale,
+        &assembled,
+        "0.2.0-alpha.77"
+    ))
+    .is_err());
 }

@@ -46,7 +46,11 @@ fn stamp(run: &LiveRun, role: &str, event: &str) -> u64 {
         .into_iter()
         .filter(|e| e["role"] == role && e["event"] == event)
         .collect();
-    assert_eq!(entries.len(), 1, "{entries:#?}");
+    assert_eq!(
+        entries.len(),
+        1,
+        "{role} has no unique {event} journal event: {entries:#?}"
+    );
     entries[0]["time_ns"].as_u64().unwrap()
 }
 fn assert_tree_stopped(run: &LiveRun, root: &str) {
@@ -65,16 +69,16 @@ fn assert_tree_stopped(run: &LiveRun, root: &str) {
         );
     }
 }
-fn first_term(run: &LiveRun) -> u64 {
+fn first_interrupt(run: &LiveRun) -> u64 {
     run.events()
         .iter()
-        .filter(|event| event["event"] == "SIGTERM")
+        .filter(|event| event["event"] == "SIGINT")
         .map(|event| event["time_ns"].as_u64().unwrap())
         .min()
-        .expect("the group received SIGTERM")
+        .expect("the launch group received no SIGINT")
 }
 fn limit_bounds(run: &LiveRun, role: &str, seconds: u64) {
-    let elapsed = first_term(run) - stamp(run, role, "entered");
+    let elapsed = first_interrupt(run) - stamp(run, role, "entered");
     // Entry excludes helper setup, stdin and child creation. Allow 750 ms for exec-to-entry
     // scheduling, less than the one-second early limit this test must reject. Dispatch can
     // run late under load, so the other side allows three seconds. The preceding four-second
@@ -86,9 +90,9 @@ fn limit_bounds(run: &LiveRun, role: &str, seconds: u64) {
     );
 }
 fn grace_bounds(run: &LiveRun, role: &str) {
-    // A group mate's receipt cannot prove that this resistant process got the polite stop.
-    let term = stamp(run, role, "SIGTERM");
-    let alive = stamp(run, role, "observed-alive") - term;
+    // A group mate's receipt cannot prove that this resistant process received the stop.
+    let interrupted = stamp(run, role, "SIGINT");
+    let alive = stamp(run, role, "observed-alive") - interrupted;
     // A live sample in the second half gives a busy observer five seconds to run; a shortened
     // grace that stops before that half still fails. The unchanged 9–11.5 s death window
     // rejects 8- and 12-second graces independently of when the live sample is taken.
@@ -96,14 +100,14 @@ fn grace_bounds(run: &LiveRun, role: &str) {
         alive >= 5_000_000_000,
         "resistant process was not witnessed alive during the grace"
     );
-    let elapsed = stamp(run, role, "observed-exit") - term;
+    let elapsed = stamp(run, role, "observed-exit") - interrupted;
     assert!(
         (9_000_000_000..=11_500_000_000).contains(&elapsed),
-        "{role} grace after {elapsed} ns from its own SIGTERM receipt"
+        "{role} grace after {elapsed} ns from its own SIGINT receipt"
     );
 }
 // behavior-2: A launch of an adapter has a time limit
-// behavior-2: At the limit the core sends SIGTERM to the whole group, not to the adapter alone
+// behavior-2: At the limit the core sends SIGINT to the whole group, not to the adapter alone
 // behavior-2: The suite of a launch that was stopped at the limit has the word `timed out` in `launch`
 // behavior-2: Every Check of that launch is owed with the reason `no result`
 // behavior-2: A run with a launch that timed out ends with status 1
@@ -132,17 +136,31 @@ fn a_build_that_hangs_loses_the_whole_process_tree_at_one_minute() {
                 assert_tree_is_separate_and_alive(&run, "adapter");
                 let during = run.text();
                 let payload = format!("TREE-PAYLOAD-{}", repo.beside("tree-token").display());
+                let adapter_pid = run
+                    .events()
+                    .into_iter()
+                    .find(|event| event["role"] == "adapter" && event["event"] == "started")
+                    .unwrap()["pid"]
+                    .as_u64()
+                    .unwrap() as u32;
+                let table =
+                    azimuth_tests::process::processes().unwrap_or_else(|error| panic!("{error}"));
+                let adapter = table[&adapter_pid].clone();
                 run.wait_until(Duration::from_secs(180), |run| {
-                    let stopped = || {
-                        run.events()
-                            .iter()
-                            .any(|event| event["role"] == "adapter" && event["event"] == "SIGTERM")
+                    let ended = || {
+                        let table = azimuth_tests::process::processes()
+                            .unwrap_or_else(|error| panic!("{error}"));
+                        !table.get(&adapter.pid).is_some_and(|process| {
+                            process.running()
+                                && process.birth == adapter.birth
+                                && process.command == adapter.command
+                        })
                     };
-                    if stopped() {
+                    if ended() {
                         return true;
                     }
                     let output = run.text();
-                    if stopped() {
+                    if ended() {
                         return true;
                     }
                     assert!(
@@ -166,7 +184,7 @@ fn a_build_that_hangs_loses_the_whole_process_tree_at_one_minute() {
                 assert_tree_stopped(&run, "adapter");
                 limit_bounds(&run, "adapter", 60);
                 for role in ["adapter", "runner", "grandchild"] {
-                    stamp(&run, role, "SIGTERM");
+                    stamp(&run, role, "SIGINT");
                 }
                 let proof = repo.probe_starts();
                 assert_eq!(proof.len(), 1);
@@ -181,7 +199,7 @@ fn a_build_that_hangs_loses_the_whole_process_tree_at_one_minute() {
 
 fn assert_tree_is_separate_and_alive(run: &LiveRun, root: &str) {
     let events = run.events();
-    assert!(!events.iter().any(|event| event["event"] == "SIGTERM"));
+    assert!(!events.iter().any(|event| event["event"] == "SIGINT"));
     let starts: Vec<_> = events
         .iter()
         .filter(|event| event["event"] == "started")
@@ -319,7 +337,7 @@ fn an_omitted_limit_allows_a_launch_longer_than_one_minute() {
 // behavior-2: A process of the group that is still alive after the grace is killed with SIGKILL, together with the rest of the group
 // behavior-2: The grace is 10 seconds and no setting changes it
 #[test]
-fn a_group_ignoring_sigterm_is_killed_after_the_fixed_grace() {
+fn a_group_ignoring_sigint_is_killed_after_the_fixed_grace() {
     let repo = tree("resists", Some(1));
     let mut run = LiveRun::start(&repo, &["run", "--json"], "resistant");
     let output = run.finish(Duration::from_secs(240));
@@ -329,6 +347,12 @@ fn a_group_ignoring_sigterm_is_killed_after_the_fixed_grace() {
     for role in ["adapter", "runner"] {
         grace_bounds(&run, role);
     }
+    // This member ignores SIGTERM but exits on SIGINT. Its own exit, before escalation,
+    // distinguishes an interrupt from a group that merely disappears at the final kill.
+    stamp(&run, "grandchild", "SIGINT");
+    let interrupted = first_interrupt(&run);
+    assert!(stamp(&run, "grandchild", "exited") - interrupted < 5_000_000_000);
+    assert!(stamp(&run, "grandchild", "observed-exit") - interrupted < 10_000_000_000);
 }
 #[test]
 fn escalation_reaches_a_resistant_grandchild_after_the_adapter_exits() {
@@ -337,8 +361,8 @@ fn escalation_reaches_a_resistant_grandchild_after_the_adapter_exits() {
     let output = run.finish(Duration::from_secs(240));
     no_results(&repo, &output);
     assert_tree_stopped(&run, "adapter");
-    assert!(stamp(&run, "adapter", "exited") < stamp(&run, "grandchild", "observed-exit"));
     grace_bounds(&run, "grandchild");
+    assert!(stamp(&run, "adapter", "exited") < stamp(&run, "grandchild", "observed-exit"));
 }
 // behavior-2: A test that had finished before the limit gets no result either, and nothing the adapter wrote is read
 #[test]

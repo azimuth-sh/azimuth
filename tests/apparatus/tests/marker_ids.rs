@@ -49,6 +49,23 @@ fn a_full_stop_after_a_comment_marker_ends_the_id() {
     assert!(repo.lint_findings(0).is_empty());
 }
 
+// behavior-2: With a marker form that ends with `<id>`, the id ends at the first character that is not a letter, a digit or a hyphen
+#[test]
+fn a_digit_belongs_to_the_id_and_an_underscore_ends_it() {
+    let repo = Repo::sample();
+    repo.replace(
+        LENDING_VERIFICATION,
+        &format!("- Check: {SIXTH_LOAN}"),
+        "- Check: loan-limit-2",
+    );
+    repo.replace(
+        LOAN_LIMIT_TESTS,
+        &format!("# Check: {SIXTH_LOAN}"),
+        "# Check: loan-limit-2_tail",
+    );
+    assert!(repo.lint_findings(0).is_empty());
+}
+
 // behavior-2: With a text after `<id>` in the form, the id ends where that text starts
 #[test]
 fn a_suffix_in_the_form_delimits_the_whole_id() {
@@ -84,6 +101,18 @@ fn a_suffix_in_the_form_delimits_the_whole_id() {
     );
 }
 
+// behavior-2: With a text after `<id>` in the form, the id ends where that text starts
+#[test]
+fn two_suffixed_markers_on_one_line_both_assign_their_checks() {
+    let repo = Repo::sample();
+    rewrite_markers(&repo, "# Check: <id>!", |id| format!("# Check: {id}!"));
+    repo.write(
+        LOAN_LIMIT_TESTS,
+        &format!("# Check: {SIXTH_LOAN}! # Check: {RETURNED_BOOK}!\n"),
+    );
+    assert!(repo.lint_findings(0).is_empty());
+}
+
 // behavior-2: A marker whose id holds a capital letter is found, and lint reports that it names no Check
 #[test]
 fn an_uppercase_id_is_found_and_reported_as_unknown() {
@@ -115,4 +144,37 @@ fn an_uppercase_id_is_found_and_reported_as_unknown() {
         1,
         "{findings:#?}"
     );
+}
+
+// behavior-2: A marker whose id holds a capital letter is found, and lint reports that it names no Check
+#[test]
+fn the_unknown_check_finding_names_the_complete_id_without_the_full_stop() {
+    let repo = Repo::sample();
+    repo.replace(
+        LOAN_LIMIT_TESTS,
+        &format!("# Check: {SIXTH_LOAN}"),
+        "# Check: Sixth-loan-is-refused.",
+    );
+    let findings = repo.lint_findings(1);
+    let at_marker = findings_at(
+        &findings,
+        LOAN_LIMIT_TESTS,
+        Some(repo.line_of(LOAN_LIMIT_TESTS, "Sixth-loan-is-refused")),
+    );
+    assert_eq!(at_marker.len(), 1, "{findings:#?}");
+    let finding = at_marker[0];
+    assert_eq!(finding["kind"], "unknown check", "{finding:#}");
+    let message = finding["message"].as_str().unwrap();
+    // The diagnostic may explain the repair freely; only the named identifier is compared.
+    let named = ['`', '\'', '"']
+        .into_iter()
+        .find_map(|quote| {
+            message
+                .split(quote)
+                .enumerate()
+                .find(|(index, part)| index % 2 == 1 && part.contains("Sixth-loan-is-refused"))
+                .map(|(_, part)| part)
+        })
+        .expect("the unknown-Check diagnostic must delimit the identifier it names");
+    assert_eq!(named, "Sixth-loan-is-refused", "{finding:#}");
 }

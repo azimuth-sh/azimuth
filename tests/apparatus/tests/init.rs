@@ -175,6 +175,25 @@ fn init_lists_no_suite_of_a_stack_without_its_adapter() {
     );
 }
 
+// behavior: For a stack whose adapter is not installed it lists no suite and says that this stack's suites are not in the project file
+#[test]
+fn init_names_the_omitted_xunit_suites_in_its_message() {
+    let repo = fresh("main");
+    let output = init(&repo);
+    let text = output.text().to_lowercase();
+    let omissions: Vec<_> = text
+        .lines()
+        .filter(|line| line.contains("not in the project file"))
+        .collect();
+    assert_eq!(omissions.len(), 1, "{}", output.text());
+    // A stack heading can identify a multiline diagnostic without prescribing its layout.
+    assert!(
+        (text.contains("xunit") || text.contains("dotnet")) && !omissions[0].contains("playwright"),
+        "the omission message must identify the xUnit stack: {}",
+        output.text()
+    );
+}
+
 // behavior: It never lists a suite that no adapter reported
 #[test]
 fn init_guesses_no_suite_from_file_names() {
