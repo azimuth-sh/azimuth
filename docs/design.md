@@ -285,7 +285,7 @@ Example: drim-dev's project file pins `0.2.0-alpha.2` and a developer still has 
 | The tag | must equal the version in the code. The workflow stops before it builds when they differ |
 | Binaries | built for macOS on arm64 and Linux on x86-64, and attached to a GitHub release with a file of SHA-256 sums. Another target is added when somebody needs it |
 | The install script | a short shell script in the repository, served at `azimuth.sh/install`. It reads the pin, picks the target, downloads the binary and refuses it when the sum does not match |
-| The adapters | packed with the same version and pushed to the registry of their stack by the same workflow. The workflow stores no registry key: it trades its identity for a short-lived one, which the registry calls trusted publishing |
+| The adapters | packed with the same version by the same workflow and sent to the registry of their stack. The workflow stores no registry key: it trades its identity for a short-lived one, which the registry calls trusted publishing |
 | No registry for the CLI | the CLI is published to no package registry, only as binaries on the release. Its crate is marked as not for publishing, so `cargo publish` refuses it |
 | Tests | the same repository runs its own tests on every push |
 
@@ -297,13 +297,36 @@ The cost. The sums file sits beside the binaries. It catches a broken download a
 | --- | --- |
 | No new party | an action comes only from a party the release path already trusts: GitHub's own `actions/*`, because GitHub runs the runner and holds the binaries, and `NuGet/login`, because NuGet receives the package. The build is plain `cargo` and `dotnet` with the tools of the runner image, and the release is made with `gh` |
 | Pinned by commit | each action is named by its full commit id, with the version in a comment beside it |
-| Narrow rights | a workflow grants read access to the contents and nothing else. Only the job that makes the release may write to the repository, and only the job that pushes a package may ask for the short-lived registry identity. The job that publishes the site may write to Pages and prove its identity to Pages, and nothing else |
+| Narrow rights | a workflow grants read access to the contents and nothing else. Only the job that makes the draft release and the job that publishes it may write to the repository, and only a job that sends a package to a registry may ask for the short-lived registry identity. The job that publishes the site may write to Pages and prove its identity to Pages, and nothing else |
 
 **The steps of a release that can run on a developer's machine are scripts in the repository.** The tag check and the assembly of the release files are such scripts, in the folder `release/`. Tests run them, and the workflow only calls them.
 
-**A pushed tag alone publishes nothing.** The two publishing jobs name the environment `release`, and that environment requires the approval of a person in GitHub. A tag can be pushed by anything that holds a person's git credentials, also by an agent, and a pushed package cannot be removed.
+**A pushed tag alone publishes nothing.** Every job that makes something public names the environment `release`, and that environment requires the approval of a person in GitHub. A tag can be pushed by anything that holds a person's git credentials, also by an agent, and a pushed package cannot be removed.
 
-The cost. A release takes two acts of a person. The setting lives in GitHub and not in the repository, so no test proves that it is on. And a person approves their own run, so the gate guards against an accident and against an agent, and not against that person.
+**A release stages before it publishes.** Some places take a version without making it public, and others cannot. The workflow does every first phase before it asks for the approval, so a failure there burns no version.
+
+| Place | First phase, which publishes nothing | Made public by |
+| --- | --- | --- |
+| The GitHub release | a draft with every file attached | the workflow, after the approval |
+| npm | a staged version | a person at npm, with a second factor |
+| NuGet | none | the push, after the approval |
+
+| Step | What happens |
+| --- | --- |
+| 1 | the workflow builds and packs everything, makes the draft release and stages the npm package |
+| 2 | a person approves in GitHub. The approval is asked for only when step 1 is green |
+| 3 | the workflow pushes to NuGet, and then it publishes the draft |
+| 4 | a person approves the staged version at npm |
+
+**A place that cannot stage is pushed last, and its push can be repeated.** That push is the point of no return. When the place refuses it, a person deletes the draft and rejects the staged version, and nothing was published. A push that is run again skips a version that is already there, so a release that failed half way is run again from the failed job and not abandoned.
+
+**The rule for a later registry is the same.** A registry that can stage is staged in step 1, and one that cannot is pushed in step 3. In November 2026 npm and Maven Central can stage, PyPI plans to, and NuGet, crates.io and RubyGems cannot.
+
+**The workflow's identity may only stage at npm.** The workflow runs `npm stage publish` and never `npm publish`, and the trusted publisher at npm is set to allow only that. So the workflow alone can never put a version on npm, also when the approval in GitHub is switched off.
+
+The cost. A release takes three acts of a person: the tag, the approval in GitHub and the approval at npm. The steps are not one transaction. NuGet can still refuse a push that passed every local test. With two places that cannot stage, one can take the version and the next one refuse it. Nothing makes the person approve at npm only after step 3, and between the steps the places disagree: the binaries are public before the adapter is. The settings live in GitHub and at npm and not in the repository, so no test proves that they are on. And a person approves their own run, so the gates guard against an accident and against an agent, and not against that person.
+
+Unmeasured: whether a staged version expires, whether a rejected version number can be staged again, and whether GitHub asks for the approval once or once for each job that names the environment.
 
 **The compiler is pinned in the repository.** The file `rust-toolchain.toml` names one exact Rust version, with the linter and the two build targets. Every machine and every runner builds with it, so a clean run on one machine is a clean run on the other, and two builds of one tag use one compiler. A person raises the version, in a change of its own.
 
@@ -566,6 +589,10 @@ A Check is declared in `verification.md` of its module, under the Scenario it is
 Lint must not need a build. A runner such as xUnit finds tests and their traits in the compiled assembly, and a build is not something to run on every edit.
 
 The suite's declaration names its marker form, for xUnit the text `[Trait("Check", "<id>")]`. `azimuth init` writes it for runners it knows. The core still knows no language, only a pattern.
+
+**When the form ends with `<id>`, the id ends at the first character that is not a letter, a digit or a hyphen.** Nothing in such a form says where the id stops, and the text around a marker belongs to the language: a tag stands in quotes, and a marker in a comment may end a sentence. With a text after `<id>` in the form, the id ends where that text starts. Letters of both cases are read, so a marker with a capital letter is still found and reported as naming no Check.
+
+Example: a page test carries `tag: '@Check:overview-lists-the-labs',` and the form is `@Check:<id>`. The id is `overview-lists-the-labs`, without the quote and the comma.
 
 Lint works from source alone. It finds a marker that names an unknown Check and a Check with no marker. The launch compares the two lists: a marker in source that matches no listed test, or a listed test whose Check id appears nowhere in source, is a finding, and that Check gets no result.
 
@@ -2224,7 +2251,9 @@ Example: drim-dev already pins one tool in `.config/dotnet-tools.json`. The .NET
 
 **The .NET adapter is the package `Azimuth.Xunit`, and its command is `azimuth-xunit`.** The tool manifest lists the package, and the project file says `dotnet azimuth-xunit`. The id follows the family of Azimuth's packages on nuget.org, so that a reserved prefix `Azimuth.` can cover it. Its code is in `adapters/xunit/` of the Azimuth repository. Azimuth's own tests pack it into a local folder feed and write the sample's tool manifest themselves, so they need no registry.
 
-**The Playwright adapter is the npm package `@azimuth-sh/playwright`, and the project file says `npx --no @azimuth-sh/playwright`.** The package is a development dependency of the application whose tests it runs, and it has one command. The scope belongs to the project, so nobody else can publish a package under it. The command line names the package and not the bare command, because a bare name is looked up in the registry, where anybody can own it. `--no` makes `npx` run only what is installed, so a missing adapter ends with a message of `npx` and with no download. Its code is in `adapters/playwright/` of the Azimuth repository. Azimuth's own tests pack it into a file and install it from that file, so they need no registry.
+**The Playwright adapter is the npm package `@azimuth-sh/playwright`, and the project file says `npx --no @azimuth-sh/playwright`.** The package is a development dependency of the application whose tests it runs, and it has one command. The scope belongs to the project, so nobody else can publish a package under it. The command line names the package and not the bare command, because a bare name is looked up in the registry, where anybody can own it. `--no` keeps `npx` from downloading a package, so a missing adapter ends with a message of `npx`: it may ask the registry about the name, and it downloads and runs nothing. Its code is in `adapters/playwright/` of the Azimuth repository. Azimuth's own tests pack it into a file and install it from that file, so they need no registry.
+
+**The Playwright adapter refuses to run from outside the application's installation.** `npx` also runs a copy that it kept in its own cache on the machine, after somebody once started the package without `--no`. Such a copy can have any version, while the pin in `package.json` is the input of the Checks. So the adapter looks at where its own code is. It runs only from a `node_modules` folder of the folder named in the request, or of a folder above it. Otherwise it ends with a failure and says that the package is not installed in this application, and the launch is `crashed`.
 
 For Playwright the install line is `npm install --save-dev --save-exact @azimuth-sh/playwright@<version>`. `--save-exact` writes the one version into `package.json`, as the tool manifest of .NET holds one version.
 

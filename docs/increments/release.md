@@ -53,13 +53,13 @@ The workflows are the files in `.github/workflows/`, and the scripts they call a
 | Every action in a workflow is one of GitHub's own `actions/*` or `NuGet/login` | an action comes only from a party the release path already trusts: GitHub's own `actions/*`, because GitHub runs the runner and holds the binaries, and `NuGet/login`, because NuGet receives the package |
 | Every action is named by a full commit id, with its version in a comment beside it | each action is named by its full commit id, with the version in a comment beside it |
 | Each workflow grants read access to the contents at its top and nothing else | a workflow grants read access to the contents and nothing else |
-| Only the job that makes the release asks for write access to the contents, and only the job that pushes the package asks for the registry identity | Only the job that makes the release may write to the repository, and only the job that pushes a package may ask for the short-lived registry identity |
+| Only the job that makes the release asks for write access to the contents, and only the job that pushes the package asks for the registry identity | Only the job that makes the draft release and the job that publishes it may write to the repository, and only a job that sends a package to a registry may ask for the short-lived registry identity |
 | The job that publishes the site asks for write access to Pages and for its identity and for nothing else, and no other job asks for write access to Pages | The job that publishes the site may write to Pages and prove its identity to Pages, and nothing else |
 | The site workflow starts by a manual start or from the release workflow, and on nothing else | **The site is published only by a person's act.** |
 | In the release workflow the site is published after the release job | a version tag, where the site follows the release |
 | The repository pins one exact Rust version with the linter and the two build targets, and no workflow chooses another | The file `rust-toolchain.toml` names one exact Rust version, with the linter and the two build targets. |
 | The file `global.json` names a lowest version of the .NET SDK and accepts only a newer version of the same line | The file `global.json` at the root names the lowest accepted version of the 10.0 line and accepts a newer one of that line. |
-| The job that makes the release and the job that pushes the package both name the environment `release` | The two publishing jobs name the environment `release`, and that environment requires the approval of a person in GitHub. |
+| The job that makes the release and the job that pushes the package both name the environment `release` | Every job that makes something public names the environment `release`, and that environment requires the approval of a person in GitHub. |
 | The release workflow starts on a version tag and on nothing else | **A release of Azimuth is one workflow, started by a version tag that a person pushes.** |
 | The tag check passes for the tag `v` plus the version in the code and fails for any other tag | must equal the version in the code. The workflow stops before it builds when they differ |
 | The files that the release script assembles are a release that the install script installs from | `azimuth-<version>-<target>` for the targets `aarch64-apple-darwin` and `x86_64-unknown-linux-musl`, then `SHA256SUMS` and `VERSION` |
@@ -83,7 +83,7 @@ These rows have no test in the repository. A workflow runs only on GitHub, so th
 | Behavior | The design says |
 | --- | --- |
 | A version tag starts the release, and nothing else does | **A release of Azimuth is one workflow, started by a version tag that a person pushes.** |
-| The release job and the package job wait until a person approves them in GitHub | The two publishing jobs name the environment `release`, and that environment requires the approval of a person in GitHub. |
+| The release job and the package job wait until a person approves them in GitHub | Every job that makes something public names the environment `release`, and that environment requires the approval of a person in GitHub. |
 | A tag that differs from the version in the code publishes nothing | The workflow stops before it builds when they differ |
 | It builds the binaries for macOS on arm64 and Linux on x86-64 and attaches them to a GitHub release with their SHA-256 sums | built for macOS on arm64 and Linux on x86-64, and attached to a GitHub release with a file of SHA-256 sums |
 | The Linux binary runs on a system without the build machine's libraries | linked statically, so it needs no particular system library |
