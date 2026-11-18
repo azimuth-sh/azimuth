@@ -3158,6 +3158,8 @@ Open: the signed deployment statement must be verified by outside tools. Claude'
 
 **The hosted instance is `app.azimuth.sh`.** Each organization is a path under it. The landing page for the CLI and the install script live on `azimuth.sh`, on a separate origin.
 
+**A team can run the server itself.** The server is published as an image, and the hosted instance runs the same image. A team's own server and the hosted one differ in who operates them, and in nothing that the CLI or a model can see. This holds until a feature of the hosted product is designed that a team's own server does not have. Two candidates are named as later: the shared evidence across organizations, and the hash chain over records.
+
 **A region is an attribute of the organization.** It is not part of the address, so the identity of an organization never changes when its data moves. With one region nothing is built. A second region needs a directory of organizations and routing in front.
 
 **The hostname is an identity.** It is written into credentials, page links and signed statements. It is chosen once.
