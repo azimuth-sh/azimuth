@@ -33,3 +33,9 @@ jobs:
         run: cargo test --features azimuth-tests/long-timeout --test default_launch_limit
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Rehearse the staging npm install
+        if: runner.os == 'Linux'
+        run: sh release/install-npm.sh "$RUNNER_TEMP/azimuth-npm"
+      - name: Check the staging npm on PATH
+        if: runner.os == 'Linux'
+        run: test "$(npm --version)" = "$AZIMUTH_NPM_VERSION"

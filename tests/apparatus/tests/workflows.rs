@@ -2001,32 +2001,23 @@ fn assert_staging_npm_installation(root: &Node, calls: &[serde_json::Value]) {
                 && call["job"] == job.key
                 && call["step"].as_u64().is_some_and(|step| step < stage_step)
         })
-        .expect("the staging job has no earlier step that installs npm globally");
+        .expect("the staging job has no earlier step that installs its own npm");
     let version = install["version"]
         .as_str()
         .expect("the npm installation must name an exact X.Y.Z version");
-    let numbers: Vec<_> = version.split('.').collect();
-    assert!(
-        numbers.len() == 3
-            && numbers.iter().all(
-                |number| !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
-            ),
-        "the npm installation must name an exact X.Y.Z version, got {version:?}"
+    npm_installation::exact_version(version);
+    assert_eq!(
+        stage["executable"], install["installed_executable"],
+        "staging did not use the npm installed by the job"
     );
-    let numbers: Vec<u64> = numbers
-        .into_iter()
-        .map(|number| number.parse().expect("npm version component is too large"))
-        .collect();
-    assert!(
-        numbers.as_slice() >= [11, 21, 0].as_slice(),
-        "npm {version} is older than 11.21.0"
-    );
+    assert_eq!(stage["installed_version"], version);
 }
 
 // behavior-2: The job that stages installs npm at one exact version, at least 11.21.0, before it stages
 #[test]
 fn the_staging_job_installs_an_exact_supported_npm_before_using_it() {
     let root = release_workflow();
+    npm_installation::assert_workflow_script(&root);
     let calls = release_replay::pack_and_stage(&root, "0.2.0-alpha.73");
     assert_staging_npm_installation(&root, &calls);
 }
@@ -2081,23 +2072,62 @@ fn the_latest_tag_is_required_on_staging_rather_than_another_npm_command() {
 #[test]
 fn the_npm_pin_is_numeric_exact_and_installed_in_an_earlier_step_of_this_job() {
     for (command, accepted) in [
-        ("npm install -g npm@11.21.0", true),
-        ("npm install npm@12.0.0 --global", true),
-        ("npm i --location=global npm@20.0.0", true),
-        ("npm add --global npm@11.22.3", true),
-        ("npm install -g npm@11.9.0", false),
-        ("npm install -g npm@11.20.99", false),
-        ("npm install -g npm@latest", false),
-        ("npm install -g npm@11", false),
-        ("npm install -g npm@11.21", false),
-        ("npm install -g npm@^11.21.0", false),
-        ("npm install -g npm@~11.21.0", false),
-        ("npm install -g 'npm@>=11.21.0'", false),
-        ("npm install -g npm@11.21.0-alpha.1", false),
-        ("npm install -g npm", false),
+        (
+            "npm install --prefix \"$HOME/staging-tool\" -g npm@11.21.0",
+            true,
+        ),
+        (
+            "npm install --prefix \"$HOME/staging-tool\" npm@12.0.0 --global",
+            true,
+        ),
+        (
+            "npm i --prefix \"$HOME/staging-tool\" --location=global npm@20.0.0",
+            true,
+        ),
+        (
+            "npm add --prefix \"$HOME/staging-tool\" --global npm@11.22.3",
+            true,
+        ),
+        (
+            "npm install --prefix \"$HOME/staging-tool\" -g npm@11.9.0",
+            false,
+        ),
+        (
+            "npm install --prefix \"$HOME/staging-tool\" -g npm@11.20.99",
+            false,
+        ),
+        (
+            "npm install --prefix \"$HOME/staging-tool\" -g npm@latest",
+            false,
+        ),
+        (
+            "npm install --prefix \"$HOME/staging-tool\" -g npm@11",
+            false,
+        ),
+        (
+            "npm install --prefix \"$HOME/staging-tool\" -g npm@11.21",
+            false,
+        ),
+        (
+            "npm install --prefix \"$HOME/staging-tool\" -g npm@^11.21.0",
+            false,
+        ),
+        (
+            "npm install --prefix \"$HOME/staging-tool\" -g npm@~11.21.0",
+            false,
+        ),
+        (
+            "npm install --prefix \"$HOME/staging-tool\" -g 'npm@>=11.21.0'",
+            false,
+        ),
+        (
+            "npm install --prefix \"$HOME/staging-tool\" -g npm@11.21.0-alpha.1",
+            false,
+        ),
+        ("npm install --prefix \"$HOME/staging-tool\" -g npm", false),
     ] {
         let root = npm_release_control(
-            &format!("      - run: {command}\n"),
+            &format!("      - run: |\n          {command}\n          echo \"$HOME/staging-tool/bin\" >> \"$GITHUB_PATH\"\n"),
             "",
             "npm stage publish packed/*.tgz --tag latest",
             "",
@@ -2109,11 +2139,11 @@ fn the_npm_pin_is_numeric_exact_and_installed_in_an_earlier_step_of_this_job() {
             "{command}"
         );
     }
-    let install = "      - run: npm install -g npm@11.21.0\n";
+    let install = "      - run: |\n          npm install --prefix \"$HOME/staging-tool\" -g npm@11.21.0\n          echo \"$HOME/staging-tool/bin\" >> \"$GITHUB_PATH\"\n";
     for root in [
         npm_release_control("","","npm stage publish packed/*.tgz --tag latest",install),
-        npm_release_control("","","|\n          npm install -g npm@11.21.0\n          npm stage publish packed/*.tgz --tag latest", ""),
-        npm_release_control(&format!("{install}      - run: npm install -g npm@11.9.0\n"),"","npm stage publish packed/*.tgz --tag latest", ""),
+        npm_release_control("","","|\n          npm install --prefix \"$HOME/staging-tool\" -g npm@11.21.0\n          npm stage publish packed/*.tgz --tag latest", ""),
+        npm_release_control(&format!("{install}      - run: npm install --prefix \"$HOME/staging-tool\" -g npm@11.9.0\n"),"","npm stage publish packed/*.tgz --tag latest", ""),
     ] {
         let calls=release_replay::pack_and_stage(&root,"0.2.0-alpha.73");
         assert!(std::panic::catch_unwind(||assert_staging_npm_installation(&root,&calls)).is_err());
@@ -2134,7 +2164,7 @@ fn the_npm_pin_is_numeric_exact_and_installed_in_an_earlier_step_of_this_job() {
       - run: |
           mkdir -p package
           printf '%s' '{"name":"@azimuth-sh/playwright","version":"0.0.0"}' > package/package.json
-          npm install -g npm@12.0.0
+          npm install --prefix "$HOME/staging-tool" -g npm@12.0.0
           npm version --prefix package --no-git-tag-version "${GITHUB_REF_NAME#v}"
           npm pack package --pack-destination packed
       - uses: actions/upload-artifact@abc
@@ -2302,4 +2332,253 @@ fn the_release_recorder_handles_safe_draft_reruns_and_publication_noops() {
     assert_eq!(noop.status, 0, "{}", noop.diagnostic);
     assert_eq!(noop.state, noop.before);
     assert!(noop.calls.iter().all(|call| call["verb"] == "view"));
+}
+
+#[path = "support/npm_installation.rs"]
+mod npm_installation;
+
+// behavior-2: The job that stages installs its npm into a folder of its own, and never into the global folder of the runner
+#[test]
+fn staging_npm_installation_stays_in_a_job_owned_folder() {
+    let root = release_workflow();
+    let calls = release_replay::pack_and_stage(&root, "0.2.0-alpha.73");
+    let installed = npm_installation::installation(&calls);
+    assert!(
+        installed["prefix"].is_string(),
+        "no owned installation folder was recorded"
+    );
+}
+
+// behavior-2: The job that stages installs its npm by running a script of the repository, and the workflow names no npm version itself
+#[test]
+fn staging_installs_npm_from_the_repository_script_without_an_inline_version() {
+    npm_installation::assert_workflow_script(&release_workflow());
+}
+
+// behavior-2: The steps of the staging job after the script run the npm that the script installed
+#[test]
+fn later_staging_steps_use_the_npm_installed_by_the_script() {
+    let root = release_workflow();
+    npm_installation::install_step(npm_job(&root));
+    let calls = release_replay::pack_and_stage(&root, "0.2.0-alpha.73");
+    let installed = npm_installation::installation(&calls);
+    let installer = installed["step"].as_u64().unwrap();
+    assert!(npm_installation::invokes_script(
+        npm_job(&root).child("steps").unwrap().children[installer as usize]
+            .child("run")
+            .unwrap()
+            .value
+            .as_deref()
+            .unwrap()
+    ));
+    let later: Vec<_> = calls
+        .iter()
+        .filter(|call| {
+            call["job"] == npm_job(&root).key
+                && call["step"].as_u64().is_some_and(|step| step > installer)
+                && call["executable"].is_string()
+        })
+        .collect();
+    assert!(later.iter().any(|call| call["verb"] == "stage publish"));
+    for call in later {
+        assert_eq!(
+            call["executable"], installed["installed_executable"],
+            "a later step used another npm: {call:#}"
+        );
+    }
+}
+
+// behavior-2: The Linux job of CI runs the same script at every push, and fails when the npm on the path afterwards is not the version that the script names
+#[test]
+fn linux_ci_rehearses_the_install_and_checks_its_version_in_a_later_step() {
+    let root = workflows()
+        .into_iter()
+        .find(|(name, _, _)| name == "ci.yml")
+        .unwrap()
+        .2;
+    let (job, _) = npm_installation::linux_ci_job(&root);
+    let (expected, _) = npm_installation::successful_script();
+    let good = release_replay::tool_job(&root, &job, None, None);
+    assert_eq!(good.status, 0, "{}", good.diagnostic);
+    let installed = npm_installation::installation(&good.calls);
+    let installer = installed["step"].as_u64().unwrap() as usize;
+    assert!(npm_installation::invokes_script(
+        job.child("steps").unwrap().children[installer]
+            .child("run")
+            .unwrap()
+            .value
+            .as_deref()
+            .unwrap()
+    ));
+    assert_eq!(installed["version"], expected);
+    assert!(
+        good.calls.iter().any(|call| call["verb"] == "version query"
+            && call["step"]
+                .as_u64()
+                .is_some_and(|step| step > installer as u64)
+            && call["executable"] == installed["installed_executable"]),
+        "CI never checks the npm on PATH in a later step"
+    );
+    let wrong = release_replay::tool_job(&root, &job, None, Some(installer));
+    assert!(
+        wrong
+            .calls
+            .iter()
+            .any(|call| call["verb"] == "version query"
+                && call["step"]
+                    .as_u64()
+                    .is_some_and(|step| step > installer as u64)
+                && call["answer"] == npm_installation::next_version(&expected)),
+        "the later CI step never observed the wrong npm version"
+    );
+    assert_ne!(
+        wrong.status, 0,
+        "CI accepted the wrong npm on its carried-over PATH"
+    );
+}
+
+// behavior-2: The job that stages installs its npm by running a script of the repository, and the workflow names no npm version itself
+#[test]
+fn the_repository_npm_script_installs_its_pin_exports_its_bin_and_refuses_a_wrong_version() {
+    let (expected, good) = npm_installation::successful_script();
+    let wrong = npm_installation::script_replay(Some(&npm_installation::next_version(&expected)));
+    assert_eq!(
+        npm_installation::installation(&wrong.calls)["version"],
+        expected
+    );
+    assert!(
+        wrong
+            .calls
+            .iter()
+            .any(|call| call["verb"] == "version query"
+                && call["answer"] == npm_installation::next_version(&expected)
+                && call["installed_version"].is_string()),
+        "the script never observed the wrong installed version"
+    );
+    assert_ne!(
+        wrong.status, good.status,
+        "the script accepted an npm that answers with another version"
+    );
+}
+
+#[test]
+fn release_and_ci_recorders_refuse_global_or_system_prefix_installs() {
+    for job in ["release", "ci"] {
+        for command in [
+            "npm install --global npm@11.21.3",
+            "/usr/bin/npm install --global npm@11.21.3",
+            "npm install -g npm@11.21.3",
+            "npm install --location=global npm@11.21.3",
+            "sudo npm install -g npm@11.21.3",
+            "sudo -n npm install -g npm@11.21.3",
+            "npm_config_prefix=/usr/local npm install -g npm@11.21.3",
+            "npm install --location global npm@11.21.3",
+            "/usr/bin/sudo npm install -g npm@11.21.3",
+            "npm install --prefix /usr/local npm@11.21.3",
+            "npm install -g --prefix=/usr npm@11.21.3",
+            "sh -c 'npm install -g npm@11.21.3'",
+        ] {
+            let text = format!("jobs:\n  {job}:\n    steps:\n      - run: {command}\n");
+            let root = Node {
+                key: String::new(),
+                value: None,
+                children: read_yaml(&text, "unsafe npm control"),
+                line: 0,
+            };
+            let result = std::panic::catch_unwind(|| {
+                release_replay::tool_job(&root, jobs(&root)[0], None, None)
+            });
+            assert!(
+                result.is_err() || result.unwrap().status != 0,
+                "unsafe install was accepted: {command}"
+            );
+        }
+    }
+}
+
+#[test]
+fn recorded_local_installs_and_github_path_carry_over_preserve_tool_identity() {
+    for (install, bin, expected) in [
+        (
+            "npm install -g --prefix \"$HOME/tool one\" npm@12.0.0",
+            "$HOME/tool one/bin", "12.0.0",
+        ),
+        (
+            "npm install --prefix=\"$RUNNER_TEMP/tool-two\" npm@11.21.0",
+            "$RUNNER_TEMP/tool-two/node_modules/.bin", "11.21.0",
+        ),
+        ("npm --prefix \"$RUNNER_TEMP/tool-three\" --global install npm@13.2.1", "$RUNNER_TEMP/tool-three/bin", "13.2.1"),
+        ("mkdir -p \"$RUNNER_TEMP/tool-four\"; cd \"$RUNNER_TEMP/tool-four\"; npm install npm@12.4.8", "$RUNNER_TEMP/tool-four/node_modules/.bin", "12.4.8"),
+        ("npm config set prefix \"$HOME/tool-five\"; npm install -g npm@14.3.2", "$HOME/tool-five/bin", "14.3.2"),
+    ] {
+        let text=format!("jobs:\n  ci:\n    steps:\n      - run: |\n          {install}\n          echo \"{bin}\" >> \"$GITHUB_PATH\"\n      - run: test \"$(npm --version)\" = EXPECTED\n").replace("EXPECTED",expected);
+        let root = Node {
+            key: String::new(),
+            value: None,
+            children: read_yaml(&text, "local npm control"),
+            line: 0,
+        };
+        let good = release_replay::tool_job(&root, jobs(&root)[0], None, None);
+        assert_eq!(good.status, 0, "{}", good.diagnostic);
+        let installed = npm_installation::installation(&good.calls);
+        let query = good
+            .calls
+            .iter()
+            .find(|call| call["verb"] == "version query")
+            .unwrap();
+        assert_eq!(query["executable"], installed["installed_executable"]);
+        let wrong = release_replay::tool_job(&root, jobs(&root)[0], None, Some(0));
+        assert_ne!(wrong.status, 0);
+        let same_step = text.replace("      - run: test", "          test");
+        let root = Node {
+            key: String::new(),
+            value: None,
+            children: read_yaml(&same_step, "same-step path control"),
+            line: 0,
+        };
+        let replay = release_replay::tool_job(&root, jobs(&root)[0], None, None);
+        assert_ne!(
+            replay.status, 0,
+            "GITHUB_PATH must not affect the writing step"
+        );
+    }
+}
+
+#[test]
+fn ci_rehearsal_selection_requires_linux_pushes_and_a_later_version_check() {
+    let text=format!("on:\n  push:\n    branches: ['**']\njobs:\n  test:\n    runs-on: ubuntu-current\n    steps:\n      - run: sh {}\n        if: runner.os == 'Linux'\n      - run: npm --version\n        if: runner.os == 'Linux'\n",npm_installation::SCRIPT);
+    let parse = |text: &str| Node {
+        key: String::new(),
+        value: None,
+        children: read_yaml(text, "CI rehearsal selection control"),
+        line: 0,
+    };
+    let root = parse(&text);
+    let (job, index) = npm_installation::linux_ci_job(&root);
+    assert_eq!(index, 0);
+    assert!(npm_installation::invokes_script(
+        job.child("steps").unwrap().children[index]
+            .child("run")
+            .unwrap()
+            .value
+            .as_deref()
+            .unwrap()
+    ));
+    for invalid in [
+        text.replace("branches: ['**']", "branches: [main]"),
+        text.replace("if: runner.os == 'Linux'", "if: runner.os == 'macOS'"),
+        text.replace(
+            "      - run: npm --version\n        if: runner.os == 'Linux'\n",
+            "",
+        ),
+        text.replace(
+            "      - run: npm --version",
+            "      - run: npm --version\n        continue-on-error: true",
+        ),
+    ] {
+        assert!(
+            std::panic::catch_unwind(|| npm_installation::linux_ci_job(&parse(&invalid))).is_err(),
+            "unsafe CI selection was accepted: {invalid}"
+        );
+    }
 }
