@@ -1258,17 +1258,19 @@ The cost. A Check with one skipped test fails the local lane on every run until 
 | Step | What the core does |
 | --- | --- |
 | Start | starts each adapter and each proof in a process group of its own |
-| At the limit | asks the whole group to stop, with SIGTERM |
+| At the limit | asks the whole group to stop, with SIGINT, the signal of Ctrl+C |
 | After a fixed grace | kills the whole group, with SIGKILL |
 | Outcome | `launch` gets a fifth word, `timed out`. The Checks of the launch have the reason `no result`, and the run ends with status 1 |
 
-The request and the report do not change. An adapter has one duty: when it is asked to stop, it stops its runner and exits, and no report is expected. A launch that timed out gives no result for any of its Checks, also for tests that had finished, as for a launch that crashed. The grace is one fixed number, 10 seconds to start with.
+The request and the report do not change. An adapter has one duty: when it is asked to stop, it writes no report and exits. It passes the signal on to nobody, because every process of the group already has it. A launch that timed out gives no result for any of its Checks, also for tests that had finished, as for a launch that crashed. The grace is one fixed number, 10 seconds to start with.
 
-The core cannot reach a container started through Docker, which is a child of the Docker daemon. The polite stop exists so that the runner can remove it, and after a kill it may stay. The core also cannot reach a process that leaves the group on purpose.
+**The stop is SIGINT, because a runner is built for Ctrl+C.** A person who stops a test run presses Ctrl+C, and the terminal sends SIGINT to every process of the group. Measured in November 2026 on macOS: after SIGINT the Playwright runner ran its teardown and stopped its web server, and everything was gone in about a second. After SIGTERM it did neither, and the server lived on. That server is in a process group of its own, so the kill after the grace does not reach it. `dotnet test` alone ignored a SIGTERM for 15 seconds and ended at once on a SIGINT.
 
-The cost. A long launch that is stopped at the limit loses every test that had passed. A partial report written while being stopped would save them, and it would make every adapter harder to write and be the least trustworthy report.
+**A stop promises no clean-up.** The .NET test host ends at once on either signal and runs no dispose of a test or of a fixture. The core cannot reach a container started through Docker, which is a child of the Docker daemon. So a container goes away only when what started it also removes it. Testcontainers does that with a reaper of its own, about ten seconds after the test process is gone, and a plain `docker run` leaves it. The core also cannot reach a process that leaves the group on purpose.
 
-Unmeasured: the length of the grace, whether drim-dev's stack removes its database container on a polite stop, and the same mechanism on Windows, where a job object takes the place of a process group.
+The cost. A long launch that is stopped at the limit loses every test that had passed. A partial report written while being stopped would save them, and it would make every adapter harder to write and be the least trustworthy report. A process that ignores SIGINT gets only the kill, for example a command that a shell started in the background.
+
+Unmeasured: the length of the grace, the same signals on Linux, whether the stack that drim-dev's browser tests start through its AppHost removes its database container when it is stopped, and the same mechanism on Windows, where a job object takes the place of a process group.
 
 Example: for a journey in drim-dev the adapter starts the Playwright runner, which starts a browser and the application host, which starts the API, the frontend and a database container. If only the adapter were killed, the stack would keep its port, and every later launch would stop because the port is taken.
 
