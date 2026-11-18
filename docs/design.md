@@ -1732,7 +1732,7 @@ Names are lowercase with underscores. Ids and states are this document's own wor
 | `duration_ms` of a Check in `run-1` | the sum of the durations of its tests in this run. Absent when the Check did not run |
 | `duration_ms` of a suite in `run-1` | the wall time of the launch in this run, with the build. Absent when the adapter did not start. It is printed and not stored |
 | `result.commit`, `reuse` in `check-1` | the full commit id, of which text shows 7 characters. `reuse` is absent, or holds `value` and `reason` |
-| `change-1` | `class` is one letter. Lists hold ids, a Scenario as `requirement/scenario`. `markers_removed` is a number. `rigor_lowered` is a list whose entries hold `kind` and either `check` or `requirement`. With nothing to show, the text is empty and the document says class `A` with empty lists |
+| `change-1` | `class` is one letter. Lists hold ids, a Scenario as `requirement/scenario`. `markers_removed` is a number. `rigor_lowered` is a list whose entries hold `kind` and either `check` or `requirement`. With nothing to show, the text is one line and the document says class `A` with empty lists |
 | `error-1` | `file` is a path from the repository root, `line` counts from 1, and for the project file it is the line of the key |
 
 A launch with no result stores nothing, so a later `azimuth status` shows such a Check with the reason it had before the run.
