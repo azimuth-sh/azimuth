@@ -33,7 +33,7 @@ pub struct Requirement {
     pub line: u64,
     pub verification_review: bool,
     pub realization_review: bool,
-    /// The lines between the heading and the first Scenario, which `azimuth change show` compares.
+    /// The lines between the heading and the first Scenario, which `azimuth change diff` compares.
     pub text: Vec<String>,
     pub scenarios: Vec<Scenario>,
 }

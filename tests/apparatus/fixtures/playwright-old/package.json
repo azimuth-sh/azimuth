@@ -1,0 +1,7 @@
+{
+  "name": "library-desk-unsupported-runner-fixture",
+  "private": true,
+  "devDependencies": {
+    "@playwright/test": "1.30.0"
+  }
+}

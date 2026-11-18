@@ -69,6 +69,9 @@ struct Directives {
 }
 
 fn main() {
+    log(
+        json!({"program":NAME,"event":"started","args":std::env::args().skip(1).collect::<Vec<_>>() }),
+    );
     let mut input = String::new();
     std::io::stdin()
         .read_to_string(&mut input)
@@ -78,7 +81,9 @@ fn main() {
     let request: Value = match serde_json::from_str(&input) {
         Ok(value) => value,
         Err(error) => {
-            log(json!({ "program": NAME, "args": args, "stdin": input, "error": error.to_string() }));
+            log(
+                json!({ "program": NAME, "args": args, "stdin": input, "error": error.to_string() }),
+            );
             eprintln!("{NAME}: standard input is not one JSON document: {error}");
             std::process::exit(64);
         }
@@ -95,18 +100,25 @@ fn main() {
         }
         "run" => run(&request, adapter, args),
         other => {
-            log(json!({ "program": NAME, "args": args, "request": request, "error": "unknown verb" }));
+            log(
+                json!({ "program": NAME, "args": args, "request": request, "error": "unknown verb" }),
+            );
             eprintln!("{NAME}: unknown verb {other:?}");
             std::process::exit(64);
         }
     }
+    log(json!({"program": NAME, "event": "exited"}));
 }
 
 fn run(request: &Value, adapter: Value, args: Vec<String>) {
     let key = request["marker_key"].as_str().unwrap_or("Check");
     let asked: BTreeSet<String> = request["checks"]
         .as_array()
-        .map(|ids| ids.iter().filter_map(|id| id.as_str().map(str::to_string)).collect())
+        .map(|ids| {
+            ids.iter()
+                .filter_map(|id| id.as_str().map(str::to_string))
+                .collect()
+        })
         .unwrap_or_default();
 
     let suite_dir = PathBuf::from(".");
@@ -123,9 +135,17 @@ fn run(request: &Value, adapter: Value, args: Vec<String>) {
         tests.extend(read_tests(relative, &text, key));
     }
 
+    if output_folder().is_some() {
+        output_checkpoint("first", true);
+        output_checkpoint("second", true);
+    }
+
     if directives.crash {
-        log(json!({ "program": NAME, "args": args, "request": request, "ran": [], "crashed": true }));
+        log(
+            json!({ "program": NAME, "args": args, "request": request, "ran": [], "crashed": true }),
+        );
         eprintln!("{NAME}: crashing on request of the suite");
+        output_checkpoint("exit", false);
         std::process::exit(3);
     }
 
@@ -143,13 +163,18 @@ fn run(request: &Value, adapter: Value, args: Vec<String>) {
     if directives.garbage {
         log(json!({ "program": NAME, "args": args, "request": request, "ran": [] }));
         println!("this is not an adapter report");
+        output_checkpoint("exit", false);
         return;
     }
 
     if directives.build_fails {
-        log(json!({ "program": NAME, "args": args, "request": request, "ran": [], "build": "failed" }));
+        log(
+            json!({ "program": NAME, "args": args, "request": request, "ran": [], "build": "failed" }),
+        );
         eprintln!("{NAME}: the suite does not build, on request of the suite");
-        emit(&json!({ "format": "adapter-report-1", "adapter": adapter, "build": "failed", "tests": [] }));
+        emit(
+            &json!({ "format": "adapter-report-1", "adapter": adapter, "build": "failed", "tests": [] }),
+        );
         return;
     }
 
@@ -194,6 +219,19 @@ fn run(request: &Value, adapter: Value, args: Vec<String>) {
     }
 
     log(json!({ "program": NAME, "args": args, "request": request, "ran": ran }));
+    if let Ok(bytes) = std::env::var("TEXT_ADAPTER_BULK_BYTES") {
+        let mut remaining: usize = bytes.parse().unwrap();
+        let block = vec![b'X'; 65536];
+        while remaining != 0 {
+            let count = remaining.min(block.len());
+            std::io::stderr().write_all(&block[..count]).unwrap();
+            remaining -= count;
+        }
+    }
+    if let Ok(tail) = std::env::var("TEXT_ADAPTER_TAIL") {
+        std::io::stderr().write_all(tail.as_bytes()).unwrap();
+    }
+    std::io::stderr().flush().unwrap();
     let report = json!({ "format": "adapter-report-1", "adapter": adapter, "build": "ok", "tests": reported });
     emit(&report);
     if directives.two_reports {
@@ -234,9 +272,13 @@ fn read_directives(text: &str, directives: &mut Directives) {
             ["garbage"] => directives.garbage = true,
             ["two-reports"] => directives.two_reports = true,
             ["build-fails"] => directives.build_fails = true,
-            ["lists", name, check] => directives.extra_listed.push((name.to_string(), check.to_string())),
+            ["lists", name, check] => directives
+                .extra_listed
+                .push((name.to_string(), check.to_string())),
             ["edits", path] => directives.edits.push(path.to_string()),
-            ["sleeps", ms] => directives.sleep_ms += ms.parse::<u64>().expect("sleeps names whole milliseconds"),
+            ["sleeps", ms] => {
+                directives.sleep_ms += ms.parse::<u64>().expect("sleeps names whole milliseconds")
+            }
             _ => eprintln!("{NAME}: unknown directive {line:?}"),
         }
     }
@@ -244,7 +286,10 @@ fn read_directives(text: &str, directives: &mut Directives) {
 
 fn read_tests(relative: &Path, text: &str, key: &str) -> Vec<TextTest> {
     let marker_prefix = format!("# {key}:");
-    let stem = relative.with_extension("").to_string_lossy().replace('\\', "/");
+    let stem = relative
+        .with_extension("")
+        .to_string_lossy()
+        .replace('\\', "/");
 
     let mut is_helper = false;
     let mut file_checks = Vec::new();
@@ -303,6 +348,8 @@ fn read_tests(relative: &Path, text: &str, key: &str) -> Vec<TextTest> {
 
 fn emit(report: &Value) {
     println!("{report}");
+    std::io::stdout().flush().unwrap();
+    output_checkpoint("exit", false);
 }
 
 fn log(entry: Value) {
@@ -310,13 +357,52 @@ fn log(entry: Value) {
         return;
     };
     let mut entry = entry;
+    entry["pid"] = json!(std::process::id());
+    entry["time_ns"] = json!(azimuth_tests::process::monotonic_ns());
     entry["argv0"] = Value::String(std::env::args().next().unwrap_or_default());
-    entry["cwd"] = Value::String(std::env::current_dir().map(|dir| dir.display().to_string()).unwrap_or_default());
-    entry["mark"] = std::env::var("APPARATUS_MARK").map(Value::String).unwrap_or(Value::Null);
+    entry["cwd"] = Value::String(
+        std::env::current_dir()
+            .map(|dir| dir.display().to_string())
+            .unwrap_or_default(),
+    );
+    entry["mark"] = std::env::var("APPARATUS_MARK")
+        .map(Value::String)
+        .unwrap_or(Value::Null);
     let mut file = fs::OpenOptions::new()
         .append(true)
         .create(true)
         .open(path)
         .expect("the apparatus log is writable");
-    writeln!(file, "{entry}").expect("the apparatus log entry is written");
+    file.write_all(format!("{entry}\n").as_bytes())
+        .expect("the apparatus log entry is written");
+}
+
+fn output_folder() -> Option<PathBuf> {
+    std::env::var_os("TEXT_ADAPTER_GATE_DIR")
+        .map(|root| PathBuf::from(root).join(std::env::current_dir().unwrap().file_name().unwrap()))
+}
+fn output_checkpoint(phase: &str, payload: bool) {
+    let Some(folder) = output_folder() else {
+        return;
+    };
+    fs::create_dir_all(&folder).unwrap();
+    if payload {
+        let suite = folder.file_name().unwrap().to_str().unwrap();
+        let tag = std::env::var("TEXT_ADAPTER_OUTPUT_TAG").unwrap_or_else(|_| "731".to_string());
+        eprintln!("AZIMUTH-OUTPUT-{suite}-{phase}-{tag}");
+        std::io::stderr().flush().unwrap();
+    }
+    let ready = folder.join(format!("{phase}.ready"));
+    let temporary = ready.with_extension("tmp");
+    fs::write(&temporary, std::process::id().to_string()).unwrap();
+    fs::rename(temporary, ready).unwrap();
+    while !folder.join(format!("{phase}.release")).exists() {
+        if std::env::args()
+            .nth(1)
+            .is_some_and(|token| Path::new(&token).with_extension("stop").exists())
+        {
+            std::process::exit(0);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
 }

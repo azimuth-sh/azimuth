@@ -2,9 +2,15 @@
 //! id, and the tree is what git would commit if everything were staged now.
 
 use std::collections::BTreeMap;
-use std::io::Write;
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+
+fn git_command() -> Command {
+    let mut command = Command::new("git");
+    command.env("GIT_NO_LAZY_FETCH", "1");
+    command
+}
 
 pub struct Git {
     root: PathBuf,
@@ -21,14 +27,19 @@ pub struct Entry {
 #[derive(Debug)]
 pub enum WorkingChange {
     /// Edited or new, with the mode git would store.
-    Present { path: String, mode: String },
-    Deleted { path: String },
+    Present {
+        path: String,
+        mode: String,
+    },
+    Deleted {
+        path: String,
+    },
 }
 
 impl Git {
     /// The repository that holds the current folder, opened at its root.
     pub fn open_here() -> Result<Git, String> {
-        let output = Command::new("git")
+        let output = git_command()
             .args(["rev-parse", "--show-toplevel"])
             .stderr(Stdio::null())
             .output()
@@ -44,8 +55,20 @@ impl Git {
         &self.root
     }
 
+    pub fn ignores(&self, path: &str) -> Result<bool, String> {
+        let output = self
+            .command(&["check-ignore", "--quiet", "--no-index", "--", path])
+            .output()
+            .map_err(|error| format!("git check-ignore: {error}"))?;
+        match output.status.code() {
+            Some(0) => Ok(true),
+            Some(1) => Ok(false),
+            _ => Err(format!("git check-ignore: {}", String::from_utf8_lossy(&output.stderr).trim())),
+        }
+    }
+
     fn command(&self, args: &[&str]) -> Command {
-        let mut command = Command::new("git");
+        let mut command = git_command();
         // Reading commands must not rewrite the index, which a sandbox may forbid.
         command.arg("--no-optional-locks").args(args).current_dir(&self.root);
         command
@@ -92,7 +115,9 @@ impl Git {
     pub fn head_tree(&self) -> Result<String, String> {
         match self.text(&["rev-parse", "--verify", "--quiet", "HEAD^{tree}"]) {
             Ok(tree) if !tree.is_empty() => Ok(tree),
-            _ => self.output(&["hash-object", "-t", "tree", "--stdin"], Some(b"")).map(|bytes| String::from_utf8_lossy(&bytes).trim().to_string()),
+            _ => self
+                .output(&["hash-object", "-t", "tree", "--stdin"], Some(b""))
+                .map(|bytes| String::from_utf8_lossy(&bytes).trim().to_string()),
         }
     }
 
@@ -124,8 +149,21 @@ impl Git {
         name.strip_prefix(&format!("{remote}/")).map(str::to_string)
     }
 
-    pub fn blob(&self, id: &str) -> Result<Vec<u8>, String> {
-        self.output(&["cat-file", "blob", id], None)
+    pub fn remote_address(&self, remote: &str) -> Option<String> {
+        self.text(&["remote", "get-url", remote]).ok()
+    }
+
+    pub fn blobs(&self) -> Result<Blobs, String> {
+        let mut child = self
+            .command(&["cat-file", "--batch"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|error| format!("start git cat-file: {error}"))?;
+        let input = child.stdin.take();
+        let output = child.stdout.take().map(BufReader::new);
+        Ok(Blobs { child, input, output })
     }
 
     /// Every file of a tree, or `None` when git no longer has that tree.
@@ -161,7 +199,17 @@ impl Git {
                 continue;
             }
             let (kind, rest) = record.split_at(1);
-            let fields: Vec<&str> = rest.trim_start().splitn(match kind { "1" => 8, "u" => 10, _ => 0 }, ' ').collect();
+            let fields: Vec<&str> = rest
+                .trim_start()
+                .splitn(
+                    match kind {
+                        "1" => 8,
+                        "u" => 10,
+                        _ => 0,
+                    },
+                    ' ',
+                )
+                .collect();
             let (head_mode, worktree_mode, path) = match (kind, fields.as_slice()) {
                 ("1", [_xy, _sub, head, _index, worktree, _hh, _hi, path]) => (*head, *worktree, *path),
                 ("u", [_xy, _sub, _m1, _m2, _m3, worktree, _h1, _h2, _h3, path]) => ("100644", *worktree, *path),
@@ -203,11 +251,51 @@ impl Git {
     /// Tracked paths at or below a folder of the working tree.
     pub fn tracked_under(&self, folder: &str) -> Result<Vec<String>, String> {
         let bytes = self.output(&["ls-files", "-z", "--", folder], None)?;
-        Ok(bytes
-            .split(|byte| *byte == 0)
-            .filter(|path| !path.is_empty())
-            .map(|path| String::from_utf8_lossy(path).to_string())
-            .collect())
+        Ok(bytes.split(|byte| *byte == 0).filter(|path| !path.is_empty()).map(|path| String::from_utf8_lossy(path).to_string()).collect())
+    }
+}
+
+pub struct Blobs {
+    child: Child,
+    input: Option<ChildStdin>,
+    output: Option<BufReader<ChildStdout>>,
+}
+
+impl Blobs {
+    pub fn read(&mut self, id: &str) -> Result<Vec<u8>, String> {
+        self.read_object(id).map_err(|error| format!("git object {id}: {error}"))
+    }
+
+    fn read_object(&mut self, id: &str) -> std::io::Result<Vec<u8>> {
+        let invalid = |message| std::io::Error::new(std::io::ErrorKind::InvalidData, message);
+        let input = self.input.as_mut().expect("git input is open");
+        writeln!(input, "{id}")?;
+        input.flush()?;
+        let output = self.output.as_mut().expect("git output is open");
+        let mut header = String::new();
+        output.read_line(&mut header)?;
+        let fields: Vec<&str> = header.split_whitespace().collect();
+        let size = match fields.as_slice() {
+            [found, "blob", size] if *found == id => size.parse::<usize>().map_err(|_| invalid("invalid object size"))?,
+            [found, "missing"] if *found == id => return Err(invalid("missing object")),
+            _ => return Err(invalid("unexpected object id or type in the batch answer")),
+        };
+        let mut bytes = vec![0; size];
+        output.read_exact(&mut bytes)?;
+        let mut separator = [0];
+        output.read_exact(&mut separator)?;
+        if separator != *b"\n" {
+            return Err(invalid("invalid object separator"));
+        }
+        Ok(bytes)
+    }
+}
+
+impl Drop for Blobs {
+    fn drop(&mut self) {
+        self.input.take();
+        self.output.take();
+        let _ = self.child.wait();
     }
 }
 

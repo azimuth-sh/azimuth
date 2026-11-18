@@ -455,7 +455,7 @@ fn no_command_removes_a_record() {
         &["lint"][..],
         &["check", "show", LATE_RETURN][..],
         &["requirement", "show", LATE_FINE][..],
-        &["change", "show"][..],
+        &["change", "diff"][..],
     ] {
         repo.azimuth(args);
         let now: BTreeSet<_> = repo.store_files().into_iter().collect();

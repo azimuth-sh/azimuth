@@ -1,0 +1,14 @@
+{
+  "name": "@azimuth-sh/playwright",
+  "version": "0.0.0",
+  "description": "The Azimuth test adapter for Playwright",
+  "bin": { "azimuth-playwright": "index.js" },
+  "files": ["index.js", "README.md"],
+  "license": "Apache-2.0",
+  "homepage": "https://azimuth.sh",
+  "repository": { "type": "git", "url": "https://github.com/azimuth-sh/azimuth.git", "directory": "adapters/playwright" },
+  "author": "Azimuth",
+  "peerDependencies": { "@playwright/test": ">=1.61.1 <1.66.0" },
+  "peerDependenciesMeta": { "@playwright/test": { "optional": true } },
+  "engines": { "node": ">=20" }
+}

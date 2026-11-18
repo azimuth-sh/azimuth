@@ -9,29 +9,47 @@ use azimuth_tests::{behavior_rows, docs_dir, BEHAVIOR_LISTS};
 fn every_quote_of_the_increment_is_a_sentence_of_the_design() {
     let design = fs::read_to_string(docs_dir().join("design.md")).expect("docs/design.md");
     let rows = behavior_rows();
-    for (list, at_least) in [("increments/1.md", 300), ("increments/release.md", 20)] {
+    for (list, at_least) in [
+        ("increments/1.md", 300),
+        ("increments/2.md", 100),
+        ("increments/release.md", 20),
+    ] {
         let count = rows.iter().filter(|row| row.list == list).count();
-        assert!(count >= at_least, "{list} lists {count} rows, fewer than expected");
+        assert!(
+            count >= at_least,
+            "{list} lists {count} rows, fewer than expected"
+        );
     }
     let missing: Vec<String> = rows
         .iter()
         .filter(|row| !design.contains(row.quote.as_str()))
-        .map(|row| format!("[{} / {}] {}\n    quote: {}", row.list, row.section, row.behavior, row.quote))
+        .map(|row| {
+            format!(
+                "[{} / {}] {}\n    quote: {}",
+                row.list, row.section, row.behavior, row.quote
+            )
+        })
         .collect();
-    assert!(missing.is_empty(), "quotes that docs/design.md no longer holds:\n{}", missing.join("\n"));
+    assert!(
+        missing.is_empty(),
+        "quotes that docs/design.md no longer holds:\n{}",
+        missing.join("\n")
+    );
 }
 
 #[test]
 fn the_unanswered_section_of_the_increment_has_no_rows() {
-    let text = fs::read_to_string(docs_dir().join("increments/1.md")).unwrap();
-    let section = text
-        .split("## What the design does not answer yet")
-        .nth(1)
-        .expect("the increment has a section of open questions");
-    assert!(
-        !section.lines().any(|line| line.starts_with('|')),
-        "the section of open questions holds table rows"
-    );
+    for name in ["increments/1.md", "increments/2.md"] {
+        let text = fs::read_to_string(docs_dir().join(name)).unwrap();
+        let section = text
+            .split("## What the design does not answer yet")
+            .nth(1)
+            .expect("the increment has a section of open questions");
+        assert!(
+            !section.lines().any(|line| line.starts_with('|')),
+            "{name}: the section of open questions holds table rows"
+        );
+    }
 }
 
 #[test]

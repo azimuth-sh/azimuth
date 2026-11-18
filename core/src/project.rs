@@ -39,6 +39,7 @@ pub struct Suite {
     pub marker: String,
     pub marker_key: Option<String>,
     pub needs: Vec<String>,
+    pub time_limit_minutes: u64,
 }
 
 impl Suite {
@@ -155,8 +156,7 @@ impl Reader {
         };
         let areas: Vec<String> = self.entries(table, "area").iter().map(|(index, entry)| self.area(entry, *index)).collect();
         let suites: Vec<Suite> = self.entries(table, "suite").iter().map(|(index, entry)| self.suite(entry, *index)).collect();
-        let facilities: Vec<Facility> =
-            self.entries(table, "facility").iter().map(|(index, entry)| self.facility(entry, *index)).collect();
+        let facilities: Vec<Facility> = self.entries(table, "facility").iter().map(|(index, entry)| self.facility(entry, *index)).collect();
         self.refuse_duplicates("area", areas.iter().map(String::as_str));
         self.refuse_duplicates("suite", suites.iter().map(|suite| suite.name.as_str()));
         self.refuse_duplicates("facility", facilities.iter().map(|facility| facility.name.as_str()));
@@ -210,14 +210,21 @@ impl Reader {
 
     fn suite(&mut self, table: &Table, index: usize) -> Suite {
         let place = Place::Entry("suite", index);
-        self.refuse_unknown_keys(table, place, &["name", "area", "path", "adapter", "marker", "marker_key", "needs"]);
+        self.refuse_unknown_keys(table, place, &["name", "area", "path", "adapter", "marker", "marker_key", "needs", "time_limit_minutes"]);
         let path = self.text(table, place, "path");
         let marker = self.text(table, place, "marker");
         if !marker.is_empty() && marker.matches("<id>").count() != 1 {
             self.error(place, Some("marker"), format!("the marker form `{marker}` must hold `<id>` once, where the Check id stands"));
         }
+        if marker.starts_with("<id>") {
+            self.error(place, Some("marker"), "the marker form must have text before `<id>` so a marker has a beginning".to_string());
+        }
         if path.starts_with('/') || path.split('/').any(|part| part == "..") {
-            self.error(place, Some("path"), format!("the suite path `{path}` must be a folder inside the repository, written from its root"));
+            self.error(
+                place,
+                Some("path"),
+                format!("the suite path `{path}` must be a folder inside the repository, written from its root"),
+            );
         }
         let marker_key = match table.get("marker_key") {
             None => None,
@@ -227,7 +234,16 @@ impl Reader {
                 None
             }
         };
+        let time_limit_minutes = match table.get("time_limit_minutes") {
+            None => 30,
+            Some(Value::Integer(minutes)) if *minutes >= 1 => *minutes as u64,
+            Some(_) => {
+                self.error(place, Some("time_limit_minutes"), "`time_limit_minutes` must be a whole number of at least 1".to_string());
+                30
+            }
+        };
         Suite {
+            time_limit_minutes,
             name: self.text(table, place, "name"),
             area: self.text(table, place, "area"),
             path: normalize_folder(&path),
@@ -324,11 +340,8 @@ fn is_exact_version(version: &str) -> bool {
     };
     let numbers: Vec<&str> = core.split('.').collect();
     let numbers_ok = numbers.len() == 3 && numbers.iter().all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()));
-    let rest_ok = rest
-        .chars()
-        .skip(1)
-        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '+')
-        && (rest.is_empty() || rest.len() > 1);
+    let rest_ok =
+        rest.chars().skip(1).all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '+') && (rest.is_empty() || rest.len() > 1);
     numbers_ok && rest_ok
 }
 

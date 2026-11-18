@@ -26,14 +26,13 @@ impl<'a> MarkerForm<'a> {
         (!prefix.is_empty()).then_some(MarkerForm { prefix, suffix })
     }
 
-    /// The ids the form shows in a line. With no text after `<id>` the id ends at white space.
     fn ids_in(&self, line: &str) -> Vec<String> {
         let mut ids = Vec::new();
         let mut rest = line;
         while let Some(start) = rest.find(self.prefix) {
             let after = &rest[start + self.prefix.len()..];
             let end = if self.suffix.is_empty() {
-                after.find(char::is_whitespace).unwrap_or(after.len())
+                after.find(|character: char| !character.is_ascii_alphanumeric() && character != '-').unwrap_or(after.len())
             } else {
                 match after.find(self.suffix) {
                     Some(end) => end,
@@ -43,7 +42,7 @@ impl<'a> MarkerForm<'a> {
             if end > 0 {
                 ids.push(after[..end].to_string());
             }
-            rest = &after[end..];
+            rest = &after[end + self.suffix.len()..];
         }
         ids
     }

@@ -3,8 +3,17 @@
 // means a report was written, also when tests failed; anything else is a crashed launch.
 
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
 using Azimuth.Xunit;
+
+var reportState = 0;
+using var interrupt = OperatingSystem.IsWindows() ? null : PosixSignalRegistration.Create(PosixSignal.SIGINT, signal =>
+{
+    signal.Cancel = true;
+    Interlocked.Exchange(ref reportState, 1);
+    Environment.Exit(1);
+});
 
 try
 {
@@ -23,7 +32,12 @@ try
     };
     report.Insert(0, "format", "adapter-report-1");
     report.Insert(1, "adapter", new JsonObject { ["name"] = "azimuth-xunit", ["version"] = Version() });
-    Console.Out.Write(report.ToJsonString());
+    var text = report.ToJsonString();
+    if (Interlocked.CompareExchange(ref reportState, 2, 0) != 0)
+    {
+        return 1;
+    }
+    Console.Out.Write(text);
     return 0;
 }
 catch (AdapterException error)
