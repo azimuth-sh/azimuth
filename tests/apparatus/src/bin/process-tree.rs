@@ -13,18 +13,25 @@ extern "C" fn stop(_: i32) {
     RECEIVED.store(monotonic_ns(), Ordering::SeqCst);
 }
 
-fn event(kind: &str, role: &str, token: &str) {
+fn event_at(kind: &str, role: &str, token: &str, time_ns: u64) {
     journal(
         std::path::Path::new(&std::env::var("TREE_LOG").unwrap()),
         kind,
         std::process::id(),
         role,
-        json!({"group":group(), "token":token}),
+        json!({"group":group(), "token":token, "time_ns":time_ns}),
     );
 }
+fn event(kind: &str, role: &str, token: &str) {
+    event_at(kind, role, token, monotonic_ns());
+}
 fn main() {
+    // Capture entry before routing the journal or doing setup: neither stdin nor a child can
+    // move the beginning of the measured launch, even when those operations are slow.
+    let entered_ns = monotonic_ns();
     let role = std::env::args().nth(1).unwrap();
     let token = std::env::args().nth(2).unwrap();
+    event_at("entered", &role, &token, entered_ns);
     let mode = std::env::var("TREE_MODE").unwrap();
     let ignores = (mode == "resists" && role != "grandchild")
         || (mode == "orphan-resists" && role == "grandchild");
@@ -38,6 +45,11 @@ fn main() {
     }
     unsafe {
         signal(15, stop as *const () as usize);
+    }
+    if role == "adapter" || role == "proof" {
+        if let Ok(delay) = std::env::var("TREE_SETUP_DELAY_MS") {
+            std::thread::sleep(Duration::from_millis(delay.parse().unwrap()));
+        }
     }
     event("started", &role, &token);
     if role == "adapter" {

@@ -65,24 +65,40 @@ fn assert_tree_stopped(run: &LiveRun, root: &str) {
         );
     }
 }
+fn first_term(run: &LiveRun) -> u64 {
+    run.events()
+        .iter()
+        .filter(|event| event["event"] == "SIGTERM")
+        .map(|event| event["time_ns"].as_u64().unwrap())
+        .min()
+        .expect("the group received SIGTERM")
+}
 fn limit_bounds(run: &LiveRun, role: &str, seconds: u64) {
-    let elapsed = stamp(run, role, "SIGTERM") - stamp(run, role, "started");
+    let elapsed = first_term(run) - stamp(run, role, "entered");
+    // Entry excludes helper setup, stdin and child creation. Allow 750 ms for exec-to-entry
+    // scheduling, less than the one-second early limit this test must reject. Dispatch can
+    // run late under load, so the other side allows three seconds. The preceding four-second
+    // proof still cannot be charged to the adapter's clock.
     assert!(
-        elapsed >= seconds * 1_000_000_000 - 500_000_000
+        elapsed >= seconds * 1_000_000_000 - 750_000_000
             && elapsed <= (seconds + 3) * 1_000_000_000,
-        "limit after {elapsed} ns from actual start"
+        "limit after {elapsed} ns from main entry"
     );
 }
 fn grace_bounds(run: &LiveRun, role: &str) {
-    let alive = stamp(run, role, "observed-alive") - stamp(run, role, "SIGTERM");
+    let term = first_term(run);
+    let alive = stamp(run, role, "observed-alive") - term;
+    // A sample begun after nine seconds proves an eight-second grace is wrong; a delayed ps
+    // response cannot manufacture that witness. Allow exit detection until 11.5 seconds for
+    // polling and process-inspection latency, still short of the twelve-second wrong grace.
     assert!(
-        alive >= 8_000_000_000,
+        alive >= 9_000_000_000,
         "resistant process was not witnessed alive during the grace"
     );
-    let elapsed = stamp(run, role, "observed-exit") - stamp(run, role, "SIGTERM");
+    let elapsed = stamp(run, role, "observed-exit") - term;
     assert!(
-        (9_500_000_000..=10_900_000_000).contains(&elapsed),
-        "grace after {elapsed} ns from SIGTERM receipt"
+        (9_000_000_000..=11_500_000_000).contains(&elapsed),
+        "grace after {elapsed} ns from first SIGTERM receipt"
     );
 }
 // behavior-2: A launch of an adapter has a time limit
@@ -153,7 +169,7 @@ fn a_build_that_hangs_loses_the_whole_process_tree_at_one_minute() {
                 let proof = repo.probe_starts();
                 assert_eq!(proof.len(), 1);
                 assert!(
-                    stamp(&run, "adapter", "started") - proof[0]["time_ns"].as_u64().unwrap()
+                    stamp(&run, "adapter", "entered") - proof[0]["time_ns"].as_u64().unwrap()
                         >= 4_000_000_000
                 );
             });
@@ -169,8 +185,8 @@ fn a_group_ignoring_sigterm_is_killed_after_the_fixed_grace() {
     let output = run.finish(Duration::from_secs(240));
     no_results(&repo, &output);
     assert_tree_stopped(&run, "adapter");
+    limit_bounds(&run, "adapter", 60);
     for role in ["adapter", "runner"] {
-        limit_bounds(&run, role, 60);
         grace_bounds(&run, role);
     }
 }
@@ -198,7 +214,9 @@ fn a_complete_report_written_before_a_hang_is_discarded_at_the_limit() {
 // behavior-2: A proof still counts as hung after 10 seconds, whatever the suite's limit is
 #[test]
 fn proofs_have_their_own_group_and_ten_second_limit() {
-    let repo = tree("orphan", Some(2));
+    let mut repo = tree("orphan", Some(2));
+    // Make the old late-start measurement fail deterministically, without changing the CLI clock.
+    repo.set_env("TREE_SETUP_DELAY_MS", "1500");
     repo.need_facility("present");
     let token = repo.beside("tree-token").display().to_string();
     repo.replace(
@@ -214,6 +232,7 @@ fn proofs_have_their_own_group_and_ten_second_limit() {
     }
     assert_tree_stopped(&run, "proof");
     limit_bounds(&run, "proof", 10);
+    assert!(stamp(&run, "proof", "started") - stamp(&run, "proof", "entered") >= 1_500_000_000);
     assert!(!run.events().iter().any(|e| e["role"] == "adapter"));
 }
 #[test]
@@ -329,10 +348,30 @@ fn the_limit_never_reaches_the_adapter_contract() {
         repo.store_files().len() + repo.outbox_files().len(),
         ALL_CHECKS.len()
     );
-    for check in ALL_CHECKS {
+    for (check, claim) in [
+        (
+            SIXTH_LOAN,
+            "The desk refuses a sixth loan to a borrower who holds five.",
+        ),
+        (
+            RETURNED_BOOK,
+            "After one return the desk lends again to a borrower who held five loans.",
+        ),
+        (
+            LATE_RETURN,
+            "A return three days late records a fine of three days.",
+        ),
+        (
+            ON_TIME_RETURN,
+            "A return on the due date or earlier records no fine.",
+        ),
+    ] {
         let record = repo.result_of(check);
         assert_eq!(record["format"], "result-1");
-        assert_eq!(record["subjects"], json!([{"kind":"check", "name":check}]));
+        assert_eq!(
+            record["subjects"],
+            json!([{"kind":"check", "name":check, "digest":text_1_digest(claim)}])
+        );
         assert_eq!(record["body"]["outcome"], "passed");
     }
 }

@@ -82,10 +82,18 @@ impl LiveRun {
         if started.is_empty() {
             return true;
         }
+        let sample_started = monotonic_ns();
         let table = processes().unwrap_or_else(|error| panic!("{error}"));
+        let sample_finished = monotonic_ns();
+        let first_term = events
+            .iter()
+            .filter(|event| event["event"] == "SIGTERM")
+            .map(|event| event["time_ns"].as_u64().unwrap())
+            .min();
         for e in &started {
             let pid = e["pid"].as_u64().unwrap() as u32;
             if !self.witnessed_alive.contains(&pid)
+                && first_term.is_some_and(|term| sample_started >= term + 9_000_000_000)
                 && table.get(&pid).is_some_and(|p| {
                     p.running()
                         && p.command
@@ -93,21 +101,16 @@ impl LiveRun {
                             .any(|arg| Some(arg) == e["token"].as_str())
                 })
             {
-                if let Some(term) = events
-                    .iter()
-                    .find(|event| event["pid"] == e["pid"] && event["event"] == "SIGTERM")
-                {
-                    if monotonic_ns() >= term["time_ns"].as_u64().unwrap() + 8_000_000_000 {
-                        journal(
-                            &self.journal,
-                            "observed-alive",
-                            pid,
-                            e["role"].as_str().unwrap(),
-                            json!({}),
-                        );
-                        self.witnessed_alive.insert(pid);
-                    }
-                }
+                // ps samples sometime during its call: its beginning is a conservative
+                // lower bound on when this verified process was still alive.
+                journal(
+                    &self.journal,
+                    "observed-alive",
+                    pid,
+                    e["role"].as_str().unwrap(),
+                    json!({"time_ns":sample_started}),
+                );
+                self.witnessed_alive.insert(pid);
             }
             if !self.observed.contains(&pid)
                 && !table.get(&pid).is_some_and(|p| {
@@ -125,7 +128,7 @@ impl LiveRun {
                     "observed-exit",
                     pid,
                     e["role"].as_str().unwrap(),
-                    json!({"state":if table.get(&pid).is_some_and(|p|!p.running()){"zombie"}else if table.contains_key(&pid){"identity changed"}else{"absent"}}),
+                    json!({"time_ns":sample_finished,"state":if table.get(&pid).is_some_and(|p|!p.running()){"zombie"}else if table.contains_key(&pid){"identity changed"}else{"absent"}}),
                 );
                 self.observed.insert(pid);
             }
