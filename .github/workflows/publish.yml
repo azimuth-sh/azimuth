@@ -103,7 +103,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install the staging npm
-        run: npm install --global npm@11.21.3
+        run: sh release/install-npm.sh "$RUNNER_TEMP/azimuth-npm"
       - name: Pack the Playwright adapter and stage that file
         run: |
           cd adapters/playwright
