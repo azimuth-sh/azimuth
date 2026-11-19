@@ -712,7 +712,7 @@ Example: the API test project of drim-dev has 249 files with test methods. After
 
 The cost. That the two parts together show the Scenario is a judgment, and no tool makes it. The Verification Review does. A reader needs to see the parts, so `azimuth check show` names the tests of a Check.
 
-Example: a Scenario says that a grant that cannot be is refused. One test sends one malformed grant through the API and reads that no grant was made. Nine isolated tests give the validator a kind that does not exist, a key of a wrong shape, two holders and no holder. All ten carry the marker `malformed-grant-is-refused`. The isolated tests of another operation had passed while the API answered 500 for it, because its validator never ran. Only a test through the API noticed.
+Example: a Scenario says that a grant that cannot be is refused. One test sends one malformed grant through the API and reads that no grant was made. Six isolated tests give the validator a well-formed grant, a kind that does not exist, a key of a wrong shape, two holders and no holder. All seven carry the marker `malformed-grant-is-refused`. The isolated tests of another operation had passed while the API answered 500 for it, because its validator never ran. Only a test through the API noticed.
 
 ### Steps and roles
 
@@ -1718,6 +1718,19 @@ A lane is wider than Checks. Later it also runs Challenges and the start-up guar
 | `azimuth change diff` | what did this change do to the model? Added, changed and removed Requirements, Scenarios and Checks, the class of the change, and "rigor lowered" where it applies. By default it compares the branch with its target | the change touches no model file and no test, and then it prints one line |
 
 They run nothing and need no network. They read the tree and the local store. Each has a form for agents with the same content as structured output, so an agent never parses text meant for a person.
+
+**`azimuth check show` names the tests of a Check.** It prints two lists, and it starts no launch.
+
+| List | Where it comes from | Its limit |
+| --- | --- | --- |
+| The marker lines, each with its file and line | The scan of the source | A marker on a class is one line, and it names no test |
+| The tests of the last result, each with its outcome | The record of that result | It is as old as that result, and the command says how old |
+
+**A result keeps the name and the outcome of every test of its Check, and not only of the failed ones.**
+
+The cost. Every result grows by the names of its tests. And after an edit that adds a test, the second list lacks that test until the next run. The first list shows its marker at once.
+
+Example: the Check `admin-takes-back-a-grant` has three tests in two classes. `azimuth check show` prints two marker lines, one on a class and one on a method, and under the last result three names, each with "passed". Without the second list a reader sees a Check that passed and cannot tell that two of its three tests are isolated tests of a validator.
 
 **The structured form is one JSON document, asked for with `--json`.**
 
