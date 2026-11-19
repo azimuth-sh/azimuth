@@ -701,6 +701,19 @@ The cost. The gap between what Azimuth proves and what the tests cover is invisi
 
 Example: the API test project of drim-dev has 249 files with test methods. After the first change two tests carry a marker. `azimuth run` starts xUnit for those two, and the team's own workflow keeps running all of them. A failure in an unmarked test fails that workflow and changes nothing in `azimuth status`.
 
+### The parts of a Check
+
+**A Check may be made of parts: a test through a door of the system, and tests of one part in isolation.** All of them carry the marker of the Check, and the Check rule does not change: one failed test fails the Check.
+
+- **An isolated test alone is never a Check.** It shows what the part does. It does not show that the system uses the part.
+- **The test through a door shows that the part is wired in.** It is needed once for each place where the part is wired, for example once for each operation that has a validator, and not once for a Requirement.
+- **The claim says what each part shows.** Its order is fixed: through which door the test looks, what each part shows, and last what is not shown.
+- **The parts are one Check and not several.** The claim is one argument with two steps. As separate Checks, the test through the door could be deleted and the Scenario would still show Checks that pass.
+
+The cost. That the two parts together show the Scenario is a judgment, and no tool makes it. The Verification Review does. A reader needs to see the parts, so `azimuth check show` names the tests of a Check.
+
+Example: a Scenario says that a grant that cannot be is refused. One test sends one malformed grant through the API and reads that no grant was made. Nine isolated tests give the validator a kind that does not exist, a key of a wrong shape, two holders and no holder. All ten carry the marker `malformed-grant-is-refused`. The isolated tests of another operation had passed while the API answered 500 for it, because its validator never ran. Only a test through the API noticed.
+
 ### Steps and roles
 
 **A test is made of steps, and each step has a role.**
