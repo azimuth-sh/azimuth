@@ -193,6 +193,8 @@ The cost. Through increments 1 to 3 no Requirement is reviewed by anything but t
 | 3. Build | writes the marked tests from the Scenarios, then the code, and runs `azimuth run` until `azimuth status` is quiet | no |
 | 4. Hand over | runs `azimuth run --lane commit`, then prints `azimuth change diff` and `azimuth status` | yes. The person merges |
 
+**Where the change needs a plan, the Intent stop shows the plan too.** The part "The implementation plan" says when a change needs one. The number of stops stays the same.
+
 **At the end of the Intent step lint may still report two findings, and no other.** A Check that this change adds has no marked test, because its test is written in the Build. A marker names a Check that this change removes, because the test leaves in the Build. Both findings are correct, and the order of the steps makes them unavoidable: the person reads the intent before any code exists. Every other finding and every reading error is gone before the stop. The skill names the two, and the agent lists what remains when it stops. Lint itself does not change and knows no step.
 
 The cost. The agent judges which finding belongs to the change, so a wrong marker in another file can hide among the expected ones. It does not reach a merge, because the commit lane lints again at the hand over and fails on any finding.
@@ -2692,6 +2694,22 @@ The Mechanism as an entity with an id and tags goes away. Its three jobs move.
 - **The plan has no history.** It says what remains to be done now.
 - **A person approves the plan.** It is the cheapest place to control an agent, because no code exists yet.
 - **A work package is a set of slices.** Slices do not reference each other, so two workers cannot collide. Shared code stays with the coordinator.
+
+**A change needs a plan where a Requirement declares `Realization:`. The person reads the plan at the Intent stop.**
+
+| Rule | Why |
+| --- | --- |
+| A change needs a plan when a Requirement that it adds or changes declares `Realization:` | the declaration says that how the Requirement is built matters. It buys a review after the code, and it buys the person's look before the code |
+| A change with no such Requirement needs no plan | a routine change stays fast |
+| The agent writes the plan in the Intent step, after the Scenarios and the Checks, and the person reads all three at the one stop | no further wait for a person |
+| At that stop the plan holds the proposed decisions, the units to add, change or delete, and the migration steps | a person can judge these before code exists. The order of the tasks is the agent's own |
+| What can be observed from outside is not in the plan. An address, who may call it and what it answers are Scenarios | the tests are written against them first |
+| At the hand over the agent names every proposed decision that the finished code does not follow, and says why | an approval of a plan that the Build silently left is worth nothing |
+| The approval of the plan is a stop of the default process. No gate waits for it, and the server keeps no record of it | the Realization Review and the person's reading before the merge check the result |
+
+**The cost.** The person may change a Scenario at the stop, and the plan then has to follow. For a large change the person asks for two sittings: the Scenarios first, and the plan after them.
+
+Example: a change adds a Requirement about grants of access, and the Requirement declares `Realization:`. At the Intent stop the person reads its Scenarios, the claims of its Checks, and a plan. The plan proposes one entity whose holder is a user or a group, one table, and one unique index over the holder and the thing. The Build needs two indexes, one for each kind of holder. The hand over names the proposed decision that the code does not follow, and the reason.
 
 ### Sizes of work
 
