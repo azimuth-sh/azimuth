@@ -315,8 +315,10 @@ The cost. The sums file sits beside the binaries. It catches a broken download a
 | --- | --- |
 | 1 | the workflow builds and packs everything, makes the draft release and stages the npm package |
 | 2 | a person approves in GitHub. The approval is asked for only when step 1 is green |
-| 3 | the workflow pushes to NuGet, and then it publishes the draft |
+| 3 | the workflow pushes to NuGet. A person approves once more, and the workflow publishes the draft |
 | 4 | a person approves the staged version at npm |
+
+**GitHub asks for the approval once for each job.** Two jobs name the environment: the push to NuGet and the publishing of the draft. So a person approves twice, and the second approval comes after NuGet took the version.
 
 **A place that cannot stage is pushed last, and its push can be repeated.** That push is the point of no return. When the place refuses it, a person deletes the draft and rejects the staged version, and nothing was published. A push that is run again skips a version that is already there, so a release that failed half way is run again from the failed job and not abandoned.
 
@@ -330,13 +332,17 @@ Example: the tag `v0.2.0-alpha.3` has no release. Its staging job could not inst
 
 **The staged version carries the tag `latest`.** npm refuses a version with a suffix, such as `0.2.0-alpha.3`, when the command names no tag. The step names `latest`, also while the version says alpha, as the GitHub release is the latest normal one. So a person who installs the package without a version gets the newest release. Azimuth's own install line names the exact version and does not depend on the tag.
 
+**The tag at staging needs no right of its own.** The publisher is allowed to stage only, and the version is staged with the tag `latest`.
+
+**Staging already writes to a public log.** npm publishes a signed provenance statement of the staged version before any approval, so the fact that the version was built is public from then on, and the package itself is not.
+
 **The job that stages installs its own npm.** Staging needs npm 11.15.0 or later, and the runner's image ships an older one. The job installs npm at one exact version, at least 11.21.0, which npm names as the first that lets a workflow's identity set a tag. A person raises the version, in a change of its own.
 
 **The install of that npm is rehearsed at every push.** The job installs it into a folder of its own, because the global folder of the runner's image belongs to root and a job runs as an ordinary user. The install is a script in the repository. The staging job runs it, and the Linux job of CI runs it at every push and compares the version it gets, so a fault in it shows at a push and not at a tag.
 
-The cost. A release takes three acts of a person: the tag, the approval in GitHub and the approval at npm. The steps are not one transaction. NuGet can still refuse a push that passed every local test. With two places that cannot stage, one can take the version and the next one refuse it. Nothing makes the person approve at npm only after step 3, and between the steps the places disagree: the binaries are public before the adapter is. The settings live in GitHub and at npm and not in the repository, so no test proves that they are on. And a person approves their own run, so the gates guard against an accident and against an agent, and not against that person.
+The cost. A release takes four acts of a person: the tag, two approvals in GitHub and the approval at npm. The second approval in GitHub guards nothing, because NuGet took the version before it, and a person who misses it leaves the release a draft while the package is public. The steps are not one transaction. NuGet can still refuse a push that passed every local test. With two places that cannot stage, one can take the version and the next one refuse it. Nothing makes the person approve at npm only after step 3, and between the steps the places disagree: the binaries are public before the adapter is. The settings live in GitHub and at npm and not in the repository, so no test proves that they are on. And a person approves their own run, so the gates guard against an accident and against an agent, and not against that person.
 
-Unmeasured: whether a staged version expires, whether a rejected version number can be staged again, whether the tag named while staging needs the publisher's setting that allows tags, and whether GitHub asks for the approval once or once for each job that names the environment.
+Unmeasured: whether a staged version expires, and whether a rejected version number can be staged again.
 
 **The compiler is pinned in the repository.** The file `rust-toolchain.toml` names one exact Rust version, with the linter and the two build targets. Every machine and every runner builds with it, so a clean run on one machine is a clean run on the other, and two builds of one tag use one compiler. A person raises the version, in a change of its own.
 
