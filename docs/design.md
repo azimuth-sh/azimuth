@@ -466,6 +466,20 @@ Example: a test of "a second run on unchanged content runs nothing" copies the s
 
 A Requirement or Scenario may carry `Context:` conditions. They say under which configuration of a running component it applies.
 
+**A Requirement describes what the system does for somebody outside it, as a whole. It is not cut by component.**
+
+| Rule | Why |
+| --- | --- |
+| A Requirement and its Scenarios speak about the system as somebody outside it meets it: a learner, an admin, an operator, another system | that somebody does not know where the website ends and the API begins. A cut by component repeats the architecture in the model |
+| A Requirement names a component boundary only when the promise is made at that boundary to somebody outside it | a security boundary must hold when somebody goes around the component in front of it. A consumer that is not the team's own, or is released apart, was promised the address and the answer |
+| A Scenario may have Checks at several doors, in several suites. The claim of each Check says through which door it looks | a Scenario about the whole can look proven while one layer is untested. The Verification Review judges whether the Checks together show the Scenario |
+| The contract between the team's own components is realization. It is proposed in the plan and kept in `realization.md` when the code follows it | it can change without any change of what was promised |
+| A feature that is built layer by layer keeps its Requirement, and each layer adds Checks | the Requirement does not change when the building does |
+
+**The cost.** A Requirement without `Realization:` has no plan. For such a Requirement the contract between components is the agent's choice alone, and a person sees it only in the code.
+
+Example: in drim-dev an admin gives a user access to a lab. The Scenario says that an admin gives a grant for a lab to a user, and that the user then holds access. Its first Check looks through the API, because no page for an admin exists yet, and its claim says so. When the page is built, a Check in a browser is added to the same Scenario. The address `POST /api/grants` and its statuses are in the plan. The Requirement `private-api-admits-only-the-bff` below is the other case: its promise is made at the API itself, to whoever goes around the website.
+
 **The written form: a heading with a structure word and an id, free prose under it, and declaration lines.**
 
 In `specification.md`:
@@ -2703,7 +2717,7 @@ The Mechanism as an entity with an id and tags goes away. Its three jobs move.
 | A change with no such Requirement needs no plan | a routine change stays fast |
 | The agent writes the plan in the Intent step, after the Scenarios and the Checks, and the person reads all three at the one stop | no further wait for a person |
 | At that stop the plan holds the proposed decisions, the units to add, change or delete, and the migration steps | a person can judge these before code exists. The order of the tasks is the agent's own |
-| What can be observed from outside is not in the plan. An address, who may call it and what it answers are Scenarios | the tests are written against them first |
+| What somebody outside the system can observe is not in the plan. It is a Scenario. The addresses and the answers between the team's own components are in the plan | a person approves what the product does in the Scenarios, and how its parts talk to each other in the plan |
 | At the hand over the agent names every proposed decision that the finished code does not follow, and says why | an approval of a plan that the Build silently left is worth nothing |
 | The approval of the plan is a stop of the default process. No gate waits for it, and the server keeps no record of it | the Realization Review and the person's reading before the merge check the result |
 
