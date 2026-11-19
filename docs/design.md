@@ -2753,6 +2753,25 @@ The Mechanism as an entity with an id and tags goes away. Its three jobs move.
 
 Example: a change adds a Requirement about grants of access, and the Requirement declares `Realization:`. At the Intent stop the person reads its Scenarios, the claims of its Checks, and a plan. The plan proposes one entity whose holder is a user or a group, one table, and one unique index over the holder and the thing. The Build needs two indexes, one for each kind of holder. The hand over names the proposed decision that the code does not follow, and the reason.
 
+**The plan and the model files have no heading for each topic. The default process asks the topics as questions.** The skill that writes a plan carries the list, and the brief of each review carries the same list.
+
+| Question | What it catches |
+| --- | --- |
+| What data is added or changed, and how does the release before it run beside it? | A migration that breaks the running code |
+| What do the team's own components promise each other? | A contract that only one side knows |
+| Who may do it, and where is that enforced? | A guard that sits in the wrong place |
+| How does a refusal reach the caller? | A validator that never runs, an error that nobody translates |
+| What happens when two requests meet? | A race that only the database can decide |
+| What can no longer be deleted? | A reference that stops an operation somebody builds later |
+
+**A question with an answer becomes a proposed decision in the plan. A question with no answer leaves no line.** The file holds only what has content.
+
+**The list belongs to the process and not to the core.** A project changes it in its installed skill, and a package for a stack brings questions of its own.
+
+The cost. Nothing records that a question was asked. A plan that is silent about two requests at the same moment may mean "it cannot happen" or "nobody thought of it". The reviewer asks the same questions again, and that is the only guard.
+
+Example: a plan for grants named the unique index that decides between two admins, because its author thought of it. It did not ask how a refusal reaches the caller. The answer would have been "through the validation step", and a look at that step would have shown that it skips every operation that answers nothing. A control found it instead, after the code was written.
+
 ### Sizes of work
 
 **Work comes in three sizes, and only the largest needs an exploration.**
