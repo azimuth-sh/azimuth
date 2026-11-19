@@ -180,7 +180,9 @@ Until increment 3 lands, a test has two outcomes only. Checks written before it 
 
 A declaration is written `Verification: reviewed` or `Realization: reviewed`.
 
-**Until increment 4 nothing inside `realization.md` is read.** It is prose. Its one reader is the Realization Review, and without that review lint would check root lines that nothing uses. The written form of a root and a decision is decided with the behaviors of increment 4, when that reader exists. The fragment in the Roots part is an illustration.
+**From increment 3 on, lint reads the file roots in `realization.md`, and a file root that names no file is a finding. Nothing else inside the file is read until increment 4.** The rest is prose, and its one reader is the Realization Review. A wrong path is different, because it costs something before any review exists: the person who starts reading at the roots starts at nothing, and nobody is told. So the written form of a file root is decided in increment 3. The form of a kind root and of a decision is decided with the behaviors of increment 4, when their reader exists. The fragment in the Roots part is an illustration.
+
+Example: two roots of a Requirement about grants named `Features/Cohorts/AddCohortParticipant.cs`, and the file lives in `Features/Cohorts/Admin/`. Lint said "no finding", and the author found the error by reading the folder.
 
 The cost. Through increments 1 to 3 no Requirement is reviewed by anything but the person, and a Requirement that declares a review is never quiet.
 
