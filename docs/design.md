@@ -1728,6 +1728,8 @@ They run nothing and need no network. They read the tree and the local store. Ea
 
 **A result keeps the name and the outcome of every test of its Check, and not only of the failed ones.**
 
+The format `check-1` gains two fields for it, `markers` and `tests`. `failing_tests` stays, and it holds the tests of that list whose outcome is "failed". Adding a field does not raise the number of a format.
+
 The cost. Every result grows by the names of its tests. And after an edit that adds a test, the second list lacks that test until the next run. The first list shows its marker at once.
 
 Example: the Check `admin-takes-back-a-grant` has three tests in two classes. `azimuth check show` prints two marker lines, one on a class and one on a method, and under the last result three names, each with "passed". Without the second list a reader sees a Check that passed and cannot tell that two of its three tests are isolated tests of a validator.
