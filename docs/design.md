@@ -1560,7 +1560,7 @@ Measured on 2026-11-15 with Codex CLI 0.167.0: under its workspace sandbox a com
 | --- | --- | --- |
 | `azimuth/project.toml`, the project file, in the model repository | yes | the topology: repositories, areas with mounts, components, reference environments |
 | `azimuth/model/<module>/, with README.md, specification.md, realization.md and verification.md` | yes | Requirements, Scenarios, terms, roots, decisions |
-| `azimuth/changes/<name>/` | yes | `proposal.md` and `sources/`. Finished ones move to `changes/finished/` |
+| `azimuth/changes/<name>/` | yes | `proposal.md` and `sources/`. Finished ones move to `changes/finished/<date>-<name>/` |
 | `azimuth/explorations/<name>/` | yes | `map.md` and `sources/`, with the decision notes |
 | `azimuth/repository` file, in a code repository | yes | the project id and the repository's own name. Nothing else |
 | `.azimuth/` in the worktree | no, ignored by git | the outbox, and the local paths to the other checkouts |
@@ -2780,7 +2780,7 @@ Example: an exploration in drim-dev lists eight candidates with a column for dep
 
 - The model says only what is built. A Requirement appears with the change that builds it, so no Requirement on the target branch ever waits for code.
 - A change that leaves something adds its row before it merges. The reviewing agent of the default process asks at the end: what does this change leave undone, and does the map say so?
-- An exploration ends when every row is finished or deleted. The next change then moves its folder to `explorations/finished/`, the same way as a change folder.
+- An exploration ends when every row is finished or deleted. The next change then moves its folder to `explorations/finished/`, the same way as a change folder, with the date of the folder's arrival in front of its name.
 - A change with no exploration that leaves something creates one at that moment, with itself as the first row.
 
 **The cost.** The core computes none of this. A forgotten toggle stays forgotten if nobody wrote the row.
@@ -2851,26 +2851,27 @@ To be discussed: what the reviewer judges and records, who reviews, and when.
 
 **A change ends with its merge.** There is no finalize step, and the merge gate is the only gate. The model is edited in place and records live on the server, so nothing is left to apply or close.
 
-**Finished change folders live in `changes/finished/`. The next change moves them there.**
+**Finished change folders live in `changes/finished/`, each with the date of its arrival in front of its name. The next change moves them there.**
 
 | Rule | Why |
 | --- | --- |
 | At the start of a change, the default process moves every change folder that already exists on the target branch into `changes/finished/` | at that moment "finished" is certainly true, and no acceptance is disturbed |
-| The core finds a change by its name in either place | a folder that was not moved yet breaks nothing |
+| The moved folder is named `<date>-<name>`. The date is the day on which the folder arrived on the target branch. The process reads it from git, in UTC | the folder then reads as a history, and old folders are found by their age |
+| The core finds a change by its name in either place, and does not read the date | a folder that was not moved yet breaks nothing, and the name stays the identity of a change |
 | Nothing verifies the move and no gate waits for it | a forgotten move is repaired by the next change |
-| Two branches that move the same folder merge without conflict | both made the same rename |
-| A change name is never used twice. Lint refuses a name that already exists on the target branch | the folder and the page stay addressable |
+| Two branches that move the same folder merge without conflict | both made the same rename, because both read the same date from git and nobody types it |
+| A change name is never used twice. Lint refuses a name that already exists on the target branch, with a date in front of it or without | the folder and the page stay addressable |
 | A team may delete old change folders in an ordinary commit | nothing is computed from them |
 
 **The result.** On any change branch, `changes/` holds only open changes at the top and everything else under `finished/`.
 
 **Why the move is not the last step of the change.** Before acceptance the folder would say "finished" while fixes may still come, and the gate would have to verify the move, which is a finalize step again. After the merge someone would have to push to the target branch every time.
 
-**The cost.** On the target branch a folder stays at the top between its merge and the start of the next change. Nobody works there.
+**The cost.** On the target branch a folder stays at the top between its merge and the start of the next change. Nobody works there. The date does not order the changes of one day: inside a day the folders sort by name.
 
 **After merge the change page is frozen and stays on the server.** Its records are keyed by content, so they remain true whatever happens to the commits.
 
-Example: the rebuilt lab engine change in drim-dev merges with its folder at `azimuth/changes/lab-engine/`. A week later a change for the second lab starts. Its first commit moves `lab-engine/` into `azimuth/changes/finished/`. From then on the branch shows one open folder.
+Example: the rebuilt lab engine change in drim-dev merges on 2 December 2026 with its folder at `azimuth/changes/lab-engine/`. A week later a change for the second lab starts. Its first commit moves the folder to `azimuth/changes/finished/2026-12-02-lab-engine/`. From then on the branch shows one open folder.
 
 ## Claims, structure and explanations
 
