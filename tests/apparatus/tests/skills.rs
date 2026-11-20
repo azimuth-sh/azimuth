@@ -57,6 +57,26 @@ fn written(repo: &Repo) -> Vec<String> {
     paths
 }
 
+// Rows of prose in the lists are shown by a person's reading; this test keeps the shipped
+// text equal to what was read.
+#[test]
+fn installed_skill_matches_the_text_a_person_accepted() {
+    // A person accepted the whole skill text on 2026-11-20.
+    const ACCEPTED_SKILL_SHA256: &str =
+        "b84fb2e57fba2e0e6a0a75c80414cf1793d74c701d621879b26688aa04ae6a83";
+
+    let repo = Repo::sample();
+    install(&repo, "codex");
+    let (text, _) = split_last_line(&repo.read(SKILL_FILE));
+    assert_eq!(
+        sha256_hex(text.as_bytes()),
+        ACCEPTED_SKILL_SHA256,
+        "The skill text differs from the text that a person accepted. A person reads the new \
+         text or its diff; then a session that did not write the text sets this value. \
+         The author of a text never does."
+    );
+}
+
 // behavior: It writes the skill as tracked files, in one copy
 #[test]
 fn skills_install_writes_one_visible_copy() {
