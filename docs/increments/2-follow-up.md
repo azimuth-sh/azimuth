@@ -32,7 +32,7 @@ Step 1 of the shipped skill already tells the agent to move every change folder 
 | It says that every part carries the marker of the Check | All of them carry the marker of the Check |
 | It says that a Check is never made only of tests of one part in isolation | A Check is never made only of tests of one part in isolation. |
 | It gives the order of the claim of such a Check: the door, what each part shows, and last what is not shown | Its order is fixed: through which door the test looks, what each part shows, and last what is not shown. |
-| It says that a journey, one test through several real operations, may be a part of several Checks and carries the marker of each | It carries the marker of every Check whose Scenario it passes through. |
+| It says that a journey, one test through several real operations, may be a part of several Checks and carries the marker of each Check that relies on it | It carries the marker of every Check that relies on it. |
 | It says that the claim of each such Check names the stretch of the journey that it relies on | The claim of each such Check names the stretch of the journey that it relies on |
 | It says that a Check also has a test of one operation alone, where that operation can be tested alone | Where one operation can be tested alone, the Check also has a test of that operation alone |
 

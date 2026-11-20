@@ -201,7 +201,7 @@ The cost. Through increments 1 to 3 no Requirement is reviewed by anything but t
 
 **`realization.md` is written before the last run of the Build.** Every file is an input of a Check, so a file that is written after the run makes its Checks owed again.
 
-**At the end of the Intent step lint may still report two findings, and no other.** A Check that this change adds has no marked test, because its test is written in the Build. A marker names a Check that this change removes, because the test leaves in the Build. Both findings are correct, and the order of the steps makes them unavoidable: the person reads the intent before any code exists. Every other finding and every reading error is gone before the stop. The skill names the two, and the agent lists what remains when it stops. Lint itself does not change and knows no step.
+**At the end of the Intent step lint may still report two findings, and no other.** A Check that this change adds has no marked test, because its test is written in the Build. A marker names a Check that this change removes, because the marker leaves in the Build. Its test leaves with it only when the test carries no other marker. Both findings are correct, and the order of the steps makes them unavoidable: the person reads the intent before any code exists. Every other finding and every reading error is gone before the stop. The skill names the two, and the agent lists what remains when it stops. Lint itself does not change and knows no step.
 
 The cost. The agent judges which finding belongs to the change, so a wrong marker in another file can hide among the expected ones. It does not reach a merge, because the commit lane lints again at the hand over and fails on any finding.
 
@@ -720,7 +720,7 @@ The cost. That the two parts together show the Scenario is a judgment, and no to
 
 Example: a Scenario says that a grant that cannot be is refused. One test sends one malformed grant through the API and reads that no grant was made. Six isolated tests give the validator a well-formed grant, a kind that does not exist, a key of a wrong shape, two holders and no holder. All seven carry the marker `malformed-grant-is-refused`. The isolated tests of another operation had passed while the API answered 500 for it, because its validator never ran. Only a test through the API noticed.
 
-**A journey is one test that goes through several real operations of the system, and it may be a part of several Checks.** It shows what no test of one operation shows: that the operations fit together, for example that one writes what another reads. It carries the marker of every Check whose Scenario it passes through.
+**A journey is one test that goes through several real operations of the system, and it may be a part of several Checks.** It shows what no test of one operation shows: that the operations fit together, for example that one writes what another reads. It carries the marker of every Check that relies on it.
 
 | Rule | Why |
 | --- | --- |
