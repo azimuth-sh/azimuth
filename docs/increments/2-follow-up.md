@@ -4,7 +4,7 @@ This is the list of behaviors for a short pass between the second and the third 
 
 Each row is one observable fact. The second cell is copied exactly from `docs/design.md`. A plain test fails when a quoted sentence is no longer in that file. A behavior with no sentence to quote is not built.
 
-Status of this list: read and accepted by a person on 2026-11-20, in four sittings: 38 rows, eleven more after five decisions, ten more with three changed after an independent review, and one more about the order of tests and code.
+Status of this list: read and accepted by a person on 2026-11-20, in five sittings: 38 rows, eleven more after five decisions, ten more with three changed after an independent review, one more about the order of tests and code, and twelve more with two changed after a second review.
 
 ## The skill: finished folders
 
@@ -19,6 +19,8 @@ Step 1 of the shipped skill already tells the agent to move every change folder 
 | Run on two branches that start from the same target branch, the command prints the same day | both made the same rename, because both read the same date from git and nobody types it |
 | For a folder that arrived by a fast-forward, the command prints the day of the commit that first brought the folder | The date is then the day of the commit that first brought the folder, which can be earlier than the arrival. |
 | Step 1 tells the agent to read the day in a clone that has the whole history of the target branch | The process reads the day in a clone that has the whole history of the target branch. |
+| Step 1 says where the target branch is named: in `azimuth/project.toml` | The target branch is named in the project file |
+| Step 1 says that the change gets a name that no change used before | A change name is never used twice. |
 
 ## The skill: Scenarios
 
@@ -39,6 +41,9 @@ Step 1 of the shipped skill already tells the agent to move every change folder 
 | It says that the claim of each such Check names the stretch of the journey that it relies on | The claim of each such Check names the stretch of the journey that it relies on |
 | It says that a Check also has a test of one operation alone, where that operation can be tested alone | Where one operation can be tested alone, the Check also has a test of that operation alone |
 | It says that when the change removes a Check, the marker leaves, and its test leaves only when the test carries no other marker | Its test leaves with it only when the test carries no other marker. |
+| It says what a Check is and where it stands: one claim about its Scenario, under that Scenario in `verification.md` | A Check states one claim about a Scenario |
+| It says that a Check belongs to one suite, and that evidence from another suite is another Check under the Scenario | Evidence from two suites means two Checks under one Scenario. |
+| Step 3 says what a marker is and where it stands: it enrolls a test in a Check, on a test or on a class, in the form that the suite declares in `azimuth/project.toml` | A marker enrolls a test in a Check. |
 
 ## The skill: the plan
 
@@ -67,11 +72,16 @@ Step 1 of the shipped skill already tells the agent to move every change folder 
 | Step 3 tells the agent to move a proposed decision into `realization.md` only when the finished code follows it | It moves to `realization.md` only if the finished code follows it. |
 | Step 3 puts the tests through a door before the code, and the tests of one part in isolation after it, written from the Scenario and not from the code | A test of one part in isolation needs the part and is written after it, from the Scenario and not from the code. |
 | Step 3 puts the writing of `realization.md` before the last run | `realization.md` is written before the last run of the Build. |
+| Step 3 says where `realization.md` stands: beside `specification.md`, in the folder of the module | specification.md, realization.md and verification.md |
+| Step 3 says what `realization.md` holds: the heading of the Requirement again, its roots, and its decisions with their reasons, where a root marks where the realization starts | A root marks where the realization of a Requirement starts. |
 | Step 3 ends when `azimuth run` succeeds and `azimuth status` names nothing that a run could settle | runs `azimuth run` until it succeeds and `azimuth status` names nothing that a run could settle |
 | It says what may be left: a review, which this version does not record, a Check that runs only in CI, and a Check that cannot run here | a review, which this version does not record, a Check that runs only in CI, or a Check that cannot run here |
 | It says that a Check that a run here could settle is work of the Build | A Check that a run here could settle is work of the Build. |
 | Step 4 tells the agent to name every proposed decision that the finished code does not follow, and to say why | At the hand over the agent names every proposed decision that the finished code does not follow, and says why |
 | Step 4 tells the agent to name what `azimuth status` still names | The agent names what is left at the hand over. |
+| Step 4 says that a declared review is still owed and is done outside Azimuth | Until increment 4 the review is done outside Azimuth, and status shows it as owed. |
+| Step 4 says what follows a commit lane that fails: after status 1 the agent repairs the code or the tests, after 2 the model, and it runs the lane again | after 1 an agent fixes the code or the tests, and after 2 it fixes the model, the command line or the installation |
+| Step 4 tells the agent to name a proposed decision that served a Requirement with no `Realization:` as archived with the plan | A decision for such a Requirement has no `realization.md` to move to, and it is archived with the plan |
 
 ## `azimuth check show`
 
