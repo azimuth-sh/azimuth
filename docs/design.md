@@ -1732,6 +1732,8 @@ They run nothing and need no network. They read the tree and the local store. Ea
 
 The format `check-1` gains two fields for it, `markers` and `tests`. `failing_tests` stays, and it holds the tests of that list whose outcome is "failed". Adding a field does not raise the number of a format.
 
+An entry of `markers` holds `file`, the path from the root of the repository, and `line`. An entry of `tests` holds `name`, `outcome` and `duration_ms`, as a result keeps them. A Check with no result has an empty `tests`, and the text says that no result exists yet. A Check with no marker has an empty `markers`.
+
 The cost. Every result grows by the names of its tests. And after an edit that adds a test, the second list lacks that test until the next run. The first list shows its marker at once.
 
 Example: the Check `admin-takes-back-a-grant` has three tests in two classes. `azimuth check show` prints two marker lines, one on a class and one on a method, and under the last result three names, each with "passed". Without the second list a reader sees a Check that passed and cannot tell that two of its three tests are isolated tests of a validator.
@@ -1799,7 +1801,7 @@ Example: `azimuth status --json` for one Requirement whose Check is kept.
 | --- | --- | --- |
 | `status-1` | `azimuth status` | `requirements`, each with `id`, `module`, `state`, `verification`, `realization`, `approval` and `scenarios`. Each Scenario has `id` and `checks`. Each Check has `id`, `state`, `reason` and `detail`. Then `skipped_records` and `process` |
 | `requirement-1` | `azimuth requirement show` | `format`, and beside it the fields of one Requirement entry of `status-1` |
-| `check-1` | `azimuth check show` | `id`, `requirement`, `scenario`, `suite`, `claim`, `reuse`, `state`, `reason`, `detail`, `parts_changed`, `files_changed`, `failing_tests`, and `result` with `where`, `commit`, `edited_paths` and `at` |
+| `check-1` | `azimuth check show` | `id`, `requirement`, `scenario`, `suite`, `claim`, `reuse`, `state`, `reason`, `detail`, `parts_changed`, `files_changed`, `failing_tests`, and `result` with `where`, `commit`, `edited_paths` and `at`. Also `markers` with `file` and `line`, and `tests` with `name`, `outcome` and `duration_ms` |
 | `change-1` | `azimuth change diff` | `target`, `base`, `class`, then `requirements`, `scenarios` and `checks`, each with `added`, `changed` and `removed`. Then `markers_removed`, `not_compared` and `rigor_lowered` |
 | `lint-1` | `azimuth lint` | `findings`, each with `kind`, `file`, `line` and `message` |
 | `run-1` | `azimuth run` and `azimuth check run` | `lane`, `outcome`, `suites` with `name`, `launch` and `duration_ms`, `checks` with `id`, `state`, `reason`, `detail`, `failing_tests` and `duration_ms`, and `findings` in the commit lane |
