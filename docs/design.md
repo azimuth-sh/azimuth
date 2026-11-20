@@ -716,6 +716,16 @@ The cost. That the two parts together show the Scenario is a judgment, and no to
 
 Example: a Scenario says that a grant that cannot be is refused. One test sends one malformed grant through the API and reads that no grant was made. Six isolated tests give the validator a well-formed grant, a kind that does not exist, a key of a wrong shape, two holders and no holder. All seven carry the marker `malformed-grant-is-refused`. The isolated tests of another operation had passed while the API answered 500 for it, because its validator never ran. Only a test through the API noticed.
 
+**A journey is one test that goes through several real operations of the system, and it may be a part of several Checks.** It shows what no test of one operation shows: that the operations fit together, for example that one writes what another reads. It carries the marker of every Check whose Scenario it passes through.
+
+| Rule | Why |
+| --- | --- |
+| The claim of each such Check names the stretch of the journey that it relies on | a marker says only that the test belongs to the Check, and not which of its steps |
+| One failed journey fails every Check that it carries | the Check rule does not change |
+| Where one operation can be tested alone, the Check also has a test of that operation alone | a failed journey does not say which operation broke |
+
+The cost. One fault early in a journey shows as several failed Checks. And the journey is run again whenever any of its Checks is owed.
+
 ### Steps and roles
 
 **A test is made of steps, and each step has a role.**
