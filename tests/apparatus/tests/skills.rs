@@ -1406,6 +1406,55 @@ fn step_3_keeps_only_decisions_the_finished_code_follows() {
     );
 }
 
+// behavior-2-follow-up: Step 3 puts the tests through a door before the code, and the tests of one part in isolation after it, written from the Scenario and not from the code
+#[test]
+fn step_3_writes_door_tests_before_code_and_isolated_tests_after_from_the_scenario() {
+    let step = installed_step(3);
+    let door = rule_sentence(&step, "write tests through a door before the code", |s| {
+        s.contains("test") && s.contains("door") && s.contains("writ")
+            && s.contains("before") && s.contains("code")
+    });
+    // The source of isolated tests may share the sentence about the writing order.
+    assert_affirmative(&door.replacen("not from the code", "", 1));
+    let before = door.find("before").unwrap();
+    let code = door.find("code").unwrap();
+    let test = door.find("test").unwrap();
+    assert!(
+        before < code && (test < before || code < test),
+        "the code precedes the door tests: {door}"
+    );
+
+    let isolated = rule_sentence(
+        &step,
+        "write tests of one part in isolation after the part, from the Scenario and not from the code",
+        |s| {
+            s.contains("test")
+                && contains_any(s, &["isolat", "unit test"])
+                && s.contains("writ")
+                && s.contains("after")
+                && s.contains("from the scenario")
+                && s.contains("not from the code")
+        },
+    );
+    // Remove only the rule's own exclusion; any other reversal must still fail.
+    assert_affirmative(&isolated.replacen("not from the code", "", 1));
+    let after = isolated.find("after").unwrap();
+    let follows = isolated[after + "after".len()..].trim_start();
+    assert!(
+        ["the code", "writing the code", "the part", "writing the part", "it"]
+            .iter()
+            .any(|object| follows.strip_prefix(object).is_some_and(|rest| {
+                rest.chars().next().is_none_or(|c| !c.is_alphanumeric())
+            })),
+        "the isolated tests must follow the code or the part: {isolated}"
+    );
+    assert!(
+        isolated.find("from the scenario").unwrap()
+            < isolated.find("not from the code").unwrap(),
+        "the isolated tests have the wrong source: {isolated}"
+    );
+}
+
 // behavior-2-follow-up: Step 3 puts the writing of `realization.md` before the last run
 #[test]
 fn step_3_writes_realization_before_the_last_run() {
