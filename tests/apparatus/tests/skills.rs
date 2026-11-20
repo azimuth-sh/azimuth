@@ -862,6 +862,205 @@ fn step_1_requires_a_change_name_that_has_never_been_used() {
     });
 }
 
+// The five definitions may share a sentence or a table row group. Their own negative
+// phrases describe the content, rather than reversing an instruction about a part.
+fn proposal_part_sentence(rule: &str, holds: impl Fn(&str) -> bool) {
+    let sentence = rule_sentence(&installed_step(1), rule, holds);
+    assert_affirmative(&sentence
+        .replace("cannot now", "").replace("can't now", "")
+        .replace("could not before", "").replace("couldn't before", "")
+        .replace("not possible now", "").replace("does not include", ""));
+}
+
+// behavior-2-follow-up: Step 1 says what the Outcome holds: what somebody can do or observe after the change that they cannot now, in their words
+#[test]
+fn step_1_defines_the_outcome_in_the_persons_words() {
+    proposal_part_sentence("Outcome holds the new ability or observation in their words", |s| {
+        s.contains("outcome")
+            && contains_any(s, &["somebody", "someone", "person", "user", "they"])
+            && contains_any(s, &["do", "observ", "see"])
+            && s.contains("after") && s.contains("change")
+            && contains_any(s, &["cannot now", "can't now", "could not before", "couldn't before", "not possible now"])
+            && contains_any(s, &["their words", "their own words", "person's words", "user's words"])
+    });
+}
+
+// behavior-2-follow-up: It says what the Sources hold: the sources and decision notes that the proposal relies on, and which part of each
+#[test]
+fn step_1_defines_the_sources_and_the_relied_on_parts() {
+    proposal_part_sentence("Sources names the sources, decision notes and the part of each relied on", |s| {
+        s.contains("sources") && s.contains("decision notes")
+            && contains_any(s, &["relies", "rely", "uses", "used", "draws", "based on"])
+            && contains_any(s, &["part", "section", "passage"])
+            && contains_any(s, &["each", "every"])
+    });
+}
+
+// behavior-2-follow-up: It says what the Boundary holds: what the change leaves out, each item with the name of its map row
+#[test]
+fn step_1_defines_the_boundary_with_a_map_row_for_each_item() {
+    proposal_part_sentence("Boundary names what is left out and each item's map row", |s| {
+        s.contains("boundary")
+            && contains_any(s, &["leaves out", "left out", "exclude", "out of scope", "does not include"])
+            && s.contains("map") && s.contains("row") && s.contains("name")
+            && contains_any(s, &["each", "every"])
+    });
+}
+
+// behavior-2-follow-up: It says what the Decisions hold: what this change settles, each with the alternative it rejects, one line each
+#[test]
+fn step_1_defines_the_decisions_with_rejected_alternatives_one_line_each() {
+    proposal_part_sentence("Decisions gives what the change settles and the rejected alternative, one line each", |s| {
+        s.contains("decisions") && s.contains("change")
+            && contains_any(s, &["settle", "decide", "resolve"])
+            && s.contains("alternative") && contains_any(s, &["reject", "discard"])
+            && contains_any(s, &["each", "every", "per decision"])
+            && contains_any(s, &["one line", "single line"])
+    });
+}
+
+// behavior-2-follow-up: It says what the Approver is: who is expected to approve the Scenarios
+#[test]
+fn step_1_defines_the_approver_of_the_scenarios() {
+    proposal_part_sentence("Approver names who is expected to approve the Scenarios", |s| {
+        s.contains("approver") && s.contains("scenario")
+            && contains_any(s, &["who", "person"])
+            && contains_any(s, &["approve", "approval"])
+    });
+}
+
+// behavior-2-follow-up: It says that a proposal holds no Scenarios, no plan and no completion conditions
+#[test]
+fn step_1_excludes_scenarios_plans_and_completion_conditions_from_the_proposal() {
+    let step = installed_step(1);
+    for content in ["scenario", "plan", "completion condition"] {
+        let sentence = rule_sentence(&step, &format!("the proposal excludes {content}"), |s| {
+            contains_any(s, &["proposal", "it holds", "it contains"])
+                && s.contains(content)
+                && contains_any(s, &["no ", "not hold", "not contain", "not include", "exclude", "leave out", "keep out", "never include"])
+        });
+        assert_affirmative(&sentence
+            .replace("no ", "").replace("not hold", "").replace("not contain", "")
+            .replace("not include", "").replace("never include", ""));
+    }
+}
+
+// behavior-2-follow-up: It says that a proposal that does not fit on one page, or has two outcomes, is several changes
+#[test]
+fn step_1_splits_a_proposal_that_exceeds_one_page_or_has_two_outcomes() {
+    let step = installed_step(1);
+    for trigger in ["page", "outcomes"] {
+        let sentence = rule_sentence(&step, &format!("a proposal with excess {trigger} is several changes"), |s| {
+            s.contains("proposal")
+                && contains_any(s, &["several changes", "multiple changes", "split", "separate changes"])
+                && if trigger == "page" {
+                    contains_any(s, &["one page", "single page"])
+                        && contains_any(s, &["does not fit", "doesn't fit", "cannot fit", "can't fit", "more than", "exceed", "longer than", "beyond"])
+                } else {
+                    contains_any(s, &["two outcomes", "multiple outcomes", "more than one outcome"])
+                }
+        });
+        assert_affirmative(&sentence
+            .replace("does not fit", "").replace("doesn't fit", "")
+            .replace("cannot fit", "").replace("can't fit", ""));
+    }
+}
+
+// behavior-2-follow-up: It says that a proposal is not edited after approval
+#[test]
+fn step_1_keeps_the_proposal_unchanged_after_approval() {
+    let sentence = rule_sentence(&installed_step(1), "the proposal is not edited after approval", |s| {
+        s.contains("proposal") && contains_any(s, &["after approval", "after it is approved", "once approved", "approved proposal"])
+            && (contains_any(s, &["unchanged", "immutable", "frozen"])
+                || (contains_any(s, &["edit", "rewrite", "alter", "change"])
+                    && contains_any(s, &["not", "never", "cannot", "can't", "don't"])))
+    });
+    assert_affirmative(&sentence
+        .replace("cannot", "").replace("can't", "").replace("don't", "")
+        .replace("not", "").replace("never", ""));
+}
+
+// behavior-2-follow-up: It says that a change of an exploration is written from its row of the map, and takes its name from the row
+#[test]
+fn step_1_uses_the_exploration_map_row_for_the_proposal_and_change_name() {
+    let step = installed_step(1);
+    let source = rule_sentence(&step, "a change of an exploration is written from its map row", |s| {
+        s.contains("exploration") && s.contains("map") && s.contains("row")
+            && contains_any(s, &["change", "proposal"])
+            && contains_any(s, &["from", "read", "use", "follow", "based on"])
+    });
+    let name = rule_sentence(&step, "the map row supplies the change name", |s| {
+        s.contains("row") && s.contains("name")
+            && contains_any(s, &["change its name", "change's name", "change’s name", "change name",
+                "name of the change", "name the change", "name from", "name comes from",
+                "name in", "name on", "name for", "row's name", "row’s name"])
+            && contains_any(s, &["gives", "supplies", "provides", "take", "use", "from", "named"])
+    });
+    // Taking the map's name and requiring an unused name may be said together.
+    for sentence in [&source, &name] {
+        assert_affirmative(&sentence
+            .replace("never been used", "").replace("never used", "")
+            .replace("no change used", "").replace("no earlier change", "")
+            .replace("not been used", "").replace("not used before", "")
+            .replace("never reuse", "").replace("do not reuse", "")
+            .replace("not the whole folder", "").replace("not the whole exploration folder", ""));
+    }
+    // A row reference must not also send the agent to read the exploration wholesale.
+    for sentence in sentences(&step).iter().filter(|s| {
+        s.contains("read") && s.contains("folder")
+            && contains_any(s, &["whole", "entire", "all of"])
+    }) {
+        assert!(contains_any(sentence, &["do not read", "does not read", "never read", "don't read",
+            "not the whole", "not the entire", "not whole", "not entire", "instead of reading", "rather than reading"]),
+            "step 1 tells the agent to read the whole exploration folder: {sentence}");
+    }
+}
+
+// behavior-2-follow-up: It says that a change with no exploration is written from the request of the person, and from `sources/` in its own folder when it has one
+#[test]
+fn step_1_uses_the_persons_request_and_own_sources_without_an_exploration() {
+    let step = installed_step(1);
+    let request = rule_sentence(&step, "without an exploration use the person's request", |s| {
+        s.contains("exploration")
+            && contains_any(s, &["no exploration", "without an exploration", "has no exploration", "not part of an exploration", "outside an exploration"])
+            && s.contains("request") && contains_any(s, &["person", "user"])
+            && contains_any(s, &["from", "use", "based on"])
+    });
+    assert_affirmative(&request
+        .replace("no exploration", "").replace("without an exploration", "")
+        .replace("not part of an exploration", ""));
+    let sources = rule_sentence(&step, "use sources/ in the change's own folder when present", |s| {
+        s.contains("sources/") && s.contains("folder")
+            && contains_any(s, &["own", "change's", "change’s", "change folder", "folder of the change"])
+            && contains_any(s, &["when", "if", "where present", "where available"])
+            && contains_any(s, &["from", "read", "use", "based on"])
+    });
+    assert_affirmative(&sources
+        .replace("no exploration", "").replace("without an exploration", "")
+        .replace("not part of an exploration", ""));
+}
+
+// behavior-2-follow-up: It says that the agent asks the person for what it cannot find there, and does not invent it
+#[test]
+fn step_1_asks_the_person_for_missing_information_and_does_not_invent_it() {
+    let step = installed_step(1);
+    let asking = rule_sentence(&step, "ask the person for what cannot be found in the inputs", |s| {
+        s.contains("ask") && contains_any(s, &["person", "user"])
+            && contains_any(s, &["cannot find", "can't find", "not find", "missing", "absent", "unavailable"])
+    });
+    assert_affirmative(&asking
+        .replace("cannot find", "").replace("can't find", "").replace("not find", "")
+        .replace("does not invent", "").replace("do not invent", "")
+        .replace("never invent", "").replace("don't invent", ""));
+    let invention = rule_sentence(&step, "do not invent missing information", |s| {
+        contains_any(s, &["does not invent", "do not invent", "never invent", "don't invent"])
+    });
+    assert_affirmative(&invention
+        .replace("does not invent", "").replace("do not invent", "")
+        .replace("never invent", "").replace("don't invent", "")
+        .replace("cannot find", "").replace("can't find", "").replace("not find", ""));
+}
+
 // behavior-2-follow-up: Step 2 says that a Requirement and its Scenarios speak about the system as somebody outside it meets it
 #[test]
 fn step_2_keeps_requirements_and_scenarios_outside_the_system() {
