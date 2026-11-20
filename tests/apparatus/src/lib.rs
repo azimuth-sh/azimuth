@@ -920,15 +920,22 @@ pub const BEHAVIOR_LISTS: [&str; 4] = [
     "increments/release.md",
 ];
 
-/// One row of a behavior table in a list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RowKind {
+    Behavior,
+    Prose,
+}
+
+/// One row of a behavior table in a list, including rows of prose.
 #[derive(Debug, Clone)]
 pub struct BehaviorRow {
     pub list: String,
     pub section: String,
     pub behavior: String,
     pub quote: String,
-    /// False in the sections whose rows have no test in this repository: "Left for increment 4"
-    /// of list 1, and "Proven by the first tag" of the release list, which a pushed tag proves.
+    pub kind: RowKind,
+    /// False for prose and in the sections whose rows have no test in this repository:
+    /// "Left for increment 4" of list 1, and "Proven by the first tag" of the release list.
     pub needs_test: bool,
 }
 
@@ -938,30 +945,46 @@ pub fn behavior_rows() -> Vec<BehaviorRow> {
     let mut rows = Vec::new();
     for list in BEHAVIOR_LISTS {
         let text = fs::read_to_string(docs_dir().join(list)).unwrap_or_else(|_| panic!("docs/{list}"));
-        let mut section = String::new();
-        let mut in_behavior_table = false;
-        let mut previous_was_table = false;
-        for line in text.lines() {
-            if let Some(heading) = line.strip_prefix("## ") {
-                section = heading.trim().to_string();
+        rows.extend(behavior_rows_in(list, &text));
+    }
+    rows
+}
+
+fn behavior_rows_in(list: &str, text: &str) -> Vec<BehaviorRow> {
+    let mut rows = Vec::new();
+    let mut section = String::new();
+    let mut kind = RowKind::Behavior;
+    let mut first_paragraph = false;
+    let mut in_behavior_table = false;
+    let mut previous_was_table = false;
+    for line in text.lines() {
+        if let Some(heading) = line.strip_prefix("## ") {
+            section = heading.trim().to_string();
+            kind = RowKind::Behavior;
+            first_paragraph = true;
+        } else if first_paragraph && !line.trim().is_empty() {
+            if line.trim_start().starts_with("Rows of prose:") {
+                kind = RowKind::Prose;
             }
-            let is_table = line.starts_with('|');
-            if is_table && !previous_was_table {
-                in_behavior_table = line.starts_with("| Behavior |");
-                previous_was_table = true;
-                continue;
-            }
-            previous_was_table = is_table;
-            if !is_table || !in_behavior_table || line.starts_with("| ---") {
-                continue;
-            }
-            let body = &line[2..];
-            let split = body.find(" | ").unwrap_or_else(|| panic!("a row has two cells: {line}"));
-            let behavior = body[..split].trim().to_string();
-            let quote = body[split + 3..].trim_end().trim_end_matches('|').trim_end().to_string();
-            let needs_test = !(section.starts_with("Left for increment 4") || section.starts_with("Proven by the first tag"));
-            rows.push(BehaviorRow { list: list.to_string(), section: section.clone(), behavior, quote, needs_test });
+            first_paragraph = false;
         }
+        let is_table = line.starts_with('|');
+        if is_table && !previous_was_table {
+            in_behavior_table = line.starts_with("| Behavior |");
+            previous_was_table = true;
+            continue;
+        }
+        previous_was_table = is_table;
+        if !is_table || !in_behavior_table || line.starts_with("| ---") {
+            continue;
+        }
+        let body = &line[2..];
+        let split = body.find(" | ").unwrap_or_else(|| panic!("a row has two cells: {line}"));
+        let behavior = body[..split].trim().to_string();
+        let quote = body[split + 3..].trim_end().trim_end_matches('|').trim_end().to_string();
+        let needs_test = kind == RowKind::Behavior
+            && !(section.starts_with("Left for increment 4") || section.starts_with("Proven by the first tag"));
+        rows.push(BehaviorRow { list: list.to_string(), section: section.clone(), behavior, quote, kind, needs_test });
     }
     rows
 }
@@ -1390,6 +1413,37 @@ pub fn assert_no_file_names(text: &str, files: &[&str]) {
 #[cfg(test)]
 mod apparatus_checks {
     use super::*;
+
+    #[test]
+    fn the_list_reader_distinguishes_prose_from_behavior() {
+        let rows = behavior_rows_in("list.md", "\
+## The text
+
+Rows of prose: a person reads the text.
+
+| Behavior | Quote from the design |
+| --- | --- |
+| The text explains the rule | The rule is explained. |
+
+## The command
+
+A test runs the command.
+
+Rows of prose: this later paragraph does not mark the section.
+
+| Behavior | Quote from the design |
+| --- | --- |
+| The command prints the result | The result is printed. |
+");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].kind, RowKind::Prose);
+        assert!(!rows[0].needs_test);
+        assert_eq!(rows[0].behavior, "The text explains the rule");
+        assert_eq!(rows[0].quote, "The rule is explained.");
+        assert_eq!(rows[1].kind, RowKind::Behavior);
+        assert!(rows[1].needs_test);
+        assert_eq!(rows[1].behavior, "The command prints the result");
+    }
 
     #[test]
     fn a_sample_copy_keeps_git_files_and_omits_ignored_output() {
