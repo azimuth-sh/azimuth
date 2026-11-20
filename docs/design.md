@@ -319,10 +319,10 @@ The cost. The sums file sits beside the binaries. It catches a broken download a
 | --- | --- |
 | 1 | the workflow builds and packs everything, makes the draft release and stages the npm package |
 | 2 | a person approves in GitHub. The approval is asked for only when step 1 is green |
-| 3 | the workflow pushes to NuGet. A person approves once more, and the workflow publishes the draft |
+| 3 | the workflow pushes to NuGet and then publishes the draft, in one job |
 | 4 | a person approves the staged version at npm |
 
-**GitHub asks for the approval once for each job.** Two jobs name the environment: the push to NuGet and the publishing of the draft. So a person approves twice, and the second approval comes after NuGet took the version.
+**GitHub asks for the approval once for each job, so one job holds everything that follows the approval.** It pushes to NuGet and then publishes the draft, and a person approves once in GitHub.
 
 **A place that cannot stage is pushed last, and its push can be repeated.** That push is the point of no return. When the place refuses it, a person deletes the draft and rejects the staged version, and nothing was published. A push that is run again skips a version that is already there, so a release that failed half way is run again from the failed job and not abandoned.
 
@@ -344,7 +344,7 @@ Example: the tag `v0.2.0-alpha.3` has no release. Its staging job could not inst
 
 **The install of that npm is rehearsed at every push.** The job installs it into a folder of its own, because the global folder of the runner's image belongs to root and a job runs as an ordinary user. The install is a script in the repository. The staging job runs it, and the Linux job of CI runs it at every push and compares the version it gets, so a fault in it shows at a push and not at a tag.
 
-The cost. A release takes four acts of a person: the tag, two approvals in GitHub and the approval at npm. The second approval in GitHub guards nothing, because NuGet took the version before it, and a person who misses it leaves the release a draft while the package is public. The steps are not one transaction. NuGet can still refuse a push that passed every local test. With two places that cannot stage, one can take the version and the next one refuse it. Nothing makes the person approve at npm only after step 3, and between the steps the places disagree: the binaries are public before the adapter is. The settings live in GitHub and at npm and not in the repository, so no test proves that they are on. And a person approves their own run, so the gates guard against an accident and against an agent, and not against that person.
+The cost. A release takes three acts of a person: the tag, the approval in GitHub and the approval at npm. The job that follows the approval holds two rights at once: the identity for the registry and the right to write to the repository. The steps are not one transaction. NuGet can still refuse a push that passed every local test. With two places that cannot stage, one can take the version and the next one refuse it. Nothing makes the person approve at npm only after step 3, and between the steps the places disagree: the binaries are public before the adapter is. The settings live in GitHub and at npm and not in the repository, so no test proves that they are on. And a person approves their own run, so the gates guard against an accident and against an agent, and not against that person.
 
 Unmeasured: whether a staged version expires, and whether a rejected version number can be staged again.
 
