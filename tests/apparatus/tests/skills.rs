@@ -993,7 +993,8 @@ fn step_1_uses_the_exploration_map_row_for_the_proposal_and_change_name() {
         s.contains("row") && s.contains("name")
             && contains_any(s, &["change its name", "change's name", "change’s name", "change name",
                 "name of the change", "name the change", "name from", "name comes from",
-                "name in", "name on", "name for", "row's name", "row’s name"])
+                "name in", "name on", "name for", "row's name", "row’s name",
+                "the name of its row", "the name of the row"])
             && contains_any(s, &["gives", "supplies", "provides", "take", "use", "from", "named"])
     });
     // Taking the map's name and requiring an unused name may be said together.
@@ -1059,6 +1060,98 @@ fn step_1_asks_the_person_for_missing_information_and_does_not_invent_it() {
         .replace("does not invent", "").replace("do not invent", "")
         .replace("never invent", "").replace("don't invent", "")
         .replace("cannot find", "").replace("can't find", "").replace("not find", ""));
+}
+
+// behavior-2-follow-up: It says that a change of an exploration copies the files that its row names into `azimuth/changes/<name>/sources/`
+#[test]
+fn step_1_copies_the_files_named_by_the_row_into_the_changes_sources() {
+    let step = installed_step(1);
+    let sentence = rule_sentence(&step, "copy the files named by the exploration's row into the change's sources/", |s| {
+        contains_any(s, &["copy", "copies"])
+            && s.contains("row") && contains_any(s, &["name", "list", "specif"])
+            && contains_any(s, &["file", "what the row names", "what its row names"])
+            && s.contains("azimuth/changes/<name>/sources/")
+    });
+    assert_affirmative(&sentence.replace("not excerpts", "").replace("not an excerpt", ""));
+    // Naming the destination is insufficient if the instruction copies only an excerpt.
+    for sentence in sentences(&step).iter().filter(|s| {
+        contains_any(s, &["copy", "copies"])
+            && contains_any(s, &["excerpt", "part of a file", "part of each file", "section of a file", "section of each file"])
+    }) {
+        assert!(contains_any(sentence, &["do not copy", "does not copy", "never copy", "don't copy",
+            "not excerpts", "not an excerpt", "rather than excerpts", "instead of excerpts"]),
+            "step 1 tells the agent to copy an excerpt: {sentence}");
+    }
+}
+
+// behavior-2-follow-up: It says that a copy is the whole file, unchanged, under the same path inside `sources/`
+#[test]
+fn step_1_keeps_each_source_copy_whole_unchanged_and_under_the_same_path() {
+    let sentence = rule_sentence(&installed_step(1), "a copy is the whole file, unchanged, under the same path inside sources/", |s| {
+        contains_any(s, &["copy", "copies"])
+            && contains_any(s, &["whole file", "entire file", "complete file"])
+            && contains_any(s, &["unchanged", "unmodified", "without changes", "without edits"])
+            && contains_any(s, &["same path", "same relative path"])
+            && s.contains("sources/")
+    });
+    assert_affirmative(&sentence
+        .replace("unchanged", "").replace("without changes", "").replace("without edits", "")
+        .replace("not excerpts", "").replace("not an excerpt", ""));
+}
+
+// behavior-2-follow-up: It says that the Sources part names each source by its path from the change folder
+#[test]
+fn step_1_cites_each_source_by_its_path_from_the_change_folder() {
+    let step = installed_step(1);
+    let sentence = rule_sentence(&step, "Sources names each source by its path from the change folder", |s| {
+        s.contains("source") && s.contains("path")
+            && contains_any(s, &["each", "every"])
+            && contains_any(s, &["name", "cite", "list", "refer"])
+            && contains_any(s, &["from the change folder", "from this change's folder", "from the change's folder",
+                "relative to the change folder", "relative to this change's folder", "relative to the change's folder"])
+    });
+    assert_affirmative(&sentence);
+    for sentence in sentences(&step).iter().filter(|s| {
+        contains_any(s, &["cite", "citation", "source path", "name each source", "name every source",
+            "sources:", "for example", "for instance", "such as"])
+            && (s.contains("explorations/")
+                || (s.contains("exploration") && contains_any(s, &["folder", "sources/"])))
+    }) {
+        assert!(contains_any(sentence, &["do not cite", "does not cite", "never cite", "don't cite",
+            "not a citation", "not the exploration", "rather than", "instead of"]),
+            "step 1 gives a path into the exploration's folder as a citation: {sentence}");
+    }
+}
+
+// behavior-2-follow-up: It says that a source that only this change needs is written in the folder of this change and nowhere else
+#[test]
+fn step_1_writes_a_source_needed_only_by_this_change_in_its_own_folder_only() {
+    let sentence = rule_sentence(&installed_step(1), "a source needed only by this change is written in its folder and nowhere else", |s| {
+        s.contains("source")
+            && contains_any(s, &["only this change", "only one change", "only the change", "this change alone", "single change"])
+            && contains_any(s, &["need", "use", "relies"])
+            && contains_any(s, &["write", "written", "store", "keep"])
+            && contains_any(s, &["change folder", "change's folder", "change’s folder", "change's own folder",
+                "change’s own folder", "folder of this change", "folder of that change", "folder of the change"])
+            && contains_any(s, &["nowhere else", "no other folder", "only in"])
+    });
+    assert_affirmative(&sentence.replace("nowhere else", "").replace("no other folder", ""));
+}
+
+// behavior-2-follow-up: It says that a copy in a finished change folder is not touched when a later source replaces it
+#[test]
+fn step_1_leaves_finished_source_copies_untouched_when_a_later_source_replaces_them() {
+    let sentence = rule_sentence(&installed_step(1), "a copy in a finished change folder is not touched when a later source replaces it", |s| {
+        s.contains("cop") && s.contains("finished")
+            && contains_any(s, &["change folder", "change's folder", "folder of the change", "finished/", "finished change"])
+            && s.contains("source") && contains_any(s, &["later", "newer", "new source"])
+            && contains_any(s, &["replace", "supersed"])
+            && contains_any(s, &["not touched", "untouched", "unchanged", "never edit", "do not edit", "never update", "do not update"])
+    });
+    assert_affirmative(&sentence
+        .replace("is not touched", "").replace("are not touched", "").replace("not touched", "")
+        .replace("unchanged", "").replace("never edit", "").replace("do not edit", "")
+        .replace("never update", "").replace("do not update", ""));
 }
 
 // behavior-2-follow-up: Step 2 says that a Requirement and its Scenarios speak about the system as somebody outside it meets it
