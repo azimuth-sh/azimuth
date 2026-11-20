@@ -806,6 +806,81 @@ fn step_2_orders_the_claim_door_parts_then_limits() {
     );
 }
 
+// behavior-2-follow-up: It says that a journey, one test through several real operations, may be a part of several Checks and carries the marker of each
+#[test]
+fn step_2_allows_a_journey_to_carry_each_checks_marker() {
+    rule_in_paragraph(2, "a journey is one test through several real operations, may be part of several Checks and carries every Check's marker", |s| {
+        s.contains("journey") && contains_any(s, &["one test", "single test"])
+            && contains_any(s, &["several real operations", "multiple real operations", "more than one real operation"])
+            && s.contains("part") && contains_any(s, &["several checks", "multiple checks", "more than one check"])
+            && contains_any(s, &["may", "can"]) && s.contains("marker")
+            && contains_any(s, &["every check", "each check", "all checks"])
+            && s.contains("scenario") && contains_any(s, &["passes through", "goes through", "travers"])
+    });
+}
+
+// behavior-2-follow-up: It says that the claim of each such Check names the stretch of the journey that it relies on
+#[test]
+fn step_2_names_the_relied_on_stretch_in_each_journey_checks_claim() {
+    rule_in_paragraph(
+        2,
+        "each Check's claim names the stretch of the journey it relies on",
+        |s| {
+            s.contains("journey")
+                && s.contains("claim")
+                && contains_any(
+                    s,
+                    &[
+                        "each check",
+                        "every check",
+                        "each such check",
+                        "every such check",
+                    ],
+                )
+                && contains_any(s, &["stretch", "portion", "segment"])
+                && contains_any(s, &["relies on", "rely on", "depends on"])
+                && contains_any(s, &["name", "state", "say", "describe"])
+        },
+    );
+}
+
+// behavior-2-follow-up: It says that a Check also has a test of one operation alone, where that operation can be tested alone
+#[test]
+fn step_2_adds_an_operation_test_where_it_can_run_alone() {
+    rule_in_paragraph(
+        2,
+        "where an operation can be tested alone, the Check also has a test of that operation alone",
+        |s| {
+            s.contains("check")
+                && s.contains("operation")
+                && s.contains("test")
+                && contains_any(s, &["alone", "isolat"])
+                && contains_any(s, &["where", "when", "if"])
+                && contains_any(s, &["can be tested", "can test", "testable"])
+                && contains_any(
+                    s,
+                    &[
+                        "also has",
+                        "also needs",
+                        "also add",
+                        "also write",
+                        "must also",
+                        "add a test",
+                        "include a test",
+                    ],
+                )
+        },
+    );
+}
+
+// behavior-2-follow-up: It names the file of the plan, `azimuth/changes/<name>/plan.md`
+#[test]
+fn step_2_names_the_plan_file_in_the_change_folder() {
+    rule_in_paragraph(2, "the plan is azimuth/changes/<name>/plan.md", |s| {
+        s.contains("plan") && s.contains("azimuth/changes/<name>/plan.md")
+    });
+}
+
 // behavior-2-follow-up: Step 2 says that the change needs a plan when a Requirement that it adds or changes declares `Realization:`
 #[test]
 fn step_2_requires_a_plan_for_an_added_or_changed_realization_requirement() {

@@ -2,3 +2,4 @@
 test: issues-receipt
 # Check: late-return-is-fined
 outcome: passed
+duration: 23

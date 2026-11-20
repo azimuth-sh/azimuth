@@ -2,6 +2,8 @@
 # Check: late-return-is-fined
 test: charges-late-return
 outcome: failed
+duration: 7
 
 test: accepts-exact-fine
 outcome: passed
+duration: 11

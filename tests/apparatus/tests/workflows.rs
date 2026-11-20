@@ -864,6 +864,7 @@ fn the_site_starts_by_hand_or_from_the_release() {
 // behavior: In the release workflow the site is published after the job that publishes the release
 #[test]
 fn the_release_publishes_the_site_after_the_release() {
+    assert_default_conditions(&release_workflow());
     let all = all_jobs();
     let release = role(&all, "publish draft", publish_draft);
     assert_eq!(release.workflow, "publish.yml");
@@ -1078,7 +1079,7 @@ fn the_dotnet_sdk_is_pinned_to_a_line() {
 
 // behavior: The job that publishes the release and the job that pushes the package to NuGet both name the environment `release`
 #[test]
-fn exactly_the_two_publication_jobs_name_the_release_environment() {
+fn exactly_the_publication_jobs_name_the_release_environment() {
     let all = all_jobs();
     let publishing = role(&all, "publish draft", publish_draft);
     let pushing = role(&all, "NuGet push", nuget);
@@ -1086,7 +1087,12 @@ fn exactly_the_two_publication_jobs_name_the_release_environment() {
         all.iter()
             .filter(|j| j.environment.as_deref() == Some("release"))
             .count(),
-        2
+        if std::ptr::eq(publishing, pushing) {
+            1
+        } else {
+            2
+        },
+        "only the jobs that push to NuGet or publish the draft may name release"
     );
     for job in &all {
         let public = std::ptr::eq(job, publishing) || std::ptr::eq(job, pushing);
@@ -1565,13 +1571,212 @@ fn the_nuget_job_waits_for_both_first_phases() {
 // behavior-2: The draft is published only after the push to NuGet succeeded
 #[test]
 fn publication_of_the_draft_follows_the_successful_nuget_push() {
+    let root = release_workflow();
+    assert_default_conditions(&root);
     let all = all_jobs();
     let publication = role(&all, "publish draft", publish_draft);
     let pushing = role(&all, "NuGet push", nuget);
-    assert!(
-        depends_on(&all, publication, pushing),
-        "the draft can become public before NuGet accepts the package"
+    if std::ptr::eq(publication, pushing) {
+        assert_publication_after_successful_push(&root);
+    } else {
+        assert!(
+            depends_on(&all, publication, pushing),
+            "the draft can become public before NuGet accepts the package"
+        );
+    }
+}
+
+fn assert_publication_after_successful_push(root: &Node) {
+    let accepted = release_replay::replay_publication(root, false);
+    assert_eq!(
+        accepted.status, 0,
+        "the job failed with an accepted NuGet push: {}",
+        accepted.diagnostic
     );
+    let pushes: Vec<_> = accepted
+        .events
+        .iter()
+        .enumerate()
+        .filter(|(_, call)| call["verb"] == "nuget push")
+        .collect();
+    let publications: Vec<_> = accepted
+        .events
+        .iter()
+        .enumerate()
+        .filter(|(_, call)| call["verb"] == "edit")
+        .collect();
+    assert_eq!(
+        pushes.len(),
+        1,
+        "the publication job must push to NuGet: {:?}",
+        accepted.events
+    );
+    assert_eq!(
+        publications.len(),
+        1,
+        "the job must publish the draft: {:?}",
+        accepted.events
+    );
+    assert!(
+        pushes[0].0 < publications[0].0,
+        "the draft is published before the NuGet push: {:?}",
+        accepted.events
+    );
+    assert_eq!(
+        accepted.state["isDraft"], false,
+        "the successful push did not lead to a public release"
+    );
+
+    let refused = release_replay::replay_publication(root, true);
+    assert!(
+        refused
+            .events
+            .iter()
+            .any(|call| call["verb"] == "nuget push" && call["status"] == 1),
+        "the failure replay did not reach the refused NuGet push: {:?}: {}",
+        refused.events,
+        refused.diagnostic
+    );
+    assert_ne!(refused.status, 0, "a refused NuGet push must fail the job");
+    assert!(
+        refused.calls.iter().all(|call| call["verb"] == "view"),
+        "the draft was mutated despite the refused NuGet push: {:?}",
+        refused.calls
+    );
+    assert_eq!(
+        refused.state, refused.before,
+        "the refused push must leave the draft unchanged"
+    );
+}
+
+// behavior-2-follow-up: One job of the release workflow pushes to NuGet and then publishes the draft
+#[test]
+fn one_release_job_pushes_to_nuget_then_publishes_the_draft() {
+    let all = all_jobs();
+    let pushing = role(&all, "NuGet push", nuget);
+    let publishing = role(&all, "publish draft", publish_draft);
+    assert_eq!(pushing.workflow, "publish.yml");
+    assert!(
+        std::ptr::eq(pushing, publishing),
+        "NuGet push ({}/{}) and draft publication ({}/{}) must share one job",
+        pushing.workflow,
+        pushing.name,
+        publishing.workflow,
+        publishing.name
+    );
+    assert_publication_after_successful_push(&release_workflow());
+}
+
+// behavior-2-follow-up: Exactly one job of the release workflow names the environment `release`
+#[test]
+fn one_release_job_names_the_approval_environment() {
+    let all = all_jobs();
+    let approved: Vec<_> = all
+        .iter()
+        .filter(|job| {
+            job.workflow == "publish.yml" && job.environment.as_deref() == Some("release")
+        })
+        .collect();
+    assert_eq!(
+        approved.len(),
+        1,
+        "one job must name the release environment so GitHub asks once; found {:?}",
+        approved.iter().map(|job| &job.name).collect::<Vec<_>>()
+    );
+}
+
+// behavior-2-follow-up: That job may write to the contents of the repository and may ask for the identity for the registry, and no other job may do both
+#[test]
+fn only_the_approved_publication_job_holds_both_release_rights() {
+    let all = all_jobs();
+    let both: Vec<_> = all
+        .iter()
+        .filter(|job| {
+            job.workflow == "publish.yml"
+                && job.writes.iter().any(|right| right == "contents")
+                && job.writes.iter().any(|right| right == "id-token")
+        })
+        .collect();
+    assert_eq!(
+        both.len(),
+        1,
+        "one approved job must hold both contents: write and id-token: write; found {:?}",
+        both.iter().map(|job| &job.name).collect::<Vec<_>>()
+    );
+    let job = both[0];
+    assert_eq!(
+        job.environment.as_deref(),
+        Some("release"),
+        "the job holding both rights needs the release approval"
+    );
+    assert!(
+        std::ptr::eq(job, role(&all, "NuGet push", nuget))
+            && std::ptr::eq(job, role(&all, "publish draft", publish_draft)),
+        "the approved job holding both rights must push to NuGet and publish the draft"
+    );
+}
+
+#[test]
+fn publication_replay_guards_order_and_push_failure_inside_one_job() {
+    let parse = |text: &str| Node {
+        key: String::new(),
+        value: None,
+        children: read_yaml(text, "publication ordering control"),
+        line: 0,
+    };
+    let text = r#"jobs:
+  publish:
+    steps:
+      - uses: actions/download-artifact@inert
+        with:
+          name: package
+          path: package
+      - uses: NuGet/login@inert
+        id: registry
+      - run: dotnet nuget push package/*.nupkg --api-key "$NUGET_API_KEY"
+        env:
+          NUGET_API_KEY: ${{ steps.registry.outputs.NUGET_API_KEY }}
+      - run: gh release edit "$GITHUB_REF_NAME" --draft=false
+"#;
+    assert_publication_after_successful_push(&parse(text));
+    let push = "      - run: dotnet nuget push package/*.nupkg --api-key \"$NUGET_API_KEY\"\n        env:\n          NUGET_API_KEY: ${{ steps.registry.outputs.NUGET_API_KEY }}\n";
+    let publish = "      - run: gh release edit \"$GITHUB_REF_NAME\" --draft=false\n";
+    let together = text.replace(&format!("{push}{publish}"),
+        "      - run: dotnet nuget push package/*.nupkg; gh release edit \"$GITHUB_REF_NAME\" --draft=false\n");
+    assert_publication_after_successful_push(&parse(&together));
+    let rerun_safe = text.replace(
+        publish,
+        r#"      - run: |
+          if [ "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" = true ]; then
+            gh release edit "$GITHUB_REF_NAME" --draft=false
+          fi
+"#,
+    );
+    let already_public =
+        release_replay::replay_existing_release(&parse(&rerun_safe), "0.2.0-alpha.73", false, true);
+    assert_eq!(already_public.status, 0, "{}", already_public.diagnostic);
+    assert!(already_public
+        .calls
+        .iter()
+        .all(|call| call["verb"] == "view"));
+    assert_eq!(already_public.state, already_public.before);
+    // A dependency cannot protect operations in one job; the replay must reject these faults.
+    for invalid in [
+        text.replace(&format!("{push}{publish}"), &format!("{publish}{push}")),
+        text.replace(push, ""),
+        text.replace(
+            "--api-key \"$NUGET_API_KEY\"",
+            "--api-key \"$NUGET_API_KEY\" || true",
+        ),
+        together.replace("package/*.nupkg;", "package/*.nupkg || true;"),
+    ] {
+        let invalid_root = parse(&invalid);
+        assert!(
+            std::panic::catch_unwind(|| assert_publication_after_successful_push(&invalid_root))
+                .is_err(),
+            "the replay accepted publication before or without a successful push: {invalid}"
+        );
+    }
 }
 
 // behavior-2: The push to NuGet skips a version that is already there

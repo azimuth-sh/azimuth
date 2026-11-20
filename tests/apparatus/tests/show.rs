@@ -832,3 +832,115 @@ fn check_show_keeps_the_check_1_format_name() {
         "adding lists must not raise the format number"
     );
 }
+
+// behavior-2-follow-up: With `--json` an entry of `markers` holds `file`, the path from the root of the repository, and `line`
+#[test]
+fn check_show_json_names_each_marker_by_repository_path_and_line() {
+    let repo = return_parts_result();
+    let document = repo.check_show(LATE_RETURN);
+    let markers = document["markers"]
+        .as_array()
+        .unwrap_or_else(|| panic!("check-1 lacks markers with file and line: {document:#}"));
+    let mut actual: Vec<_> = markers
+        .iter()
+        .map(|marker| {
+            let file = marker["file"].as_str().unwrap_or_else(|| {
+                panic!("a marker needs its repository-relative file: {marker:#}")
+            });
+            let line = marker["line"]
+                .as_u64()
+                .unwrap_or_else(|| panic!("a marker needs its line number: {marker:#}"));
+            (file.to_string(), line)
+        })
+        .collect();
+    let mut expected: Vec<_> = [CLASS_RETURN, METHOD_RETURN]
+        .into_iter()
+        .map(|file| {
+            (
+                file.to_string(),
+                repo.line_of(file, &format!("# Check: {LATE_RETURN}")),
+            )
+        })
+        .collect();
+    actual.sort();
+    expected.sort();
+    assert_eq!(
+        actual, expected,
+        "markers must identify the two source lines, not the three tests"
+    );
+}
+
+// behavior-2-follow-up: An entry of `tests` holds `name`, `outcome` and `duration_ms`
+#[test]
+fn check_show_json_keeps_each_test_name_outcome_and_duration() {
+    let repo = return_parts_result();
+    let document = repo.check_show(LATE_RETURN);
+    let tests = document["tests"].as_array().unwrap_or_else(|| {
+        panic!("check-1 lacks tests with name, outcome and duration_ms: {document:#}")
+    });
+    let mut actual: Vec<_> = tests
+        .iter()
+        .map(|test| {
+            let name = test["name"]
+                .as_str()
+                .unwrap_or_else(|| panic!("a test needs its name: {test:#}"));
+            let outcome = test["outcome"]
+                .as_str()
+                .unwrap_or_else(|| panic!("a test needs its outcome: {test:#}"));
+            let duration = test["duration_ms"]
+                .as_u64()
+                .unwrap_or_else(|| panic!("a test needs its duration_ms: {test:#}"));
+            (name, outcome, duration)
+        })
+        .collect();
+    // Different durations expose a total or a made-up default in place of a test's duration.
+    let mut expected: Vec<_> = RETURN_TESTS
+        .into_iter()
+        .zip([7, 11, 23])
+        .map(|((name, outcome), duration)| (name, outcome, duration))
+        .collect();
+    actual.sort();
+    expected.sort();
+    assert_eq!(
+        actual, expected,
+        "tests must retain the names, outcomes and durations of all three tests"
+    );
+}
+
+// behavior-2-follow-up: For a Check with no result, `tests` is an empty list and the text says that no result exists yet
+#[test]
+fn check_show_without_a_result_has_no_tests_and_says_so() {
+    let repo = return_parts();
+    assert!(
+        repo.results_of(LATE_RETURN).is_empty(),
+        "the fixture already has a result"
+    );
+    let document = repo.check_show(LATE_RETURN);
+    assert_eq!(
+        document["tests"],
+        json!([]),
+        "a Check with no result needs an empty tests list: {document:#}"
+    );
+    let text = return_parts_text(&repo);
+    let lower = text.to_lowercase();
+    assert!(
+        lower.contains("no result") || lower.contains("not yet run") || lower.contains("never run"),
+        "check show must say that no result exists yet:\n{text}"
+    );
+}
+
+// behavior-2-follow-up: For a Check with no marker, `markers` is an empty list
+#[test]
+fn check_show_without_a_marker_has_an_empty_marker_list() {
+    let repo = return_parts_result();
+    // A saved result must not keep a marker alive after it is removed from source.
+    for file in [CLASS_RETURN, METHOD_RETURN] {
+        repo.replace(file, &format!("# Check: {LATE_RETURN}\n"), "");
+    }
+    let document = repo.check_show(LATE_RETURN);
+    assert_eq!(
+        document["markers"],
+        json!([]),
+        "a Check with no source marker needs an empty markers list: {document:#}"
+    );
+}
