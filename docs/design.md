@@ -176,11 +176,13 @@ Until increment 3 lands, a test has two outcomes only. Checks written before it 
 
 **The second adapter is the one for Playwright.** The first Requirement that needs it has a Scenario about what a person sees in a browser. A unit runner cannot prove it where a page loads its data on the server, because such a runner does not render that kind of page. A browser run does not have to be end to end: the suite may start only the frontend, with a stand-in where the API would be. A project can then have two Playwright suites with different facilities.
 
-**Increments 1 to 3 record no review.** A Requirement that declares one is shown with that review owed, and the reason says "this version records no reviews". A Requirement that declares none reads "not reviewed", as on every rung. So the first Requirements declare no review. Adding the declaration in increment 4 is class D and makes the approval of a person owed, once per Requirement.
+**Increments 1 to 3 record no review.** A Requirement that declares one is shown with that review owed, and the reason says "this version records no reviews". A Requirement that declares none reads "not reviewed", as on every rung. A Requirement may still declare a review. Until increment 4 the review is done outside Azimuth, and status shows it as owed. Adding the declaration in increment 4 is class D and makes the approval of a person owed, once per Requirement.
 
 A declaration is written `Verification: reviewed` or `Realization: reviewed`.
 
-**Until increment 4 nothing inside `realization.md` is read.** It is prose. Its one reader is the Realization Review, and without that review lint would check root lines that nothing uses. The written form of a root and a decision is decided with the behaviors of increment 4, when that reader exists. The fragment in the Roots part is an illustration.
+**From increment 3 on, lint reads the file roots in `realization.md`, and a file root that names no file is a finding. Nothing else inside the file is read until increment 4.** The rest is prose, and its one reader is the Realization Review. A wrong path is different, because it costs something before any review exists: the person who starts reading at the roots starts at nothing, and nobody is told. So the written form of a file root is decided in increment 3. The form of a kind root and of a decision is decided with the behaviors of increment 4, when their reader exists. The fragment in the Roots part is an illustration.
+
+Example: two roots of a Requirement about grants named `Features/Cohorts/AddCohortParticipant.cs`, and the file lives in `Features/Cohorts/Admin/`. Lint said "no finding", and the author found the error by reading the folder.
 
 The cost. Through increments 1 to 3 no Requirement is reviewed by anything but the person, and a Requirement that declares a review is never quiet.
 
@@ -190,10 +192,18 @@ The cost. Through increments 1 to 3 no Requirement is reviewed by anything but t
 | --- | --- | --- |
 | 1. Proposal | writes the one page with its five parts | yes. The person reads it |
 | 2. Intent | writes the Requirement and its Scenarios, then the Checks, and runs `azimuth lint` | yes. The person reads `azimuth change diff` before any code exists |
-| 3. Build | writes the marked tests from the Scenarios, then the code, and runs `azimuth run` until `azimuth status` is quiet | no |
+| 3. Build | writes the marked tests through a door from the Scenarios, then the code and the tests of one part in isolation, and runs `azimuth run` until it succeeds and `azimuth status` names nothing that a run could settle | no |
 | 4. Hand over | runs `azimuth run --lane commit`, then prints `azimuth change diff` and `azimuth status` | yes. The person merges |
 
-**At the end of the Intent step lint may still report two findings, and no other.** A Check that this change adds has no marked test, because its test is written in the Build. A marker names a Check that this change removes, because the test leaves in the Build. Both findings are correct, and the order of the steps makes them unavoidable: the person reads the intent before any code exists. Every other finding and every reading error is gone before the stop. The skill names the two, and the agent lists what remains when it stops. Lint itself does not change and knows no step.
+**Where the change needs a plan, the Intent stop shows the plan too.** The part "The implementation plan" says when a change needs one. The number of stops stays the same.
+
+**The Build ends when a run can settle nothing more.** `azimuth status` may then still name what this machine cannot settle: a review, which this version does not record, a Check that runs only in CI, or a Check that cannot run here. A note that blocks nothing, such as an edited process, may stay too. The agent names what is left at the hand over. A Check that a run here could settle is work of the Build.
+
+On a machine where a Check cannot run, the commit lane fails at the hand over. The agent names that Check and says that the commit lane of CI decides. It repairs nothing for it.
+
+**`realization.md` is written before the last run of the Build.** Every file is an input of a Check, so a file that is written after the run makes its Checks owed again.
+
+**At the end of the Intent step lint may still report two findings, and no other.** A Check that this change adds has no marked test, because its test is written in the Build. A marker names a Check that this change removes, because the marker leaves in the Build. Its test leaves with it only when the test carries no other marker. Both findings are correct, and the order of the steps makes them unavoidable: the person reads the intent before any code exists. Every other finding and every reading error is gone before the stop. The skill names the two, and the agent lists what remains when it stops. Lint itself does not change and knows no step.
 
 The cost. The agent judges which finding belongs to the change, so a wrong marker in another file can hide among the expected ones. It does not reach a merge, because the commit lane lints again at the hand over and fails on any finding.
 
@@ -201,7 +211,7 @@ Example: a change adds the Check `other-header-names-say-nothing`. At the stop o
 
 **A skill says the route and where to stop. It never restates a rule that the CLI checks.** A lint finding itself says what is wrong and what to do. A rule written in two places goes stale in one of them.
 
-Each later increment adds to this skill or adds one more: reviews and work records in increment 4, Challenges in increment 7. An exploration gets no skill yet. A skill is written when a second exploration shows what repeats.
+Each later increment adds to this skill or adds one more: reviews and work records in increment 4, Challenges in increment 7. An exploration gets a skill of its own for its form: which files it leaves, where they stand, and what a row of the map and a decision note hold. The skill for a change reads that form, so the form cannot stay a habit. How to explore is not decided yet, and that skill says nothing about it.
 
 The cost. There is no separate reviewing agent in increment 1. Between the second stop and the hand over the agent works alone, and the person is the only reader of what it built. That lasts until increment 4.
 
@@ -315,10 +325,10 @@ The cost. The sums file sits beside the binaries. It catches a broken download a
 | --- | --- |
 | 1 | the workflow builds and packs everything, makes the draft release and stages the npm package |
 | 2 | a person approves in GitHub. The approval is asked for only when step 1 is green |
-| 3 | the workflow pushes to NuGet. A person approves once more, and the workflow publishes the draft |
+| 3 | the workflow pushes to NuGet and then publishes the draft, in one job |
 | 4 | a person approves the staged version at npm |
 
-**GitHub asks for the approval once for each job.** Two jobs name the environment: the push to NuGet and the publishing of the draft. So a person approves twice, and the second approval comes after NuGet took the version.
+**GitHub asks for the approval once for each job, so one job holds everything that follows the approval.** It pushes to NuGet and then publishes the draft, and a person approves once in GitHub.
 
 **A place that cannot stage is pushed last, and its push can be repeated.** That push is the point of no return. When the place refuses it, a person deletes the draft and rejects the staged version, and nothing was published. A push that is run again skips a version that is already there, so a release that failed half way is run again from the failed job and not abandoned.
 
@@ -340,7 +350,7 @@ Example: the tag `v0.2.0-alpha.3` has no release. Its staging job could not inst
 
 **The install of that npm is rehearsed at every push.** The job installs it into a folder of its own, because the global folder of the runner's image belongs to root and a job runs as an ordinary user. The install is a script in the repository. The staging job runs it, and the Linux job of CI runs it at every push and compares the version it gets, so a fault in it shows at a push and not at a tag.
 
-The cost. A release takes four acts of a person: the tag, two approvals in GitHub and the approval at npm. The second approval in GitHub guards nothing, because NuGet took the version before it, and a person who misses it leaves the release a draft while the package is public. The steps are not one transaction. NuGet can still refuse a push that passed every local test. With two places that cannot stage, one can take the version and the next one refuse it. Nothing makes the person approve at npm only after step 3, and between the steps the places disagree: the binaries are public before the adapter is. The settings live in GitHub and at npm and not in the repository, so no test proves that they are on. And a person approves their own run, so the gates guard against an accident and against an agent, and not against that person.
+The cost. A release takes three acts of a person: the tag, the approval in GitHub and the approval at npm. The job that follows the approval holds two rights at once: the identity for the registry and the right to write to the repository. The steps are not one transaction. NuGet can still refuse a push that passed every local test. With two places that cannot stage, one can take the version and the next one refuse it. Nothing makes the person approve at npm only after step 3, and between the steps the places disagree: the binaries are public before the adapter is. The settings live in GitHub and at npm and not in the repository, so no test proves that they are on. And a person approves their own run, so the gates guard against an accident and against an agent, and not against that person.
 
 Unmeasured: whether a staged version expires, and whether a rejected version number can be staged again.
 
@@ -463,6 +473,20 @@ Example: a test of "a second run on unchanged content runs nothing" copies the s
 | Check | A claim about a Scenario, verified by enrolled tests |
 
 A Requirement or Scenario may carry `Context:` conditions. They say under which configuration of a running component it applies.
+
+**A Requirement describes what the system does for somebody outside it, as a whole. It is not cut by component.**
+
+| Rule | Why |
+| --- | --- |
+| A Requirement and its Scenarios speak about the system as somebody outside it meets it: a learner, an admin, an operator, another system | that somebody does not know where the website ends and the API begins. A cut by component repeats the architecture in the model |
+| A Requirement names a component boundary only when the promise is made at that boundary to somebody outside it | a security boundary must hold when somebody goes around the component in front of it. A consumer that is not the team's own, or is released apart, was promised the address and the answer |
+| A Scenario may have Checks at several doors, in several suites. The claim of each Check says through which door it looks | a Scenario about the whole can look proven while one layer is untested. The Verification Review judges whether the Checks together show the Scenario |
+| The contract between the team's own components is realization. It is proposed in the plan and kept in `realization.md` when the code follows it and its Requirement declares `Realization:` | it can change without any change of what was promised |
+| A feature that is built layer by layer keeps its Requirement, and each layer adds Checks | the Requirement does not change when the building does |
+
+**The cost.** A change in which no Requirement declares `Realization:` has no plan. In such a change the contract between components is the agent's choice alone, and a person sees it only in the code.
+
+Example: in drim-dev an admin gives a user access to a lab. The Scenario says that an admin gives a grant for a lab to a user, and that the user then holds access. Its first Check looks through the API, because no page for an admin exists yet, and its claim says so. When the page is built, a Check in a browser is added to the same Scenario. The address `POST /api/grants` and its statuses are in the plan. The Requirement `private-api-admits-only-the-bff` below is the other case: its promise is made at the API itself, to whoever goes around the website.
 
 **The written form: a heading with a structure word and an id, free prose under it, and declaration lines.**
 
@@ -684,6 +708,30 @@ There is no count of unmarked tests, because such a figure invites a campaign to
 The cost. The gap between what Azimuth proves and what the tests cover is invisible in Azimuth. Somebody who wants that picture reads the list of Requirements in the model.
 
 Example: the API test project of drim-dev has 249 files with test methods. After the first change two tests carry a marker. `azimuth run` starts xUnit for those two, and the team's own workflow keeps running all of them. A failure in an unmarked test fails that workflow and changes nothing in `azimuth status`.
+
+### The parts of a Check
+
+**A Check may be made of parts: a test through a door of the system, and tests of one part in isolation.** All of them carry the marker of the Check, and the Check rule does not change: one failed test fails the Check.
+
+- **A Check is never made only of tests of one part in isolation.** Such a test shows what the part does. It does not show that the system uses the part.
+- **The test through a door shows that the part is wired in.** It is needed once for each place where the part is wired, for example once for each operation that has a validator, and not once for a Requirement.
+- **The claim says what each part shows.** Its order is fixed: through which door the test looks, what each part shows, and last what is not shown.
+- **The parts are one Check and not several.** The claim is one argument with two steps. As separate Checks, the test through the door could be deleted and the Scenario would still show Checks that pass.
+- **The test through a door is written before the code.** A test of one part in isolation needs the part and is written after it, from the Scenario and not from the code.
+
+The cost. That the two parts together show the Scenario is a judgment, and no tool makes it. The Verification Review does. A reader needs to see the parts, so `azimuth check show` names the tests of a Check.
+
+Example: a Scenario says that a grant that cannot be is refused. One test sends one malformed grant through the API and reads that no grant was made. Six isolated tests give the validator a well-formed grant, a kind that does not exist, a key of a wrong shape, two holders and no holder. All seven carry the marker `malformed-grant-is-refused`. The isolated tests of another operation had passed while the API answered 500 for it, because its validator never ran. Only a test through the API noticed.
+
+**A journey is one test that goes through several real operations of the system, and it may be a part of several Checks.** It shows what no test of one operation shows: that the operations fit together, for example that one writes what another reads. It carries the marker of every Check that relies on it.
+
+| Rule | Why |
+| --- | --- |
+| The claim of each such Check names the stretch of the journey that it relies on | a marker says only that the test belongs to the Check, and not which of its steps |
+| One failed journey fails every Check that it carries | the Check rule does not change |
+| Where one operation can be tested alone, the Check also has a test of that operation alone | a failed journey does not say which operation broke |
+
+The cost. One fault early in a journey shows as several failed Checks. And the journey is run again whenever any of its Checks is owed.
 
 ### Steps and roles
 
@@ -1560,7 +1608,7 @@ Measured on 2026-11-15 with Codex CLI 0.167.0: under its workspace sandbox a com
 | --- | --- | --- |
 | `azimuth/project.toml`, the project file, in the model repository | yes | the topology: repositories, areas with mounts, components, reference environments |
 | `azimuth/model/<module>/, with README.md, specification.md, realization.md and verification.md` | yes | Requirements, Scenarios, terms, roots, decisions |
-| `azimuth/changes/<name>/` | yes | `proposal.md` and `sources/`. Finished ones move to `changes/finished/` |
+| `azimuth/changes/<name>/` | yes | `proposal.md`, `sources/`, and `plan.md` when the change needs a plan. Finished ones move to `changes/finished/<date>-<name>/` |
 | `azimuth/explorations/<name>/` | yes | `map.md` and `sources/`, with the decision notes |
 | `azimuth/repository` file, in a code repository | yes | the project id and the repository's own name. Nothing else |
 | `.azimuth/` in the worktree | no, ignored by git | the outbox, and the local paths to the other checkouts |
@@ -1690,6 +1738,25 @@ A lane is wider than Checks. Later it also runs Challenges and the start-up guar
 
 They run nothing and need no network. They read the tree and the local store. Each has a form for agents with the same content as structured output, so an agent never parses text meant for a person.
 
+**`azimuth check show` names the tests of a Check.** It prints two lists, and it starts no launch.
+
+| List | Where it comes from | Its limit |
+| --- | --- | --- |
+| The marker lines, each with its file and line | The scan of the source | A marker on a class is one line, and it names no test |
+| The tests of the result that the command shows, each with its outcome | The record of that result | It is as old as that result, and the command says how old |
+
+The result that the command shows is the one the state rests on: the kept pass, or the fail on these inputs, or, when the state rests on neither, the newest result. The text says which of the three it is. So one output describes one result.
+
+**A result keeps the name and the outcome of every test of its Check, and not only of the failed ones.**
+
+The format `check-1` gains two fields for it, `markers` and `tests`. `failing_tests` stays as it is. Adding a field does not raise the number of a format.
+
+An entry of `markers` holds `file`, the path from the root of the repository, and `line`. An entry of `tests` holds `name`, `outcome` and `duration_ms`, as a result keeps them. A Check with no result has an empty `tests`, and the text says that no result exists yet. A Check with no marker has an empty `markers`.
+
+The cost. Every result grows by the names of its tests. And after an edit that adds a test, the second list lacks that test until the next run. The first list shows its marker at once.
+
+Example: the Check `admin-takes-back-a-grant` has three tests in two classes. `azimuth check show` prints two marker lines, one on a class and one on a method, and under the result three names, each with "passed". Without the second list a reader sees a Check that passed and cannot tell that two of its three tests are isolated tests of a validator.
+
 **The structured form is one JSON document, asked for with `--json`.**
 
 | Rule | Why |
@@ -1753,7 +1820,7 @@ Example: `azimuth status --json` for one Requirement whose Check is kept.
 | --- | --- | --- |
 | `status-1` | `azimuth status` | `requirements`, each with `id`, `module`, `state`, `verification`, `realization`, `approval` and `scenarios`. Each Scenario has `id` and `checks`. Each Check has `id`, `state`, `reason` and `detail`. Then `skipped_records` and `process` |
 | `requirement-1` | `azimuth requirement show` | `format`, and beside it the fields of one Requirement entry of `status-1` |
-| `check-1` | `azimuth check show` | `id`, `requirement`, `scenario`, `suite`, `claim`, `reuse`, `state`, `reason`, `detail`, `parts_changed`, `files_changed`, `failing_tests`, and `result` with `where`, `commit`, `edited_paths` and `at` |
+| `check-1` | `azimuth check show` | `id`, `requirement`, `scenario`, `suite`, `claim`, `reuse`, `state`, `reason`, `detail`, `parts_changed`, `files_changed`, `failing_tests`, and `result` with `where`, `commit`, `edited_paths` and `at`. Also `markers` with `file` and `line`, and `tests` with `name`, `outcome` and `duration_ms` |
 | `change-1` | `azimuth change diff` | `target`, `base`, `class`, then `requirements`, `scenarios` and `checks`, each with `added`, `changed` and `removed`. Then `markers_removed`, `not_compared` and `rigor_lowered` |
 | `lint-1` | `azimuth lint` | `findings`, each with `kind`, `file`, `line` and `message` |
 | `run-1` | `azimuth run` and `azimuth check run` | `lane`, `outcome`, `suites` with `name`, `launch` and `duration_ms`, `checks` with `id`, `state`, `reason`, `detail`, `failing_tests` and `duration_ms`, and `findings` in the commit lane |
@@ -2477,7 +2544,7 @@ The Check ids are real. The states are invented for the example.
 - Small finished changes. Big work is a chain of changes that come from one exploration.
 - One branch per change.
 - The proposal is a historical document and is not edited after approval.
-- Expectations are written from intent, before the author of a Check sees the code.
+- Expectations are taken from intent and never from the code.
 
 **Records leave and enter a server only as an export.** Records live in the server and never in the tree. One mechanism serves a lost server, a move between regions, a move between hosted and self-hosted in either direction, and an audit years later.
 
@@ -2688,10 +2755,48 @@ The Mechanism as an entity with an id and tags goes away. Its three jobs move.
 | Holds | Tasks in order, units to add, change or delete, migration steps, proposed decisions | Roots, and the decisions that survived |
 | After the change | Archived with the change, never an input again | Stays and is maintained |
 
+**The plan is the file `plan.md` in the folder of its change.** It moves to `finished/` with the folder, and nothing reads it afterwards.
+
 - **A decision starts in the plan as proposed.** It moves to `realization.md` only if the finished code follows it.
 - **The plan has no history.** It says what remains to be done now.
 - **A person approves the plan.** It is the cheapest place to control an agent, because no code exists yet.
 - **A work package is a set of slices.** Slices do not reference each other, so two workers cannot collide. Shared code stays with the coordinator.
+
+**A change needs a plan where a Requirement declares `Realization:`. The person reads the plan at the Intent stop.**
+
+| Rule | Why |
+| --- | --- |
+| A change needs a plan when a Requirement that it adds or changes declares `Realization:` | the declaration says that how the Requirement is built matters. It buys a review after the code, and it buys the person's look before the code |
+| A change with no such Requirement needs no plan | a routine change stays fast |
+| A plan covers the whole change, also what the change builds for a Requirement that declares no `Realization:` | half a plan hides the migration and the units of the other half. A decision for such a Requirement has no `realization.md` to move to, and it is archived with the plan |
+| The agent writes the plan in the Intent step, after the Scenarios and the Checks, and the person reads all three at the one stop | no further wait for a person |
+| At that stop the plan holds the proposed decisions, the units to add, change or delete, and the migration steps | a person can judge these before code exists. The order of the tasks is the agent's own |
+| What somebody outside the system can observe is not in the plan. It is a Scenario. The addresses and the answers between the team's own components are in the plan | a person approves what the product does in the Scenarios, and how its parts talk to each other in the plan |
+| At the hand over the agent names every proposed decision that the finished code does not follow, and says why | an approval of a plan that the Build silently left is worth nothing |
+| The approval of the plan is a stop of the default process. No gate waits for it, and the server keeps no record of it | the Realization Review and the person's reading before the merge check the result |
+
+**The cost.** The person may change a Scenario at the stop, and the plan then has to follow. For a large change the person asks for two sittings: the Scenarios first, and the plan after them.
+
+Example: a change adds a Requirement about grants of access, and the Requirement declares `Realization:`. At the Intent stop the person reads its Scenarios, the claims of its Checks, and a plan. The plan proposes one entity whose holder is a user or a group, one table, and one unique index over the holder and the thing. The Build needs two indexes, one for each kind of holder. The hand over names the proposed decision that the code does not follow, and the reason.
+
+**The plan and the model files have no heading for each topic. The default process asks the topics as questions.** The skill that writes a plan carries the list, and the brief of each review carries the same list.
+
+| Question | What it catches |
+| --- | --- |
+| What data is added or changed, and how does the release before it run beside it? | A migration that breaks the running code |
+| What do the team's own components promise each other? | A contract that only one side knows |
+| Who may do it, and where is that enforced? | A guard that sits in the wrong place |
+| How does a refusal reach the caller? | A validator that never runs, an error that nobody translates |
+| What happens when two requests meet? | A race that only the database can decide |
+| What can no longer be deleted? | A reference that stops an operation somebody builds later |
+
+**A question with an answer becomes a proposed decision in the plan. A question with no answer leaves no line.** The file holds only what has content.
+
+**The list belongs to the process and not to the core.** A project changes it in its installed skill, and a package for a stack brings questions of its own.
+
+The cost. Nothing records that a question was asked. A plan that is silent about two requests at the same moment may mean "it cannot happen" or "nobody thought of it". The reviewer asks the same questions again, and that is the only guard.
+
+Example: a plan for grants named the unique index that decides between two admins, because its author thought of it. It did not ask how a refusal reaches the caller. The answer would have been "through the validation step", and a look at that step would have shown that it skips every operation that answers nothing. A control found it instead, after the code was written.
 
 ### Sizes of work
 
@@ -2708,7 +2813,7 @@ The Mechanism as an entity with an id and tags goes away. Its three jobs move.
 **A change belongs to an exploration only through the map.** The link goes one way.
 
 - A change belongs to an exploration when a map lists its name. The proposal does not have to say anything.
-- A proposal may point at the exploration's sources. That is a reference to a text, not a membership.
+- A proposal names the copies it took from the exploration's sources. That is a reference to a text, not a membership.
 - An exploration can be born late. Its first row is then a change that is already finished.
 
 **The cost.** Whether one change is too big and should have been an exploration stays a judgment. The one-page rule for a proposal, below, is the only signal.
@@ -2737,6 +2842,8 @@ Example: in drim-dev a fix for a wrong status code in `Features/CliAuth/` is a b
 | Decisions made during implementation | Scenarios that a person approves, or code that a review reads |
 
 **A proposal that does not fit on one page, or has two outcomes, is several changes.** A proposal is not edited after approval. A later decision becomes a Scenario or a decision note, never a new paragraph.
+
+**A proposal is written from what its size of work gives it.** A change of an exploration is written from its row of the map. The row gives the change its name, and it names what the change takes from the sources and which rows must be finished first. The agent reads what the row names, and not the whole folder. It copies those files into the `sources/` of the change. A change with no exploration is written from the request of the person, and from `sources/` in its own folder when it has one. What the agent cannot find there, it asks the person and does not invent.
 
 **The cost.** A one-page proposal says little about how the change will be built. A reader who wants that reads the Scenarios and the code. A proposal that describes the build becomes a second, unproven copy of the model.
 
@@ -2780,7 +2887,7 @@ Example: an exploration in drim-dev lists eight candidates with a column for dep
 
 - The model says only what is built. A Requirement appears with the change that builds it, so no Requirement on the target branch ever waits for code.
 - A change that leaves something adds its row before it merges. The reviewing agent of the default process asks at the end: what does this change leave undone, and does the map say so?
-- An exploration ends when every row is finished or deleted. The next change then moves its folder to `explorations/finished/`, the same way as a change folder.
+- An exploration ends when every row is finished or deleted. The next change then moves its folder to `explorations/finished/`, the same way as a change folder, with the date of the folder's arrival in front of its name.
 - A change with no exploration that leaves something creates one at that moment, with itself as the first row.
 
 **The cost.** The core computes none of this. A forgotten toggle stays forgotten if nobody wrote the row.
@@ -2812,7 +2919,18 @@ Example: the change `cli-login` has its folder in drim-dev at `azimuth/changes/c
 | One snapshot is one file in `sources/`, with its address, version and date at the top | the agents and the approver compare against a fixed text |
 | A snapshot is never edited. A newer version of the page comes in as a new snapshot | the diff between the two shows what moved |
 | A source written directly in the repository goes in the same folder | one place to look, whoever wrote it |
-| For a chain of changes the folder sits with the exploration | each proposal names the part it takes, and nothing is copied twice |
+| A change of an exploration copies what it takes from the exploration's `sources/` into its own `sources/` | the change folder is whole by itself, and it moves to `finished/` as one piece |
+
+**Every change folder holds what its proposal relies on, and the proposal names each source by its path from that folder.** A proposal and what it cites then share one fate, and the path survives the move to `finished/`.
+
+- A copy is the whole file, unchanged, under the same path inside `sources/`. An excerpt would be an edited snapshot. The proposal says which part it takes.
+- A shared source or a decision note is first written in the exploration's `sources/`. The exploration is the pool, and the row of the map names what to copy from it.
+- A source that only one change needs is written in the folder of that change and nowhere else.
+- A copy is not touched when a later source replaces it. The folder shows what was understood when the change started.
+
+The cost. A document that ten changes rely on stands ten times in the tree. Git stores equal content once, so only the checkout grows. Nothing verifies yet that a copy equals its origin, or that a path in a proposal names a file. Lint reports both from increment 3 on.
+
+Example: in drim-dev the 61 decision notes of the exploration `first-lab` are 104 KB together, and its largest document is 92 KB. A change that relies on five notes and one document copies six files, and its proposal names `sources/decisions/2026-11-19-a-grant-names-a-user-or-a-group.md`.
 
 **Azimuth ships no downloader, and the core never parses the folder.** A person, or an agent with a connector, takes the snapshot. The default process tells the author and the reviewing agent to read it.
 
@@ -2851,26 +2969,31 @@ To be discussed: what the reviewer judges and records, who reviews, and when.
 
 **A change ends with its merge.** There is no finalize step, and the merge gate is the only gate. The model is edited in place and records live on the server, so nothing is left to apply or close.
 
-**Finished change folders live in `changes/finished/`. The next change moves them there.**
+**Finished change folders live in `changes/finished/`, each with the date of its arrival in front of its name. The next change moves them there.**
 
 | Rule | Why |
 | --- | --- |
 | At the start of a change, the default process moves every change folder that already exists on the target branch into `changes/finished/` | at that moment "finished" is certainly true, and no acceptance is disturbed |
-| The core finds a change by its name in either place | a folder that was not moved yet breaks nothing |
+| The moved folder is named `<date>-<name>`. The date is the day on which the folder arrived on the target branch. The process reads it from git, in UTC | the folder then reads as a history, and old folders are found by their age |
+| The core finds a change by its name in either place, and does not read the date | a folder that was not moved yet breaks nothing, and the name stays the identity of a change |
 | Nothing verifies the move and no gate waits for it | a forgotten move is repaired by the next change |
-| Two branches that move the same folder merge without conflict | both made the same rename |
-| A change name is never used twice. Lint refuses a name that already exists on the target branch | the folder and the page stay addressable |
+| Two branches that move the same folder merge without conflict | both made the same rename, because both read the same date from git and nobody types it |
+| A change name is never used twice. Lint refuses a name that already exists on the target branch, with a date in front of it or without | the folder and the page stay addressable |
 | A team may delete old change folders in an ordinary commit | nothing is computed from them |
 
 **The result.** On any change branch, `changes/` holds only open changes at the top and everything else under `finished/`.
 
 **Why the move is not the last step of the change.** Before acceptance the folder would say "finished" while fixes may still come, and the gate would have to verify the move, which is a finalize step again. After the merge someone would have to push to the target branch every time.
 
-**The cost.** On the target branch a folder stays at the top between its merge and the start of the next change. Nobody works there.
+**The cost.** On the target branch a folder stays at the top between its merge and the start of the next change. Nobody works there. The date does not order the changes of one day: inside a day the folders sort by name.
+
+After a fast-forward git keeps no trace of the arrival. The date is then the day of the commit that first brought the folder, which can be earlier than the arrival. Two branches still read the same day.
+
+The process reads the day in a clone that has the whole history of the target branch. In a shallow clone the day can be wrong.
 
 **After merge the change page is frozen and stays on the server.** Its records are keyed by content, so they remain true whatever happens to the commits.
 
-Example: the rebuilt lab engine change in drim-dev merges with its folder at `azimuth/changes/lab-engine/`. A week later a change for the second lab starts. Its first commit moves `lab-engine/` into `azimuth/changes/finished/`. From then on the branch shows one open folder.
+Example: the rebuilt lab engine change in drim-dev merges on 2 December 2026 with its folder at `azimuth/changes/lab-engine/`. A week later a change for the second lab starts. Its first commit moves the folder to `azimuth/changes/finished/2026-12-02-lab-engine/`. From then on the branch shows one open folder.
 
 ## Claims, structure and explanations
 

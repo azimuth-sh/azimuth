@@ -2,17 +2,20 @@
 //! names its row with a line `// behavior: <the exact behavior text of the row>` beside it. Rows
 //! in a section that a pushed tag or a later increment proves need no test.
 //! Increment 2 uses `// behavior-2:` so a shared sentence in increment 1 cannot silently cover a new adapter.
+//! Its follow-up uses `// behavior-2-follow-up:` for the same reason.
+//! Rows of prose need no annotation, and an annotation naming one is an error.
 
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
-use azimuth_tests::behavior_rows;
+use azimuth_tests::{behavior_rows, RowKind};
 
 #[test]
 fn every_behavior_of_the_increment_has_a_test() {
-    let rows: Vec<_> = behavior_rows()
-        .into_iter()
+    let all_rows = behavior_rows();
+    let rows: Vec<_> = all_rows
+        .iter()
         .filter(|row| row.needs_test)
         .collect();
     let tests_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
@@ -25,11 +28,15 @@ fn every_behavior_of_the_increment_has_a_test() {
             for (index, line) in lines.iter().enumerate() {
                 if line.trim_start().starts_with("// behavior:")
                     || line.trim_start().starts_with("// behavior-2:")
+                    || line.trim_start().starts_with("// behavior-2-follow-up:")
                 {
                     let mut next = index + 1;
                     while next < lines.len()
                         && (lines[next].trim_start().starts_with("// behavior:")
-                            || lines[next].trim_start().starts_with("// behavior-2:"))
+                            || lines[next].trim_start().starts_with("// behavior-2:")
+                            || lines[next]
+                                .trim_start()
+                                .starts_with("// behavior-2-follow-up:"))
                     {
                         next += 1;
                     }
@@ -56,7 +63,13 @@ fn every_behavior_of_the_increment_has_a_test() {
                         index + 1
                     );
                 }
-                if let Some(behavior) = line.trim_start().strip_prefix("// behavior-2: ") {
+                if let Some(behavior) = line.trim_start().strip_prefix("// behavior-2-follow-up: ")
+                {
+                    named.insert((
+                        "increments/2-follow-up.md".to_string(),
+                        behavior.trim_end().to_string(),
+                    ));
+                } else if let Some(behavior) = line.trim_start().strip_prefix("// behavior-2: ") {
                     named.insert((
                         "increments/2.md".to_string(),
                         behavior.trim_end().to_string(),
@@ -73,7 +86,9 @@ fn every_behavior_of_the_increment_has_a_test() {
                     }
                     assert!(
                         rows.iter()
-                            .any(|row| row.list != "increments/2.md" && row.behavior == behavior),
+                            .any(|row| ["increments/1.md", "increments/release.md"]
+                                .contains(&row.list.as_str())
+                                && row.behavior == behavior),
                         "no earlier list names {behavior}"
                     );
                 }
@@ -93,7 +108,20 @@ fn every_behavior_of_the_increment_has_a_test() {
         .iter()
         .filter(|behavior| !known.contains(*behavior))
         .collect();
+    let prose_named: Vec<_> = all_rows
+        .iter()
+        .filter(|row| {
+            row.kind == RowKind::Prose
+                && named.contains(&(row.list.clone(), row.behavior.clone()))
+        })
+        .map(|row| format!("[{} / {}] {}", row.list, row.section, row.behavior))
+        .collect();
 
+    assert!(
+        prose_named.is_empty(),
+        "tests name rows of prose, which must not have word tests:\n{}",
+        prose_named.join("\n")
+    );
     assert!(
         unknown.is_empty(),
         "tests name behaviors that no list holds:\n{unknown:#?}"

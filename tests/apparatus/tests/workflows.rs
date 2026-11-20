@@ -864,6 +864,7 @@ fn the_site_starts_by_hand_or_from_the_release() {
 // behavior: In the release workflow the site is published after the job that publishes the release
 #[test]
 fn the_release_publishes_the_site_after_the_release() {
+    assert_default_conditions(&release_workflow());
     let all = all_jobs();
     let release = role(&all, "publish draft", publish_draft);
     assert_eq!(release.workflow, "publish.yml");
@@ -1078,7 +1079,7 @@ fn the_dotnet_sdk_is_pinned_to_a_line() {
 
 // behavior: The job that publishes the release and the job that pushes the package to NuGet both name the environment `release`
 #[test]
-fn exactly_the_two_publication_jobs_name_the_release_environment() {
+fn exactly_the_publication_jobs_name_the_release_environment() {
     let all = all_jobs();
     let publishing = role(&all, "publish draft", publish_draft);
     let pushing = role(&all, "NuGet push", nuget);
@@ -1086,7 +1087,12 @@ fn exactly_the_two_publication_jobs_name_the_release_environment() {
         all.iter()
             .filter(|j| j.environment.as_deref() == Some("release"))
             .count(),
-        2
+        if std::ptr::eq(publishing, pushing) {
+            1
+        } else {
+            2
+        },
+        "only the jobs that push to NuGet or publish the draft may name release"
     );
     for job in &all {
         let public = std::ptr::eq(job, publishing) || std::ptr::eq(job, pushing);
@@ -1565,13 +1571,212 @@ fn the_nuget_job_waits_for_both_first_phases() {
 // behavior-2: The draft is published only after the push to NuGet succeeded
 #[test]
 fn publication_of_the_draft_follows_the_successful_nuget_push() {
+    let root = release_workflow();
+    assert_default_conditions(&root);
     let all = all_jobs();
     let publication = role(&all, "publish draft", publish_draft);
     let pushing = role(&all, "NuGet push", nuget);
-    assert!(
-        depends_on(&all, publication, pushing),
-        "the draft can become public before NuGet accepts the package"
+    if std::ptr::eq(publication, pushing) {
+        assert_publication_after_successful_push(&root);
+    } else {
+        assert!(
+            depends_on(&all, publication, pushing),
+            "the draft can become public before NuGet accepts the package"
+        );
+    }
+}
+
+fn assert_publication_after_successful_push(root: &Node) {
+    let accepted = release_replay::replay_publication(root, false);
+    assert_eq!(
+        accepted.status, 0,
+        "the job failed with an accepted NuGet push: {}",
+        accepted.diagnostic
     );
+    let pushes: Vec<_> = accepted
+        .events
+        .iter()
+        .enumerate()
+        .filter(|(_, call)| call["verb"] == "nuget push")
+        .collect();
+    let publications: Vec<_> = accepted
+        .events
+        .iter()
+        .enumerate()
+        .filter(|(_, call)| call["verb"] == "edit")
+        .collect();
+    assert_eq!(
+        pushes.len(),
+        1,
+        "the publication job must push to NuGet: {:?}",
+        accepted.events
+    );
+    assert_eq!(
+        publications.len(),
+        1,
+        "the job must publish the draft: {:?}",
+        accepted.events
+    );
+    assert!(
+        pushes[0].0 < publications[0].0,
+        "the draft is published before the NuGet push: {:?}",
+        accepted.events
+    );
+    assert_eq!(
+        accepted.state["isDraft"], false,
+        "the successful push did not lead to a public release"
+    );
+
+    let refused = release_replay::replay_publication(root, true);
+    assert!(
+        refused
+            .events
+            .iter()
+            .any(|call| call["verb"] == "nuget push" && call["status"] == 1),
+        "the failure replay did not reach the refused NuGet push: {:?}: {}",
+        refused.events,
+        refused.diagnostic
+    );
+    assert_ne!(refused.status, 0, "a refused NuGet push must fail the job");
+    assert!(
+        refused.calls.iter().all(|call| call["verb"] == "view"),
+        "the draft was mutated despite the refused NuGet push: {:?}",
+        refused.calls
+    );
+    assert_eq!(
+        refused.state, refused.before,
+        "the refused push must leave the draft unchanged"
+    );
+}
+
+// behavior-2-follow-up: One job of the release workflow pushes to NuGet and then publishes the draft
+#[test]
+fn one_release_job_pushes_to_nuget_then_publishes_the_draft() {
+    let all = all_jobs();
+    let pushing = role(&all, "NuGet push", nuget);
+    let publishing = role(&all, "publish draft", publish_draft);
+    assert_eq!(pushing.workflow, "publish.yml");
+    assert!(
+        std::ptr::eq(pushing, publishing),
+        "NuGet push ({}/{}) and draft publication ({}/{}) must share one job",
+        pushing.workflow,
+        pushing.name,
+        publishing.workflow,
+        publishing.name
+    );
+    assert_publication_after_successful_push(&release_workflow());
+}
+
+// behavior-2-follow-up: Exactly one job of the release workflow names the environment `release`
+#[test]
+fn one_release_job_names_the_approval_environment() {
+    let all = all_jobs();
+    let approved: Vec<_> = all
+        .iter()
+        .filter(|job| {
+            job.workflow == "publish.yml" && job.environment.as_deref() == Some("release")
+        })
+        .collect();
+    assert_eq!(
+        approved.len(),
+        1,
+        "one job must name the release environment so GitHub asks once; found {:?}",
+        approved.iter().map(|job| &job.name).collect::<Vec<_>>()
+    );
+}
+
+// behavior-2-follow-up: That job may write to the contents of the repository and may ask for the identity for the registry, and no other job may do both
+#[test]
+fn only_the_approved_publication_job_holds_both_release_rights() {
+    let all = all_jobs();
+    let both: Vec<_> = all
+        .iter()
+        .filter(|job| {
+            job.workflow == "publish.yml"
+                && job.writes.iter().any(|right| right == "contents")
+                && job.writes.iter().any(|right| right == "id-token")
+        })
+        .collect();
+    assert_eq!(
+        both.len(),
+        1,
+        "one approved job must hold both contents: write and id-token: write; found {:?}",
+        both.iter().map(|job| &job.name).collect::<Vec<_>>()
+    );
+    let job = both[0];
+    assert_eq!(
+        job.environment.as_deref(),
+        Some("release"),
+        "the job holding both rights needs the release approval"
+    );
+    assert!(
+        std::ptr::eq(job, role(&all, "NuGet push", nuget))
+            && std::ptr::eq(job, role(&all, "publish draft", publish_draft)),
+        "the approved job holding both rights must push to NuGet and publish the draft"
+    );
+}
+
+#[test]
+fn publication_replay_guards_order_and_push_failure_inside_one_job() {
+    let parse = |text: &str| Node {
+        key: String::new(),
+        value: None,
+        children: read_yaml(text, "publication ordering control"),
+        line: 0,
+    };
+    let text = r#"jobs:
+  publish:
+    steps:
+      - uses: actions/download-artifact@inert
+        with:
+          name: package
+          path: package
+      - uses: NuGet/login@inert
+        id: registry
+      - run: dotnet nuget push package/*.nupkg --api-key "$NUGET_API_KEY"
+        env:
+          NUGET_API_KEY: ${{ steps.registry.outputs.NUGET_API_KEY }}
+      - run: gh release edit "$GITHUB_REF_NAME" --draft=false
+"#;
+    assert_publication_after_successful_push(&parse(text));
+    let push = "      - run: dotnet nuget push package/*.nupkg --api-key \"$NUGET_API_KEY\"\n        env:\n          NUGET_API_KEY: ${{ steps.registry.outputs.NUGET_API_KEY }}\n";
+    let publish = "      - run: gh release edit \"$GITHUB_REF_NAME\" --draft=false\n";
+    let together = text.replace(&format!("{push}{publish}"),
+        "      - run: dotnet nuget push package/*.nupkg; gh release edit \"$GITHUB_REF_NAME\" --draft=false\n");
+    assert_publication_after_successful_push(&parse(&together));
+    let rerun_safe = text.replace(
+        publish,
+        r#"      - run: |
+          if [ "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" = true ]; then
+            gh release edit "$GITHUB_REF_NAME" --draft=false
+          fi
+"#,
+    );
+    let already_public =
+        release_replay::replay_existing_release(&parse(&rerun_safe), "0.2.0-alpha.73", false, true);
+    assert_eq!(already_public.status, 0, "{}", already_public.diagnostic);
+    assert!(already_public
+        .calls
+        .iter()
+        .all(|call| call["verb"] == "view"));
+    assert_eq!(already_public.state, already_public.before);
+    // A dependency cannot protect operations in one job; the replay must reject these faults.
+    for invalid in [
+        text.replace(&format!("{push}{publish}"), &format!("{publish}{push}")),
+        text.replace(push, ""),
+        text.replace(
+            "--api-key \"$NUGET_API_KEY\"",
+            "--api-key \"$NUGET_API_KEY\" || true",
+        ),
+        together.replace("package/*.nupkg;", "package/*.nupkg || true;"),
+    ] {
+        let invalid_root = parse(&invalid);
+        assert!(
+            std::panic::catch_unwind(|| assert_publication_after_successful_push(&invalid_root))
+                .is_err(),
+            "the replay accepted publication before or without a successful push: {invalid}"
+        );
+    }
 }
 
 // behavior-2: The push to NuGet skips a version that is already there
@@ -2581,4 +2786,224 @@ fn ci_rehearsal_selection_requires_linux_pushes_and_a_later_version_check() {
             "unsafe CI selection was accepted: {invalid}"
         );
     }
+}
+
+struct SiteAttempt {
+    status: i32,
+    uploaded: bool,
+    deployed: bool,
+    diagnostic: String,
+}
+
+fn site_context(text: &str, event: &str, reference: &str) -> String {
+    let ref_type = if reference.starts_with("refs/tags/") {
+        "tag"
+    } else {
+        "branch"
+    };
+    let ref_name = reference
+        .strip_prefix("refs/tags/")
+        .or_else(|| reference.strip_prefix("refs/heads/"))
+        .unwrap();
+    let mut value = text.to_string();
+    for (key, content) in [
+        ("github.event_name", event),
+        ("github.ref", reference),
+        ("github.ref_type", ref_type),
+        ("github.ref_name", ref_name),
+    ] {
+        value = value.replace(&format!("${{{{ {key} }}}}"), content);
+    }
+    assert!(
+        !value.contains("${{"),
+        "the site replay cannot evaluate this expression: {text}"
+    );
+    value
+}
+
+/// GitHub supplies GITHUB_REF, GITHUB_REF_NAME, GITHUB_REF_TYPE and GITHUB_EVENT_NAME.
+/// A reusable workflow keeps its caller's event: publish.yml starts on push, not workflow_call.
+/// https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#github-context
+/// The shell guard runs with those variables in an empty temporary directory. Checkout is a
+/// no-op; upload and deploy are recorded when reached. This proves the local refusal and the
+/// order before publishing. It cannot prove a Pages deployment or GitHub's permissions.
+fn site_attempt(event: &str, reference: &str) -> SiteAttempt {
+    let (_, _, root) = workflows()
+        .into_iter()
+        .find(|(name, _, _)| name == "site.yml")
+        .unwrap();
+    let publishing: Vec<_> = jobs(&root)
+        .into_iter()
+        .filter(|job| {
+            job.descendants().iter().any(|node| {
+                node.key == "uses"
+                    && node
+                        .value
+                        .as_deref()
+                        .is_some_and(|v| v.starts_with("actions/deploy-pages@"))
+            })
+        })
+        .collect();
+    assert_eq!(publishing.len(), 1, "the site needs one publishing job");
+    let job = publishing[0];
+    assert!(
+        job.child("if").is_none(),
+        "the shell replay cannot prove a job condition; a manual tag must fail, not skip"
+    );
+    let temp = tempfile::tempdir().unwrap();
+    let mut attempt = SiteAttempt {
+        status: 0,
+        uploaded: false,
+        deployed: false,
+        diagnostic: String::new(),
+    };
+    let mut guards = 0;
+    for step in &job.child("steps").expect("site job has no steps").children {
+        assert!(
+            step.child("if").is_none(),
+            "the site replay cannot prove a conditional step at line {}",
+            step.line
+        );
+        assert!(
+            step.child("continue-on-error")
+                .is_none_or(|v| v.value.as_deref() == Some("false")),
+            "a guard failure must fail the job at line {}",
+            step.line
+        );
+        if let Some(action) = step.child("uses").and_then(|n| n.value.as_deref()) {
+            if action.starts_with("actions/checkout@") {
+                continue;
+            }
+            if action.starts_with("actions/upload-pages-artifact@") {
+                assert!(guards > 0, "there is no shell guard before the site upload");
+                attempt.uploaded = true;
+                continue;
+            }
+            if action.starts_with("actions/deploy-pages@") {
+                assert!(
+                    attempt.uploaded,
+                    "the site deploys before uploading its artifact"
+                );
+                attempt.deployed = true;
+                return attempt;
+            }
+            panic!("the site replay cannot run the action {action}");
+        }
+        let script = step
+            .child("run")
+            .and_then(|n| n.value.as_deref())
+            .unwrap_or_else(|| panic!("site step at line {} has neither run nor uses", step.line));
+        let script = site_context(script, event, reference);
+        let mut command = Command::new("bash");
+        command
+            .args([
+                "--noprofile",
+                "--norc",
+                "-e",
+                "-o",
+                "pipefail",
+                "-c",
+                &script,
+            ])
+            .current_dir(temp.path())
+            .env_clear()
+            .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+            .env("GITHUB_EVENT_NAME", event)
+            .env("GITHUB_REF", reference)
+            .env(
+                "GITHUB_REF_NAME",
+                reference
+                    .strip_prefix("refs/tags/")
+                    .or_else(|| reference.strip_prefix("refs/heads/"))
+                    .unwrap(),
+            )
+            .env(
+                "GITHUB_REF_TYPE",
+                if reference.starts_with("refs/tags/") {
+                    "tag"
+                } else {
+                    "branch"
+                },
+            );
+        for owner in [&root, job, step] {
+            if let Some(env) = owner.child("env") {
+                for variable in &env.children {
+                    command.env(
+                        &variable.key,
+                        site_context(
+                            variable.value.as_deref().unwrap_or_default(),
+                            event,
+                            reference,
+                        ),
+                    );
+                }
+            }
+        }
+        let output = run_with_time_limit(command, Duration::from_secs(10), None);
+        guards += 1;
+        attempt.diagnostic.push_str(&output.text());
+        if output.status != 0 {
+            attempt.status = output.status;
+            return attempt;
+        }
+    }
+    panic!("the site job never reaches its deploy action");
+}
+
+// behavior-2-follow-up: Started by hand on a version tag, the site workflow publishes nothing and its job fails
+#[test]
+fn a_manual_site_start_on_a_version_tag_fails_before_upload() {
+    let attempt = site_attempt("workflow_dispatch", "refs/tags/v0.2.0-alpha.73");
+    assert!(
+        attempt.status != 0 && !attempt.uploaded && !attempt.deployed,
+        "a manual tag must fail before upload or deploy; status={}, uploaded={}, deployed={}: {}",
+        attempt.status,
+        attempt.uploaded,
+        attempt.deployed,
+        attempt.diagnostic
+    );
+}
+
+// behavior-2-follow-up: Called by the release workflow on a version tag, it publishes
+#[test]
+fn a_release_call_on_a_version_tag_reaches_site_publication() {
+    let release = release_workflow();
+    assert!(
+        release
+            .child("on")
+            .and_then(|on| on.child("push"))
+            .is_some(),
+        "the caller must be the tag push workflow"
+    );
+    assert!(
+        jobs(&release)
+            .iter()
+            .any(|job| job.child("uses").and_then(|n| n.value.as_deref()) == Some(SITE_WORKFLOW)),
+        "the release no longer calls the site workflow"
+    );
+    let attempt = site_attempt("push", "refs/tags/v0.2.0-alpha.73");
+    assert_eq!(
+        attempt.status, 0,
+        "the release call was refused: {}",
+        attempt.diagnostic
+    );
+    assert!(
+        attempt.uploaded && attempt.deployed,
+        "the release call did not reach site publication"
+    );
+}
+
+// behavior-2-follow-up: Started by hand on `main`, it publishes as before
+#[test]
+fn a_manual_site_start_on_main_reaches_publication() {
+    let attempt = site_attempt("workflow_dispatch", "refs/heads/main");
+    assert_eq!(
+        attempt.status, 0,
+        "the manual main start was refused: {}",
+        attempt.diagnostic
+    );
+    assert!(
+        attempt.uploaded && attempt.deployed,
+        "the manual main start did not reach site publication"
+    );
 }

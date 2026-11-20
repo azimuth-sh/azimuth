@@ -6,6 +6,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
@@ -24,6 +25,9 @@ fn interpolate(text: &str, env: &BTreeMap<String, String>) -> String {
     }
     for (key, value) in env {
         text = text.replace(&format!("${{{{ env.{key} }}}}"), value);
+        if key.starts_with("steps.") {
+            text = text.replace(&format!("${{{{ {key} }}}}"), value);
+        }
     }
     while let Some(start) = text.find("${{ secrets.") {
         let end = start
@@ -160,6 +164,7 @@ fn replay_job_result(
 struct ReplayOptions {
     installed_version: Option<String>,
     corrupt_after_step: Option<usize>,
+    fail_nuget: bool,
 }
 
 fn replay_job_options(
@@ -192,6 +197,19 @@ fn replay_job_options(
     if !tools.join("gh").exists() {
         fs::copy(env!("CARGO_BIN_EXE_gh-release-recorder"), tools.join("gh")).unwrap();
     }
+    // Both operations share a log so their order is visible even inside one shell step.
+    let dotnet = tools.join("dotnet");
+    fs::write(
+        &dotnet,
+        r#"#!/bin/sh
+set -eu
+test "$1" = nuget && test "$2" = push || exit 97
+printf '{"verb":"nuget push","status":%s}\n' "$RELEASE_REPLAY_NUGET_STATUS" >> "$GH_RELEASE_LOG"
+exit "$RELEASE_REPLAY_NUGET_STATUS"
+"#,
+    )
+    .unwrap();
+    fs::set_permissions(&dotnet, fs::Permissions::from_mode(0o700)).unwrap();
     let github_env = work.join("github-env");
     let output = work.join("github-output");
     let github_path = work.join("github-path");
@@ -220,6 +238,10 @@ fn replay_job_options(
             temp.join("gh.jsonl").display().to_string(),
         ),
         ("npm_config_offline".into(), "true".into()),
+        (
+            "RELEASE_REPLAY_NUGET_STATUS".into(),
+            if options.fail_nuget { "1" } else { "0" }.into(),
+        ),
     ]);
     if let Some(version) = &options.installed_version {
         env.insert("NPM_RECORDER_INSTALLED_VERSION".into(), version.clone());
@@ -233,7 +255,16 @@ fn replay_job_options(
     copy_declared_configs(work, &env);
     for (step_index, step) in job.child("steps").unwrap().children.iter().enumerate() {
         if let Some(action) = step.child("uses").and_then(|n| n.value.as_deref()) {
-            if action.starts_with("actions/upload-artifact@") {
+            if action.starts_with("NuGet/login@") {
+                let id = step
+                    .child("id")
+                    .and_then(|n| n.value.as_deref())
+                    .expect("NuGet/login needs an id for its output");
+                env.insert(
+                    format!("steps.{id}.outputs.NUGET_API_KEY"),
+                    "inert-nuget-key".into(),
+                );
+            } else if action.starts_with("actions/upload-artifact@") {
                 let options = step.child("with").unwrap();
                 let name = interpolate(
                     options.child("name").unwrap().value.as_deref().unwrap(),
@@ -294,6 +325,15 @@ fn replay_job_options(
                     .is_some_and(|word| Path::new(word).is_absolute()
                         && Path::new(word)
                             .file_name()
+                            .is_some_and(|name| name == "dotnet")),
+                "the replay must not execute an unrecorded absolute dotnet"
+            );
+            assert!(
+                !words
+                    .first()
+                    .is_some_and(|word| Path::new(word).is_absolute()
+                        && Path::new(word)
+                            .file_name()
                             .is_some_and(|name| name == "npm")),
                 "the replay must not execute an unrecorded absolute npm"
             );
@@ -320,6 +360,7 @@ fn replay_job_options(
         let github = commands
             .iter()
             .any(|w| shell::invokes(w, &["gh", "release"]));
+        let nuget = commands.iter().any(|w| super::nuget(w));
         let assemble = commands.iter().any(|w| {
             w.iter()
                 .any(|arg| arg == "release/assemble.sh" || arg == "./release/assemble.sh")
@@ -334,7 +375,7 @@ fn replay_job_options(
                 .iter()
                 .any(|word| word.starts_with("release/") || word.starts_with("./release/"))
         });
-        if !npm && !github && !assemble && !files_only && !repository_script {
+        if !npm && !github && !nuget && !assemble && !files_only && !repository_script {
             continue;
         }
         let mut effective = env.clone();
@@ -642,6 +683,7 @@ pub struct ExistingRelease {
     pub status: i32,
     pub diagnostic: String,
     pub calls: Vec<Value>,
+    pub events: Vec<Value>,
     pub state: Value,
     pub before: Value,
     pub assembled: BTreeMap<String, Vec<u8>>,
@@ -652,6 +694,20 @@ pub fn replay_existing_release(
     version: &str,
     drafting: bool,
     published: bool,
+) -> ExistingRelease {
+    replay_existing_release_options(root, version, drafting, published, false)
+}
+
+pub fn replay_publication(root: &Node, fail_nuget: bool) -> ExistingRelease {
+    replay_existing_release_options(root, "0.2.0-alpha.73", false, false, fail_nuget)
+}
+
+fn replay_existing_release_options(
+    root: &Node,
+    version: &str,
+    drafting: bool,
+    published: bool,
+    fail_nuget: bool,
 ) -> ExistingRelease {
     assert_default_conditions(root);
     let candidates: Vec<_> = jobs(root)
@@ -677,6 +733,13 @@ pub fn replay_existing_release(
     let temp = tempfile::tempdir().unwrap();
     let work = temp.path().join("release");
     let mut artifacts = BTreeMap::new();
+    artifacts.insert(
+        "package".into(),
+        vec![(
+            PathBuf::from(format!("adapter.{version}.nupkg")),
+            b"inert package".to_vec(),
+        )],
+    );
     let mut assembled = BTreeMap::new();
     for target in ["aarch64-apple-darwin", "x86_64-unknown-linux-musl"] {
         let name = format!("azimuth-{version}-{target}");
@@ -692,21 +755,30 @@ pub fn replay_existing_release(
     let before = serde_json::json!({"tag":format!("v{version}"),"isDraft":!published,"assets":names.into_iter().map(|name|serde_json::json!({"name":name,"bytes":b"stale release bytes".to_vec()})).collect::<Vec<_>>()});
     let state_path = temp.path().join("gh-state.json");
     fs::write(&state_path, before.to_string()).unwrap();
-    let (status, diagnostic) = match replay_job_result(
+    let (status, diagnostic) = match replay_job_options(
         root,
         candidates[0],
         &work,
         temp.path(),
         &format!("v{version}"),
         &mut artifacts,
+        &ReplayOptions {
+            fail_nuget,
+            ..ReplayOptions::default()
+        },
     ) {
         Ok(()) => (0, String::new()),
         Err(output) => (output.status, output.text()),
     };
-    let calls = fs::read_to_string(temp.path().join("gh.jsonl"))
+    let events: Vec<Value> = fs::read_to_string(temp.path().join("gh.jsonl"))
         .unwrap_or_default()
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let calls = events
+        .iter()
+        .filter(|call| call["verb"] != "nuget push")
+        .cloned()
         .collect();
     let state = fs::read(state_path)
         .ok()
@@ -730,6 +802,7 @@ pub fn replay_existing_release(
         status,
         diagnostic,
         calls,
+        events,
         state,
         before,
         assembled,
@@ -762,6 +835,7 @@ pub fn tool_job(
     let options = ReplayOptions {
         installed_version: installed_version.map(str::to_string),
         corrupt_after_step,
+        ..ReplayOptions::default()
     };
     let result = replay_job_options(
         root,

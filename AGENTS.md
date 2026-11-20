@@ -16,6 +16,7 @@ Four habits replace what Azimuth would enforce.
 
 1. **A list of behaviors for each increment.** Before an increment is built, its behaviors are listed in a short document. Each line quotes the sentence of `docs/design.md` it comes from. A person reads the list before the build starts.
 2. **Tests and code come from different sessions.** One session writes the tests from the list and the design. Another session writes the code.
+   **Prose is the exception.** What a text tells its reader, such as a skill, is written first, from its rows of the list. An independent session then reads the text against those rows, and a person reads the text. Last, a session that did not write the text sets one test that compares the whole text with what the person accepted. The author of a text never sets that test. A command that a text gives is code, and its tests come first.
 3. **A sample repository.** Azimuth's tests include a small sample repository, and the CLI runs on it end to end.
 4. **Done means used.** An increment is done when the real work it serves is proven with it, and not when its own tests pass.
 

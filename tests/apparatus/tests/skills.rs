@@ -57,6 +57,26 @@ fn written(repo: &Repo) -> Vec<String> {
     paths
 }
 
+// Rows of prose in the lists are shown by a person's reading; this test keeps the shipped
+// text equal to what was read.
+#[test]
+fn installed_skill_matches_the_text_a_person_accepted() {
+    // A person accepted the whole skill text on 2026-11-20.
+    const ACCEPTED_SKILL_SHA256: &str =
+        "b84fb2e57fba2e0e6a0a75c80414cf1793d74c701d621879b26688aa04ae6a83";
+
+    let repo = Repo::sample();
+    install(&repo, "codex");
+    let (text, _) = split_last_line(&repo.read(SKILL_FILE));
+    assert_eq!(
+        sha256_hex(text.as_bytes()),
+        ACCEPTED_SKILL_SHA256,
+        "The skill text differs from the text that a person accepted. A person reads the new \
+         text or its diff; then a session that did not write the text sets this value. \
+         The author of a text never does."
+    );
+}
+
 // behavior: It writes the skill as tracked files, in one copy
 #[test]
 fn skills_install_writes_one_visible_copy() {
@@ -544,4 +564,146 @@ fn lint_still_reports_both_intent_findings_and_accepts_no_step_option() {
     }
     let output = repo.azimuth(&["lint", "--step", "intent", "--json"]);
     output.expect_status(2);
+}
+
+fn installed_step(number: u32) -> String {
+    let repo = Repo::sample();
+    install(&repo, "codex");
+    step_text(&digest_line_is_correct(&repo, SKILL_FILE), number)
+}
+
+fn arrival_command(step: &str) -> String {
+    let blocks: Vec<_> = step
+        .split("```sh\n")
+        .skip(1)
+        .map(|rest| rest.split_once("```").expect("the command fence closes").0)
+        .filter(|block| block.contains("<target-branch>") && block.contains("<name>"))
+        .collect();
+    assert_eq!(blocks.len(), 1,
+        "step 1 needs one sh fenced block with <target-branch> and <name> that prints the arrival day:\n{step}");
+    assert!(
+        blocks[0].contains("git "),
+        "the arrival command does not read git: {}",
+        blocks[0]
+    );
+    blocks[0].to_string()
+}
+
+fn date_for_git(repo: &mut Repo, date: &str) {
+    repo.set_env("GIT_AUTHOR_DATE", date);
+    repo.set_env("GIT_COMMITTER_DATE", date);
+}
+
+fn folder_merged_into_target() -> Repo {
+    let mut repo = Repo::sample();
+    repo.git(&["checkout", "--quiet", "-b", "prepared-change"]);
+    repo.write(
+        "azimuth/changes/return-receipt/proposal.md",
+        "A receipt for a returned book.\n",
+    );
+    date_for_git(&mut repo, "2031-03-05T00:10:00+1400");
+    repo.commit_all("prepare the receipt change");
+    repo.git(&["checkout", "--quiet", "main"]);
+    date_for_git(&mut repo, "2031-03-09T00:15:00+1400");
+    repo.git(&[
+        "merge",
+        "--quiet",
+        "--no-ff",
+        "prepared-change",
+        "-m",
+        "merge the receipt change",
+    ]);
+    assert_eq!(
+        repo.git(&["show", "-s", "--format=%cI", "HEAD"]).trim(),
+        "2031-03-09T00:15:00+14:00"
+    );
+    // The target tip is later than the arrival, so reading only its date cannot pass.
+    date_for_git(&mut repo, "2031-03-11T12:00:00+1400");
+    repo.commit_all("continue work on the target");
+    repo
+}
+
+fn printed_arrival_day(repo: &Repo, command: &str) -> String {
+    let script = command
+        .replace("<target-branch>", "main")
+        .replace("<name>", "return-receipt");
+    let mut shell = std::process::Command::new("sh");
+    shell
+        .args(["-eu", "-c", &script])
+        .current_dir(repo.root())
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("LC_ALL", "C")
+        .env("TZ", "Etc/GMT-14");
+    let output = run_with_time_limit(shell, std::time::Duration::from_secs(10), None);
+    output.expect_status(0);
+    output.stdout.trim().to_string()
+}
+
+// behavior-2-follow-up: For a folder that arrived by a merge, the command of the skill prints the day of the merge on the target branch, and not the day of the commit on the change branch
+#[test]
+fn the_skill_command_prints_the_target_merge_day_in_utc() {
+    let repo = folder_merged_into_target();
+    repo.git(&["checkout", "--quiet", "-b", "next-change"]);
+    let command = arrival_command(&installed_step(1));
+    assert_eq!(printed_arrival_day(&repo, &command), "2031-03-08",
+        "the skill command must print the target merge day in UTC, not the change commit day, the local merge day or the target tip day");
+}
+
+// behavior-2-follow-up: Run on two branches that start from the same target branch, the command prints the same day
+#[test]
+fn the_skill_command_prints_the_same_day_on_two_change_branches() {
+    let mut repo = folder_merged_into_target();
+    repo.git(&["checkout", "--quiet", "-b", "next-change-a", "main"]);
+    date_for_git(&mut repo, "2031-03-12T12:00:00+1400");
+    repo.commit_all("start the first change");
+    repo.git(&["checkout", "--quiet", "-b", "next-change-b", "main"]);
+    date_for_git(&mut repo, "2031-03-15T12:00:00+1400");
+    repo.commit_all("start the second change");
+    let command = arrival_command(&installed_step(1));
+    let second = printed_arrival_day(&repo, &command);
+    repo.git(&["checkout", "--quiet", "next-change-a"]);
+    let first = printed_arrival_day(&repo, &command);
+    assert_eq!(
+        first, second,
+        "branches from the same target disagree about the arrival day"
+    );
+    assert_eq!(
+        first, "2031-03-08",
+        "both branches must print the UTC arrival day"
+    );
+}
+
+// behavior-2-follow-up: For a folder that arrived by a fast-forward, the command prints the day of the commit that first brought the folder
+#[test]
+fn the_skill_command_prints_the_first_folder_commit_day_after_fast_forward() {
+    let mut repo = Repo::sample();
+    repo.git(&["checkout", "--quiet", "-b", "prepared-change"]);
+    let folder = "azimuth/changes/return-receipt/proposal.md";
+    repo.write(folder, "A receipt for a returned book.\n");
+    date_for_git(&mut repo, "2031-03-05T00:10:00+1400");
+    repo.commit_all("prepare the receipt change");
+    // A later edit inside the folder separates first introduction from its latest change.
+    repo.append(folder, "Keep the receipt at the desk.\n");
+    date_for_git(&mut repo, "2031-03-07T12:00:00+1400");
+    repo.commit_all("complete the receipt proposal");
+    let change_tip = repo.head();
+    repo.git(&["checkout", "--quiet", "main"]);
+    date_for_git(&mut repo, "2031-03-09T12:00:00+1400");
+    repo.git(&["merge", "--quiet", "--ff-only", "prepared-change"]);
+    assert_eq!(
+        repo.head(),
+        change_tip,
+        "the arrival must be a fast-forward"
+    );
+    date_for_git(&mut repo, "2031-03-11T12:00:00+1400");
+    repo.commit_all("continue work on the target");
+    repo.git(&["checkout", "--quiet", "-b", "next-change"]);
+    assert_eq!(
+        printed_arrival_day(&repo, &arrival_command(&installed_step(1))),
+        "2031-03-04",
+        "use the first folder commit in UTC, even when arrival left no merge commit"
+    );
 }

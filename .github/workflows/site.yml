@@ -23,12 +23,12 @@ jobs:
     steps:
       # A manual start can name any branch, so the job fails there instead of being skipped, and
       # the person sees why nothing was published.
-      - name: Only main or a version tag
+      - name: Only a manual start on main or a release tag
         run: |
-          case "$GITHUB_REF" in
-            refs/heads/main | refs/tags/v*) ;;
+          case "$GITHUB_EVENT_NAME:$GITHUB_REF" in
+            workflow_dispatch:refs/heads/main | push:refs/tags/v*) ;;
             *)
-              echo "the site is published only from main or a version tag, not from $GITHUB_REF" >&2
+              echo "the site requires a manual start from main or a release call on a version tag; refused $GITHUB_EVENT_NAME on $GITHUB_REF" >&2
               exit 1
               ;;
           esac

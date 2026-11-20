@@ -6,7 +6,8 @@ use serde_json::{json, Value};
 use crate::clock;
 use crate::model::Requirement;
 use crate::output;
-use crate::state::{Evaluation, State};
+use crate::result::EnrolledTest;
+use crate::state::{reason, Evaluation, State};
 use crate::survey::Survey;
 
 /// The one reason a review has while this version records no reviews.
@@ -128,6 +129,8 @@ fn state_line(evaluation: &Evaluation, count_files: bool) -> String {
 pub fn check_document(survey: &Survey, id: &str) -> Value {
     let check = survey.workspace.model.check(id).expect("the caller looked the Check up");
     let evaluation = &survey.evaluations[id];
+    let markers: Vec<Value> = survey.markers.iter().filter(|marker| marker.check == id).map(|marker| json!({ "file": marker.file, "line": marker.line })).collect();
+    let tests: Vec<Value> = evaluation.reference.iter().flat_map(|result| &result.tests).map(EnrolledTest::to_json).collect();
     let mut document = json!({
         "format": "check-1",
         "id": check.id,
@@ -137,6 +140,8 @@ pub fn check_document(survey: &Survey, id: &str) -> Value {
         "state": evaluation.state.as_str(),
         "parts_changed": evaluation.parts_changed,
         "files_changed": evaluation.files_changed,
+        "markers": markers,
+        "tests": tests,
         "failing_tests": evaluation.failing_tests,
     });
     output::set_present(&mut document, "suite", survey.suite_of(id));
@@ -179,19 +184,32 @@ pub fn check_text(survey: &Survey, id: &str) -> String {
             }
         }
     }
-    if !evaluation.failing_tests.is_empty() {
-        text.push_str(&format!("  failing tests: {}\n", evaluation.failing_tests.join(", ")));
+    text.push_str("  markers:\n");
+    for marker in survey.markers.iter().filter(|marker| marker.check == id) {
+        text.push_str(&format!("    {}:{}\n", marker.file, marker.line));
     }
     if let Some(result) = &evaluation.reference {
+        let result_kind = if evaluation.state == State::Kept {
+            "kept pass"
+        } else if matches!(evaluation.reason, Some(reason::FAILED_ON_THESE_INPUTS | reason::CONTRADICTED)) {
+            "fail on these inputs"
+        } else {
+            "newest result"
+        };
+        let age = clock::ago(&result.at);
         let commit = result.commit.as_deref().map(|commit| &commit[..commit.len().min(7)]).unwrap_or("none");
         let edited = if result.edits.is_empty() { "" } else { " with uncommitted edits" };
         text.push_str(&format!(
-            "  {} result: {} on {}, commit {commit}{edited}, {}\n",
-            if evaluation.state == State::Kept { "kept" } else { "last" },
+            "  result ({result_kind}): {} on {}, commit {commit}{edited}, {age}\n",
             result.outcome.as_str(),
-            result.where_,
-            clock::ago(&result.at)
+            result.where_
         ));
+        text.push_str(&format!("  tests of {result_kind}, {age}:\n"));
+        for test in &result.tests {
+            text.push_str(&format!("    {}  {}  {} ms\n", test.name, test.outcome, test.duration_ms));
+        }
+    } else {
+        text.push_str("  tests: no result yet\n");
     }
     text
 }
