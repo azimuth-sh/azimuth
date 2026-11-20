@@ -246,13 +246,10 @@ fn check_show_names_the_files_that_differ() {
     assert_eq!(files_changed(&repo.check_show(ON_TIME_RETURN)), expected);
     let output = repo.azimuth(&["check", "show", ON_TIME_RETURN]);
     output.expect_status(0);
-    let shown: Vec<_> = output
-        .stdout
-        .lines()
-        .skip_while(|line| *line != "    files  changed")
-        .skip(1)
-        .map_while(|line| line.strip_prefix("      "))
-        .collect();
+    let (_, entries) = text_section(&output.stdout, |words| {
+        words.first() == Some(&"files") && words.contains(&"changed")
+    });
+    let shown: Vec<_> = entries.iter().map(|line| line.trim()).collect();
     assert_eq!(
         shown, expected,
         "check show names more than the differing files:\n{}",
@@ -543,8 +540,26 @@ fn assert_test_outcome(text: &str, name: &str, outcome: &str) {
     assert!(
         text.lines()
             .any(|line| line.contains(name) && line.contains(outcome)),
-        "the tests of the last result do not show {name} with outcome {outcome}:\n{text}"
+        "the tests of the shown result do not show {name} with outcome {outcome}:\n{text}"
     );
+}
+
+fn text_section(text: &str, heading: impl Fn(&[&str]) -> bool) -> (&str, Vec<&str>) {
+    let mut lines = text.lines();
+    let title = lines
+        .find(|line| {
+            let words: Vec<_> = line
+                .split_whitespace()
+                .map(|word| word.trim_matches(|c: char| !c.is_alphanumeric()))
+                .collect();
+            heading(&words)
+        })
+        .unwrap_or_else(|| panic!("the text lacks the requested part:\n{text}"));
+    let indent = title.len() - title.trim_start().len();
+    let entries = lines
+        .take_while(|line| !line.trim().is_empty() && line.len() - line.trim_start().len() > indent)
+        .collect();
+    (title, entries)
 }
 
 fn list_length(document: &serde_json::Value, field: &str) -> usize {
@@ -557,10 +572,6 @@ fn list_length(document: &serde_json::Value, field: &str) -> usize {
 fn mentions_result_time(text: &str) -> bool {
     text.split_whitespace().any(|word| {
         let word = word.trim_matches(|c: char| !c.is_ascii_alphanumeric());
-        let lower = word.to_lowercase();
-        if ["ago", "age", "old", "seconds", "minutes", "hours", "days"].contains(&lower.as_str()) {
-            return true;
-        }
         let bytes = word.as_bytes();
         let date = bytes.len() >= 10
             && bytes[4] == b'-'
@@ -579,7 +590,18 @@ fn mentions_result_time(text: &str) -> bool {
                 .is_some_and(|n| !n.is_empty() && n.bytes().all(|c| c.is_ascii_digit()))
         });
         date || time || short_age
-    }) || text.to_lowercase().contains("just now")
+    }) || text
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .windows(2)
+        .any(|pair| {
+            pair[0].chars().all(|c| c.is_ascii_digit())
+                && [
+                    "second", "seconds", "minute", "minutes", "hour", "hours", "day", "days",
+                ]
+                .contains(&pair[1].trim_matches(|c: char| !c.is_alphabetic()))
+        })
+        || text.to_lowercase().contains("just now")
 }
 
 // behavior-2-follow-up: `azimuth check show <id>` prints the marker lines of the Check, each with its file and line
@@ -629,9 +651,9 @@ fn check_show_keeps_a_class_marker_as_one_line_without_test_names() {
     }
 }
 
-// behavior-2-follow-up: It prints the tests of the last result of the Check, each with its outcome
+// behavior-2-follow-up: It prints the tests of the result that the command shows, each with its outcome
 #[test]
-fn check_show_prints_the_tests_of_the_last_result_with_outcomes() {
+fn check_show_prints_the_tests_of_the_shown_result_with_outcomes() {
     let repo = return_parts_result();
     // The last result differs from the first, so this cannot pass by reading any old result.
     repo.azimuth_with_env(
@@ -659,6 +681,7 @@ fn check_show_prints_the_tests_of_the_last_result_with_outcomes() {
             "check show also gives {name} an outcome from an earlier result:\n{text}"
         );
     }
+    assert_restored_return_tests(&restored_return_result(true), true);
 }
 
 // behavior-2-follow-up: The second list also holds the tests that passed
@@ -676,15 +699,21 @@ fn check_show_includes_passed_tests_beside_failed_tests() {
 
 // behavior-2-follow-up: It says how old that result is
 #[test]
-fn check_show_dates_the_last_result_even_when_it_is_owed() {
+fn check_show_dates_the_test_list_result_even_when_it_is_owed() {
     let repo = return_parts_result();
     for edited in [false, true] {
         if edited {
             repo.append(PRODUCT_FILE, "a return also issues a receipt\n");
         }
         let text = return_parts_text(&repo);
-        assert!(mentions_result_time(&text),
-            "check show gives neither the time nor the age of the last result (edited={edited}):\n{text}");
+        let (heading, tests) = text_section(&text, |words| words.first() == Some(&"tests"));
+        assert_eq!(
+            tests.len(),
+            RETURN_TESTS.len(),
+            "the dated list must hold the tests: {text}"
+        );
+        assert!(mentions_result_time(heading),
+            "the test list has neither the time nor the age of its result (edited={edited}):\n{text}");
     }
 }
 
@@ -788,16 +817,149 @@ fn check_show_json_has_marker_and_test_lists_with_different_counts() {
     );
 }
 
-// behavior-2-follow-up: `failing_tests` is still there and holds the failed tests of the second list
+// behavior-2-follow-up: `failing_tests` is still there and names what it named before
 #[test]
 fn check_show_failing_tests_keeps_only_the_failed_names() {
-    let repo = return_parts_result();
+    let repo = restored_return_result(false);
     let document = repo.check_show(LATE_RETURN);
+    assert_eq!(document["reason"], "failed on these inputs", "{document:#}");
     assert_eq!(
         strings_of(&document["failing_tests"]),
         vec!["class-return.charges-late-return"],
         "failing_tests must keep the failed name and omit the two passed names: {document:#}"
     );
+}
+
+fn restored_return_result(older_pass: bool) -> Repo {
+    let repo = return_parts();
+    repo.replace(CLASS_RETURN, "outcome: failed", "outcome: passed");
+    if older_pass {
+        repo.run_json(&[], 0);
+    } else {
+        repo.azimuth_with_env(
+            &["check", "run", LATE_RETURN, "--json"],
+            &[("TEXT_ADAPTER_FAIL", "class-return.charges-late-return")],
+        )
+        .expect_status(1);
+    }
+    // Distinct times make selection deterministic without a sleep between launches.
+    repo.rewrite_records(|record| record["at"] = json!("2026-01-02T00:00:00Z"));
+    let original = repo.read(PRODUCT_FILE);
+    repo.append(PRODUCT_FILE, "a return also issues a receipt\n");
+    let output = if older_pass {
+        repo.azimuth_with_env(
+            &["check", "run", LATE_RETURN, "--json"],
+            &[("TEXT_ADAPTER_FAIL", "method-return.issues-receipt")],
+        )
+    } else {
+        // Keep the test files fixed: an outcome override changes no input fingerprint.
+        repo.azimuth(&["check", "run", LATE_RETURN, "--json"])
+    };
+    output.expect_status(if older_pass { 1 } else { 0 });
+    repo.rewrite_records(|record| {
+        if record["at"] != "2026-01-02T00:00:00Z" {
+            record["at"] = json!("2026-01-03T00:00:00Z");
+        }
+    });
+    repo.write(PRODUCT_FILE, &original);
+    let records = repo.results_of(LATE_RETURN);
+    assert_eq!(
+        records.len(),
+        2,
+        "both results must remain stored: {records:#?}"
+    );
+    let mut chronological: Vec<_> = records.iter().map(|(_, record)| record).collect();
+    chronological.sort_by_key(|record| record["at"].as_str().unwrap());
+    assert_ne!(
+        chronological[0]["body"]["fingerprint"],
+        chronological[1]["body"]["fingerprint"]
+    );
+    assert_eq!(
+        chronological[0]["body"]["outcome"],
+        if older_pass { "passed" } else { "failed" }
+    );
+    assert_eq!(
+        chronological[1]["body"]["outcome"],
+        if older_pass { "failed" } else { "passed" }
+    );
+    let document = repo.check_show(LATE_RETURN);
+    assert_eq!(
+        document["state"],
+        if older_pass { "kept" } else { "owed" },
+        "{document:#}"
+    );
+    assert_eq!(
+        document["result"]["at"], chronological[0]["at"],
+        "the state must rest on the older inputs: {document:#}"
+    );
+    repo
+}
+
+fn assert_restored_return_tests(repo: &Repo, older_pass: bool) {
+    let document = repo.check_show(LATE_RETURN);
+    let mut expected: Vec<_> = RETURN_TESTS
+        .into_iter()
+        .zip([7, 11, 23])
+        .map(|((name, outcome), duration)| {
+            json!({"name": name,
+            "outcome": if older_pass { "passed" } else { outcome }, "duration_ms": duration})
+        })
+        .collect();
+    expected.sort_by_key(|test| test["name"].as_str().unwrap().to_string());
+    let mut actual = document["tests"]
+        .as_array()
+        .expect("tests is a list")
+        .clone();
+    actual.sort_by_key(|test| test["name"].as_str().unwrap().to_string());
+    let mut differences = Vec::new();
+    if actual != expected {
+        differences.push("JSON tests describe another result".to_string());
+    }
+    let text = return_parts_text(repo);
+    let (_, entries) = text_section(&text, |words| words.first() == Some(&"tests"));
+    if entries.len() != expected.len() {
+        differences.push("the text list has extra or missing entries".to_string());
+    }
+    for test in &expected {
+        let name = test["name"].as_str().unwrap();
+        let outcome = test["outcome"].as_str().unwrap();
+        let opposite = if outcome == "passed" {
+            "failed"
+        } else {
+            "passed"
+        };
+        let matching: Vec<_> = entries.iter().filter(|line| line.contains(name)).collect();
+        if matching.len() != 1 || !matching[0].contains(outcome) || matching[0].contains(opposite) {
+            differences.push(format!("text must list {name} once as {outcome}"));
+        }
+    }
+    let failed = if older_pass {
+        vec![]
+    } else {
+        vec!["class-return.charges-late-return"]
+    };
+    if strings_of(&document["failing_tests"]) != failed {
+        differences.push("failing_tests describes another result".to_string());
+    }
+    if older_pass && entries.iter().any(|line| line.contains("failed")) {
+        differences.push("the kept pass lists a failure".to_string());
+    }
+    assert!(
+        differences.is_empty(),
+        "one output must describe the result the state rests on:\n{}\n{document:#}\n{text}",
+        differences.join("\n")
+    );
+}
+
+// behavior-2-follow-up: For a Check that is kept by an older pass while a newer fail is stored, the second list and `failing_tests` describe the kept pass
+#[test]
+fn check_show_uses_the_kept_pass_tests_after_restoring_inputs() {
+    assert_restored_return_tests(&restored_return_result(true), true);
+}
+
+#[test]
+fn check_show_uses_the_older_failed_tests_after_restoring_inputs() {
+    assert_restored_return_tests(&restored_return_result(false), false);
 }
 
 // behavior-2-follow-up: The document still names its format `check-1`

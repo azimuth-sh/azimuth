@@ -564,20 +564,66 @@ fn contains_any(text: &str, words: &[&str]) -> bool {
     words.iter().any(|word| text.contains(word))
 }
 
-fn rule_in_step(number: u32, rule: &str, holds: impl Fn(&str) -> bool) {
-    let step = installed_step(number);
-    assert!(
-        holds(&prose(&step)),
-        "step {number} does not say {rule}:\n{step}"
-    );
+fn sentences(text: &str) -> Vec<String> {
+    let mut result = Vec::new();
+    for paragraph in text.split("\n\n") {
+        let normalized = prose(paragraph);
+        let mut start = 0;
+        for (at, c) in normalized.char_indices() {
+            // A period inside a filename must not hide the condition after that filename.
+            if matches!(c, '.' | '?' | '!')
+                && normalized[at + 1..]
+                    .chars()
+                    .next()
+                    .is_none_or(char::is_whitespace)
+            {
+                result.push(normalized[start..at].trim().to_string());
+                start = at + 1;
+            }
+        }
+        if !normalized[start..].trim().is_empty() {
+            result.push(normalized[start..].trim().to_string());
+        }
+    }
+    result
 }
 
-fn rule_in_paragraph(number: u32, rule: &str, holds: impl Fn(&str) -> bool) {
-    let step = installed_step(number);
-    assert!(
-        step.split("\n\n").any(|paragraph| holds(&prose(paragraph))),
-        "step {number} does not say {rule}:\n{step}"
-    );
+fn rule_sentence(text: &str, rule: &str, holds: impl Fn(&str) -> bool) -> String {
+    sentences(text)
+        .into_iter()
+        .find(|s| holds(s))
+        .unwrap_or_else(|| panic!("no sentence says {rule}:\n{text}"))
+}
+
+fn assert_affirmative(sentence: &str) {
+    let words: Vec<_> = sentence
+        .split(|c: char| !c.is_alphanumeric() && c != '\'')
+        .collect();
+    for reversal in [
+        "never", "not", "except", "unless", "no", "don't", "cannot", "can't", "without",
+    ] {
+        assert!(
+            !words.contains(&reversal),
+            "{reversal:?} reverses the rule: {sentence}"
+        );
+    }
+}
+
+fn positive_rule_in_sentence(number: u32, rule: &str, holds: impl Fn(&str) -> bool) {
+    let sentence = rule_sentence(&installed_step(number), rule, holds);
+    assert_affirmative(&sentence);
+}
+
+fn assert_plan_question_is_asked(question: &str) {
+    let step = installed_step(2).split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(step.contains(question), "step 2 lacks the exact question {question:?}:\n{step}");
+    let instruction = rule_sentence(&step, "ask the plan questions", |s| {
+        contains_any(s, &["ask:", "ask the", "ask these", "ask each"])
+    });
+    assert_affirmative(&instruction);
+    let normalized = prose(question);
+    let sentence = rule_sentence(&step, question, |s| s.contains(normalized.trim_end_matches('?')));
+    assert_affirmative(&sentence.replace("no longer", ""));
 }
 
 fn arrival_command(step: &str) -> String {
@@ -653,7 +699,7 @@ fn printed_arrival_day(repo: &Repo, command: &str) -> String {
 // behavior-2-follow-up: Step 1 names the moved folder `<date>-<name>`
 #[test]
 fn step_1_names_finished_folders_with_date_and_name() {
-    rule_in_step(1, "the moved folder is named <date>-<name>", |s| {
+    positive_rule_in_sentence(1, "the moved folder is named <date>-<name>", |s| {
         s.contains("<date>-<name>") && s.contains("azimuth/changes/finished/")
     });
 }
@@ -661,7 +707,7 @@ fn step_1_names_finished_folders_with_date_and_name() {
 // behavior-2-follow-up: It says which day the date is: the day on which the folder arrived on the target branch
 #[test]
 fn step_1_uses_the_day_the_folder_arrived_on_the_target() {
-    rule_in_paragraph(
+    positive_rule_in_sentence(
         1,
         "the date is the day the folder arrived on the target branch",
         |s| {
@@ -676,27 +722,41 @@ fn step_1_uses_the_day_the_folder_arrived_on_the_target() {
 /// The command needs a stable place so these tests run the skill's command, not a copy.
 /// Step 1 has exactly one `sh` fenced block containing both `<target-branch>` and `<name>`.
 /// Its body runs as `sh -eu` from the repository root after literal substitution. It prints
-/// only YYYY-MM-DD on stdout. The two executable tests use that same block with TZ=Etc/GMT-14.
+/// only YYYY-MM-DD on stdout. The executable tests use that same block with TZ=Etc/GMT-14.
 // behavior-2-follow-up: It gives one git command that prints that day in UTC, and tells the agent not to type the date
 #[test]
 fn step_1_reads_the_utc_day_from_git_instead_of_typing_it() {
     let step = installed_step(1);
     arrival_command(&step);
-    let lower = prose(&step);
-    assert!(lower.contains("utc"), "step 1 does not name UTC:\n{step}");
-    assert!(
-        contains_any(
-            &lower,
-            &[
-                "do not type",
-                "never type",
-                "nobody types",
-                "don't type",
-                "do not enter",
-                "never enter"
-            ]
-        ),
-        "step 1 does not forbid typing the date:\n{step}"
+    let reading = rule_sentence(
+        &step,
+        "read the date from git in UTC and do not type it",
+        |s| {
+            s.contains("git")
+                && s.contains("utc")
+                && s.contains("date")
+                && contains_any(s, &["read", "use"])
+                && contains_any(
+                    s,
+                    &[
+                        "do not type",
+                        "never type",
+                        "nobody types",
+                        "don't type",
+                        "do not enter",
+                        "never enter",
+                    ],
+                )
+        },
+    );
+    assert_affirmative(
+        &reading
+            .replace("do not type", "")
+            .replace("never type", "")
+            .replace("nobody types", "")
+            .replace("don't type", "")
+            .replace("do not enter", "")
+            .replace("never enter", ""),
     );
 }
 
@@ -734,10 +794,59 @@ fn the_skill_command_prints_the_same_day_on_two_change_branches() {
     );
 }
 
+// behavior-2-follow-up: For a folder that arrived by a fast-forward, the command prints the day of the commit that first brought the folder
+#[test]
+fn the_skill_command_prints_the_first_folder_commit_day_after_fast_forward() {
+    let mut repo = Repo::sample();
+    repo.git(&["checkout", "--quiet", "-b", "prepared-change"]);
+    let folder = "azimuth/changes/return-receipt/proposal.md";
+    repo.write(folder, "A receipt for a returned book.\n");
+    date_for_git(&mut repo, "2031-03-05T00:10:00+1400");
+    repo.commit_all("prepare the receipt change");
+    // A later edit inside the folder separates first introduction from its latest change.
+    repo.append(folder, "Keep the receipt at the desk.\n");
+    date_for_git(&mut repo, "2031-03-07T12:00:00+1400");
+    repo.commit_all("complete the receipt proposal");
+    let change_tip = repo.head();
+    repo.git(&["checkout", "--quiet", "main"]);
+    date_for_git(&mut repo, "2031-03-09T12:00:00+1400");
+    repo.git(&["merge", "--quiet", "--ff-only", "prepared-change"]);
+    assert_eq!(
+        repo.head(),
+        change_tip,
+        "the arrival must be a fast-forward"
+    );
+    date_for_git(&mut repo, "2031-03-11T12:00:00+1400");
+    repo.commit_all("continue work on the target");
+    repo.git(&["checkout", "--quiet", "-b", "next-change"]);
+    assert_eq!(
+        printed_arrival_day(&repo, &arrival_command(&installed_step(1))),
+        "2031-03-04",
+        "use the first folder commit in UTC, even when arrival left no merge commit"
+    );
+}
+
+// behavior-2-follow-up: Step 1 tells the agent to read the day in a clone that has the whole history of the target branch
+#[test]
+fn step_1_requires_the_whole_target_history_for_the_day() {
+    positive_rule_in_sentence(
+        1,
+        "read the day in a clone with the whole target branch history",
+        |s| {
+            s.contains("clone")
+                && s.contains("target branch")
+                && s.contains("history")
+                && contains_any(s, &["whole", "full", "complete"])
+                && contains_any(s, &["day", "date"])
+                && contains_any(s, &["read", "use"])
+        },
+    );
+}
+
 // behavior-2-follow-up: Step 2 says that a Requirement and its Scenarios speak about the system as somebody outside it meets it
 #[test]
 fn step_2_keeps_requirements_and_scenarios_outside_the_system() {
-    rule_in_paragraph(
+    positive_rule_in_sentence(
         2,
         "Requirements and Scenarios speak from outside the system",
         |s| {
@@ -753,7 +862,7 @@ fn step_2_keeps_requirements_and_scenarios_outside_the_system() {
 // behavior-2-follow-up: Step 2 says that a Check may be made of a test through a door of the system and of tests of one part in isolation
 #[test]
 fn step_2_allows_a_door_test_and_isolated_tests_in_one_check() {
-    rule_in_paragraph(
+    positive_rule_in_sentence(
         2,
         "one Check may combine a door test and tests of a part in isolation",
         |s| {
@@ -769,8 +878,8 @@ fn step_2_allows_a_door_test_and_isolated_tests_in_one_check() {
 // behavior-2-follow-up: It says that every part carries the marker of the Check
 #[test]
 fn step_2_marks_every_part_for_the_check() {
-    rule_in_paragraph(2, "every part carries the marker of its Check", |s| {
-        s.contains("part")
+    positive_rule_in_sentence(2, "every part carries the marker of its Check", |s| {
+        s.contains("part") && contains_any(s, &["carries", "carry", "marked with"])
             && s.contains("marker")
             && s.contains("check")
             && contains_any(s, &["every", "each", "all"])
@@ -780,19 +889,50 @@ fn step_2_marks_every_part_for_the_check() {
 // behavior-2-follow-up: It says that a Check is never made only of tests of one part in isolation
 #[test]
 fn step_2_forbids_a_check_made_only_of_isolated_tests() {
-    rule_in_paragraph(2, "a Check is never made only of isolated tests", |s| {
-        s.contains("check")
-            && contains_any(s, &["isolat", "unit test"])
-            && contains_any(s, &["never", "must not", "cannot", "can't", "do not"])
-            && contains_any(s, &["only", "alone"])
-    });
+    let sentence = rule_sentence(
+        &installed_step(2),
+        "a Check is never made only of isolated tests",
+        |s| {
+            s.contains("check")
+                && contains_any(s, &["isolat", "unit test"])
+                && contains_any(s, &["never", "must not", "cannot", "can't", "do not"])
+                && contains_any(s, &["only", "alone"])
+        },
+    );
+    assert_affirmative(
+        &sentence
+            .replace("never", "")
+            .replace("must not", "")
+            .replace("cannot", "")
+            .replace("can't", "")
+            .replace("do not", ""),
+    );
+}
+
+// behavior-2-follow-up: It says that a test through a door is needed once for each place where the part is wired
+#[test]
+fn step_2_requires_a_door_test_for_each_wiring_place() {
+    let sentence = rule_sentence(
+        &installed_step(2),
+        "a door test is needed once per place the part is wired",
+        |s| {
+            s.contains("door")
+                && s.contains("test")
+                && s.contains("part")
+                && s.contains("wired")
+                && contains_any(s, &["each place", "every place"])
+                && contains_any(s, &["once", "one test"])
+                && contains_any(s, &["need", "require", "write"])
+        },
+    );
+    assert_affirmative(&sentence.replace("not once for a requirement", ""));
 }
 
 // behavior-2-follow-up: It gives the order of the claim of such a Check: the door, what each part shows, and last what is not shown
 #[test]
 fn step_2_orders_the_claim_door_parts_then_limits() {
-    rule_in_paragraph(
-        2,
+    let sentence = rule_sentence(
+        &installed_step(2),
         "the claim orders the door, what each part shows, and last what is not shown",
         |s| {
             let door = s.find("door");
@@ -804,25 +944,59 @@ fn step_2_orders_the_claim_door_parts_then_limits() {
                 && matches!((door, parts, limit), (Some(d), Some(p), Some(l)) if d < p && p < l)
         },
     );
+    assert_affirmative(&sentence.replace("not shown", "").replace("not show", ""));
 }
 
-// behavior-2-follow-up: It says that a journey, one test through several real operations, may be a part of several Checks and carries the marker of each
+// behavior-2-follow-up: It says that a journey, one test through several real operations, may be a part of several Checks and carries the marker of each Check that relies on it
 #[test]
 fn step_2_allows_a_journey_to_carry_each_checks_marker() {
-    rule_in_paragraph(2, "a journey is one test through several real operations, may be part of several Checks and carries every Check's marker", |s| {
-        s.contains("journey") && contains_any(s, &["one test", "single test"])
-            && contains_any(s, &["several real operations", "multiple real operations", "more than one real operation"])
-            && s.contains("part") && contains_any(s, &["several checks", "multiple checks", "more than one check"])
-            && contains_any(s, &["may", "can"]) && s.contains("marker")
-            && contains_any(s, &["every check", "each check", "all checks"])
-            && s.contains("scenario") && contains_any(s, &["passes through", "goes through", "travers"])
+    let step = installed_step(2);
+    let definition = rule_sentence(
+        &step,
+        "a journey is one test through several real operations",
+        |s| {
+            s.contains("journey")
+                && contains_any(s, &["one test", "single test"])
+                && contains_any(
+                    s,
+                    &[
+                        "several real operations",
+                        "multiple real operations",
+                        "more than one real operation",
+                    ],
+                )
+        },
+    );
+    assert_affirmative(&definition);
+    let sharing = rule_sentence(&step, "a journey may be part of several Checks", |s| {
+        s.contains("part")
+            && contains_any(
+                s,
+                &["several checks", "multiple checks", "more than one check"],
+            )
+            && contains_any(s, &["may", "can"])
     });
+    assert_affirmative(&sharing);
+    let markers = rule_sentence(
+        &step,
+        "every Check that relies on the journey carries its marker",
+        |s| {
+            s.contains("marker")
+                && contains_any(s, &["every check", "each check", "all checks"])
+                && contains_any(s, &["relies on", "rely on", "depends on"])
+        },
+    );
+    assert_affirmative(&markers);
+    assert!(
+        !markers.contains("whose scenario"),
+        "the marker still depends on the Scenario: {markers}"
+    );
 }
 
 // behavior-2-follow-up: It says that the claim of each such Check names the stretch of the journey that it relies on
 #[test]
 fn step_2_names_the_relied_on_stretch_in_each_journey_checks_claim() {
-    rule_in_paragraph(
+    positive_rule_in_sentence(
         2,
         "each Check's claim names the stretch of the journey it relies on",
         |s| {
@@ -847,7 +1021,7 @@ fn step_2_names_the_relied_on_stretch_in_each_journey_checks_claim() {
 // behavior-2-follow-up: It says that a Check also has a test of one operation alone, where that operation can be tested alone
 #[test]
 fn step_2_adds_an_operation_test_where_it_can_run_alone() {
-    rule_in_paragraph(
+    positive_rule_in_sentence(
         2,
         "where an operation can be tested alone, the Check also has a test of that operation alone",
         |s| {
@@ -873,10 +1047,63 @@ fn step_2_adds_an_operation_test_where_it_can_run_alone() {
     );
 }
 
+// behavior-2-follow-up: It says that when the change removes a Check, the marker leaves, and its test leaves only when the test carries no other marker
+#[test]
+fn removing_a_check_keeps_a_test_that_carries_another_marker() {
+    let intent = installed_step(2);
+    let build = installed_step(3);
+    let steps = format!("{intent}\n\n{build}");
+    let marker = rule_sentence(&steps, "remove the Check's marker in the Build", |s| {
+        s.contains("marker")
+            && contains_any(s, &["remov", "delet", "leaves", "leave"])
+            && (s.contains("build") || sentences(&build).iter().any(|b| b == s))
+    });
+    assert_affirmative(&marker.replace("no other", "").replace("no remaining", ""));
+    let guarded = |s: &str| {
+        s.contains("test")
+            && contains_any(s, &["remov", "delet", "leaves", "leave"])
+            && contains_any(s, &["only when", "only if"])
+            && contains_any(
+                s,
+                &["no other marker", "no remaining marker", "carries no other"],
+            )
+    };
+    let test = rule_sentence(
+        &steps,
+        "remove the test only when it carries no other marker",
+        guarded,
+    );
+    assert_affirmative(&test.replace("no other", "").replace("no remaining", ""));
+    for sentence in sentences(&steps).iter().filter(|s| {
+        contains_any(
+            s,
+            &[
+                "remove its test",
+                "remove the test",
+                "remove a test",
+                "remove tests",
+                "delete its test",
+                "delete the test",
+                "delete a test",
+                "delete tests",
+                "test leaves",
+                "tests leave",
+                "test is removed",
+                "tests are removed",
+                "test is deleted",
+                "tests are deleted",
+                "test is written or removed",
+            ],
+        )
+    }) {
+        assert!(guarded(sentence), "unconditional test removal: {sentence}");
+    }
+}
+
 // behavior-2-follow-up: It names the file of the plan, `azimuth/changes/<name>/plan.md`
 #[test]
 fn step_2_names_the_plan_file_in_the_change_folder() {
-    rule_in_paragraph(2, "the plan is azimuth/changes/<name>/plan.md", |s| {
+    positive_rule_in_sentence(2, "the plan is azimuth/changes/<name>/plan.md", |s| {
         s.contains("plan") && s.contains("azimuth/changes/<name>/plan.md")
     });
 }
@@ -884,7 +1111,7 @@ fn step_2_names_the_plan_file_in_the_change_folder() {
 // behavior-2-follow-up: Step 2 says that the change needs a plan when a Requirement that it adds or changes declares `Realization:`
 #[test]
 fn step_2_requires_a_plan_for_an_added_or_changed_realization_requirement() {
-    rule_in_paragraph(
+    positive_rule_in_sentence(
         2,
         "a plan is needed when an added or changed Requirement declares Realization:",
         |s| {
@@ -901,48 +1128,99 @@ fn step_2_requires_a_plan_for_an_added_or_changed_realization_requirement() {
 // behavior-2-follow-up: It says that a change with no such Requirement needs no plan
 #[test]
 fn step_2_needs_no_plan_without_such_a_requirement() {
-    rule_in_paragraph(2, "no such Requirement means no plan", |s| {
-        s.contains("plan")
-            && s.contains("requirement")
-            && contains_any(s, &["no such", "without", "none"])
-            && contains_any(
-                s,
-                &[
-                    "no plan",
-                    "needs no",
-                    "need no",
-                    "not need",
-                    "not required",
-                    "skip",
-                ],
-            )
-    });
+    let sentence = rule_sentence(
+        &installed_step(2),
+        "no such Requirement means no plan",
+        |s| {
+            s.contains("plan")
+                && s.contains("requirement")
+                && contains_any(s, &["no such", "without", "none"])
+                && contains_any(
+                    s,
+                    &[
+                        "no plan",
+                        "needs no",
+                        "need no",
+                        "not need",
+                        "not required",
+                        "skip",
+                    ],
+                )
+        },
+    );
+    assert_affirmative(
+        &sentence
+            .replace("no such", "")
+            .replace("without", "")
+            .replace("none", "")
+            .replace("no plan", "")
+            .replace("needs no", "")
+            .replace("need no", "")
+            .replace("not need", "")
+            .replace("not required", ""),
+    );
+}
+
+// behavior-2-follow-up: It says that the plan covers the whole change, also what is built for a Requirement that declares no `Realization:`
+#[test]
+fn step_2_plans_the_whole_change_including_requirements_without_realization() {
+    let sentence = rule_sentence(
+        &installed_step(2),
+        "the whole change is planned, including Requirements without Realization:",
+        |s| {
+            s.contains("plan")
+                && s.contains("change")
+                && s.contains("requirement")
+                && s.contains("realization:")
+                && contains_any(s, &["whole", "entire", "all of"])
+                && contains_any(s, &["also", "includ", "even"])
+                && contains_any(
+                    s,
+                    &[
+                        "no realization:",
+                        "without realization:",
+                        "does not declare",
+                    ],
+                )
+        },
+    );
+    assert_affirmative(
+        &sentence
+            .replace("no realization:", "")
+            .replace("without realization:", "")
+            .replace("does not declare", ""),
+    );
 }
 
 // behavior-2-follow-up: It puts the writing of the plan after the Scenarios and the Checks, and before the one stop of the step
 #[test]
 fn step_2_writes_the_plan_after_scenarios_and_checks_before_its_only_stop() {
     let step = installed_step(2);
-    let lower = prose(&step);
+    let order = rule_sentence(
+        &step,
+        "write the plan after the Scenarios and Checks",
+        |s| {
+            s.contains("plan")
+                && contains_any(s, &["write", "draft"])
+                && s.contains("scenario")
+                && s.contains("check")
+                && s.contains("after")
+        },
+    );
+    assert_affirmative(&order);
+    let after = order.find("after").unwrap();
+    let scenario = order.find("scenario").unwrap();
+    let check = order.find("check").unwrap();
+    let plan = order.find("plan").unwrap();
+    assert!(
+        after < scenario && after < check && ((scenario < plan && check < plan) || plan < after),
+        "the plan precedes the Scenarios or Checks: {order}"
+    );
     let plan_at = step
         .split("\n\n")
-        .find(|p| {
-            let p = prose(p);
-            p.contains("plan") && contains_any(&p, &["write", "draft"])
-        })
+        .find(|p| sentences(p).contains(&order))
         .map(|p| step.find(p).unwrap())
-        .expect("step 2 never asks the agent to write the plan");
-    let scenario_at = lower.find("scenario").expect("step 2 names no Scenario");
-    let check_at = lower.find("check").expect("step 2 names no Check");
-    let plan_paragraph = prose(paragraph_at(&step, plan_at));
-    let plan_in_lower = lower.find(&plan_paragraph).unwrap();
-    let explicit_after = plan_paragraph.contains("after")
-        && plan_paragraph.contains("scenario")
-        && plan_paragraph.contains("check");
-    assert!(
-        explicit_after || (scenario_at < plan_in_lower && check_at < plan_in_lower),
-        "the plan is not written after the Scenarios and Checks:\n{step}"
-    );
+        .unwrap();
     let stops: Vec<_> = step.match_indices("Stop.").collect();
     assert_eq!(
         stops.len(),
@@ -963,7 +1241,7 @@ fn step_2_writes_the_plan_after_scenarios_and_checks_before_its_only_stop() {
 // behavior-2-follow-up: It names what the plan holds at the stop: the proposed decisions, the units to add, change or delete, and the migration steps
 #[test]
 fn step_2_names_the_plan_contents_at_the_stop() {
-    rule_in_paragraph(2, "the plan at the stop holds proposed decisions, units to add, change or delete, and migration steps", |s| {
+    positive_rule_in_sentence(2, "the plan at the stop holds proposed decisions, units to add, change or delete, and migration steps", |s| {
         s.contains("plan") && s.contains("proposed") && s.contains("decision")
             && s.contains("unit") && s.contains("add") && s.contains("chang")
             && contains_any(s, &["delet", "remov"]) && s.contains("migration") && s.contains("step")
@@ -973,104 +1251,126 @@ fn step_2_names_the_plan_contents_at_the_stop() {
 // behavior-2-follow-up: It says that what somebody outside the system can observe is a Scenario and no line of the plan, and that the addresses and the answers between the team's own components are in the plan
 #[test]
 fn step_2_puts_observations_in_scenarios_and_internal_contracts_in_the_plan() {
-    rule_in_step(2, "outside observations belong to Scenarios, while internal addresses and answers belong to the plan", |s| {
-        s.contains("scenario") && s.contains("plan") && contains_any(s, &["outside", "external"])
-            && contains_any(s, &["observ", "see", "meet"])
-            && contains_any(s, &["not in the plan", "out of the plan", "only in", "belongs in", "belong in", "is a scenario", "are scenarios"])
-            && s.contains("address") && contains_any(s, &["answer", "response"])
-            && s.contains("component") && contains_any(s, &["own", "internal"])
-    });
+    let step = installed_step(2);
+    let outside = rule_sentence(
+        &step,
+        "outside observations belong in a Scenario, outside the plan",
+        |s| {
+            contains_any(s, &["outside", "external"])
+                && contains_any(s, &["observ", "see", "meet"])
+                && s.contains("scenario")
+                && s.contains("plan")
+        },
+    );
+    let observation = outside
+        .find("observ")
+        .or_else(|| outside.find("see"))
+        .or_else(|| outside.find("meet"))
+        .unwrap();
+    let scenario = outside.find("scenario").unwrap();
+    assert!(
+        observation < scenario,
+        "the observation and its home are reversed: {outside}"
+    );
+    assert_affirmative(
+        &outside
+            .replace("not in the plan", "")
+            .replace("no line of the plan", ""),
+    );
+    let exclusion = outside.contains("not in the plan")
+        || outside.contains("no line of the plan")
+        || sentences(&step)
+            .iter()
+            .any(|s| s.contains("observ") && s.contains("not in the plan"));
+    assert!(
+        exclusion,
+        "outside observations are not excluded from the plan: {outside}"
+    );
+    let internal = rule_sentence(
+        &step,
+        "internal addresses and answers belong in the plan",
+        |s| {
+            s.contains("address")
+                && contains_any(s, &["answer", "response"])
+                && s.contains("component")
+                && contains_any(s, &["own", "internal"])
+                && s.contains("plan")
+        },
+    );
+    assert_affirmative(&internal);
+    assert!(
+        internal.find("address").unwrap() < internal.find("plan").unwrap()
+            && !internal.contains("scenario"),
+        "internal contracts have the wrong home: {internal}"
+    );
 }
 
 // behavior-2-follow-up: It asks about data and the release before
 #[test]
 fn step_2_asks_about_data_and_the_release_before() {
-    let step = installed_step(2)
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    assert!(
-        step.contains(
-            "What data is added or changed, and how does the release before it run beside it?"
-        ),
-        "step 2 lacks the exact question about data and the release before:\n{step}"
-    );
+    assert_plan_question_is_asked("What data is added or changed, and how does the release before it run beside it?");
 }
 
 // behavior-2-follow-up: It asks about the promises between components
 #[test]
 fn step_2_asks_about_promises_between_components() {
-    let step = installed_step(2)
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    assert!(
-        step.contains("What do the team's own components promise each other?"),
-        "step 2 lacks the exact question about promises between components:\n{step}"
-    );
+    assert_plan_question_is_asked("What do the team's own components promise each other?");
 }
 
 // behavior-2-follow-up: It asks who may do it
 #[test]
 fn step_2_asks_who_may_do_it() {
-    let step = installed_step(2)
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    assert!(
-        step.contains("Who may do it, and where is that enforced?"),
-        "step 2 lacks the exact question about who may do it:\n{step}"
-    );
+    assert_plan_question_is_asked("Who may do it, and where is that enforced?");
 }
 
 // behavior-2-follow-up: It asks how a refusal reaches the caller
 #[test]
 fn step_2_asks_how_a_refusal_reaches_the_caller() {
-    let step = installed_step(2)
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    assert!(
-        step.contains("How does a refusal reach the caller?"),
-        "step 2 lacks the exact question about how a refusal reaches the caller:\n{step}"
-    );
+    assert_plan_question_is_asked("How does a refusal reach the caller?");
 }
 
 // behavior-2-follow-up: It asks about two requests that meet
 #[test]
 fn step_2_asks_about_two_requests_that_meet() {
-    let step = installed_step(2)
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    assert!(
-        step.contains("What happens when two requests meet?"),
-        "step 2 lacks the exact question about two requests that meet:\n{step}"
-    );
+    assert_plan_question_is_asked("What happens when two requests meet?");
 }
 
 // behavior-2-follow-up: It asks what can no longer be deleted
 #[test]
 fn step_2_asks_what_can_no_longer_be_deleted() {
-    let step = installed_step(2)
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    assert!(
-        step.contains("What can no longer be deleted?"),
-        "step 2 lacks the exact question about what can no longer be deleted:\n{step}"
-    );
+    assert_plan_question_is_asked("What can no longer be deleted?");
 }
 
 // behavior-2-follow-up: It says that a question with an answer becomes a proposed decision, and that a question with no answer leaves no line
 #[test]
 fn step_2_turns_answers_into_proposed_decisions_and_leaves_no_empty_line() {
-    rule_in_step(2, "an answered question becomes a proposed decision and an unanswered question leaves no line", |s| {
-        s.contains("question") && s.contains("answer") && s.contains("plan")
-            && s.contains("proposed") && s.contains("decision")
-            && contains_any(s, &["no answer", "unanswered", "without an answer"])
-            && contains_any(s, &["no line", "omit", "leave nothing", "write nothing"])
-    });
+    positive_rule_in_sentence(
+        2,
+        "an answered question becomes a proposed decision in the plan",
+        |s| {
+            s.contains("question")
+                && s.contains("answer")
+                && s.contains("plan")
+                && s.contains("proposed")
+                && s.contains("decision")
+                && contains_any(s, &["become", "turn"])
+        },
+    );
+    let sentence = rule_sentence(
+        &installed_step(2),
+        "an unanswered question leaves no line",
+        |s| {
+            s.contains("question")
+                && contains_any(s, &["no answer", "unanswered", "without an answer"])
+                && contains_any(s, &["no line", "omit", "leave nothing", "write nothing"])
+        },
+    );
+    assert_affirmative(
+        &sentence
+            .replace("no answer", "")
+            .replace("without an answer", "")
+            .replace("no line", ""),
+    );
 }
 
 // behavior-2-follow-up: The stop of step 2 names the plan among what the person reads
@@ -1085,16 +1385,17 @@ fn step_2_offers_the_plan_to_the_person_at_the_stop() {
             && contains_any(&stop, &["read", "review"]),
         "the Intent stop does not ask the person to read the plan:\n{step}"
     );
+    assert_affirmative(&stop);
 }
 
 // behavior-2-follow-up: Step 3 tells the agent to move a proposed decision into `realization.md` only when the finished code follows it
 #[test]
 fn step_3_keeps_only_decisions_the_finished_code_follows() {
-    rule_in_paragraph(
+    positive_rule_in_sentence(
         3,
         "a proposed decision moves to realization.md only when finished code follows it",
         |s| {
-            s.contains("proposed")
+            s.contains("proposed") && contains_any(s, &["move", "keep"])
                 && s.contains("decision")
                 && s.contains("realization.md")
                 && s.contains("code")
@@ -1105,11 +1406,82 @@ fn step_3_keeps_only_decisions_the_finished_code_follows() {
     );
 }
 
+// behavior-2-follow-up: Step 3 puts the writing of `realization.md` before the last run
+#[test]
+fn step_3_writes_realization_before_the_last_run() {
+    let sentence = rule_sentence(
+        &installed_step(3),
+        "write realization.md before the last run",
+        |s| {
+            s.contains("realization.md")
+                && contains_any(s, &["writ", "move"])
+                && s.contains("before")
+                && contains_any(s, &["last run", "final run", "last azimuth run", "final azimuth run"])
+        },
+    );
+    assert_affirmative(&sentence);
+    let before = sentence.find("before").unwrap();
+    let run = sentence.find("run").unwrap();
+    let realization = sentence.find("realization.md").unwrap();
+    assert!(
+        before < run && (realization < before || run < realization),
+        "the last run precedes realization.md: {sentence}"
+    );
+}
+
+// behavior-2-follow-up: Step 3 ends when `azimuth run` succeeds and `azimuth status` names nothing that a run could settle
+#[test]
+fn step_3_ends_when_a_successful_run_can_settle_nothing_more() {
+    let step = installed_step(3);
+    let sentence = rule_sentence(
+        &step,
+        "azimuth run succeeds and status names nothing a run could settle",
+        |s| {
+            s.contains("azimuth run")
+                && s.contains("succeed")
+                && s.contains("azimuth status")
+                && contains_any(s, &["nothing", "no remaining", "no work"])
+                && contains_any(s, &["settle", "resolve"])
+                && contains_any(s, &["until", "ends when", "end when"])
+        },
+    );
+    assert_affirmative(&sentence.replace("no remaining", "").replace("no work", ""));
+    assert!(
+        !prose(&step).contains("until azimuth status is quiet")
+            && !prose(&step).contains("azimuth status is quiet"),
+        "Build still demands quiet status: {step}"
+    );
+}
+
+// behavior-2-follow-up: It says what may be left: a review, which this version does not record, and a Check that runs only in CI
+#[test]
+fn step_3_allows_only_unrecorded_reviews_and_ci_checks_to_remain() {
+    let sentence = rule_sentence(
+        &installed_step(3),
+        "status may still name an unrecorded review or a CI-only Check",
+        |s| {
+            s.contains("review")
+                && s.contains("check")
+                && s.contains("ci")
+                && contains_any(s, &["may", "can"])
+                && contains_any(s, &["still", "remain", "left"])
+                && s.contains("version")
+                && contains_any(s, &["does not record", "records no reviews"])
+                && contains_any(s, &["only in ci", "ci only", "ci-only"])
+        },
+    );
+    assert_affirmative(
+        &sentence
+            .replace("does not record", "")
+            .replace("records no reviews", ""),
+    );
+}
+
 // behavior-2-follow-up: Step 4 tells the agent to name every proposed decision that the finished code does not follow, and to say why
 #[test]
 fn step_4_names_every_departure_from_the_plan_and_why() {
-    rule_in_paragraph(
-        4,
+    let sentence = rule_sentence(
+        &installed_step(4),
         "every proposed decision the finished code does not follow is named with its reason",
         |s| {
             s.contains("proposed")
@@ -1129,6 +1501,28 @@ fn step_4_names_every_departure_from_the_plan_and_why() {
                     ],
                 )
                 && contains_any(s, &["why", "reason"])
+        },
+    );
+    assert_affirmative(
+        &sentence
+            .replace("does not follow", "")
+            .replace("did not follow", "")
+            .replace("doesn't follow", "")
+            .replace("not implement", "")
+            .replace("not match", ""),
+    );
+}
+
+// behavior-2-follow-up: Step 4 tells the agent to name what `azimuth status` still names
+#[test]
+fn step_4_names_the_work_status_still_reports() {
+    positive_rule_in_sentence(
+        4,
+        "name what azimuth status still names at hand over",
+        |s| {
+            s.contains("azimuth status")
+                && contains_any(s, &["still", "remain", "left"])
+                && contains_any(s, &["name", "list", "report"])
         },
     );
 }

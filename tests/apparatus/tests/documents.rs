@@ -12,7 +12,7 @@ fn every_quote_of_the_increment_is_a_sentence_of_the_design() {
     for (list, at_least) in [
         ("increments/1.md", 300),
         ("increments/2.md", 100),
-        ("increments/2-follow-up.md", 49),
+        ("increments/2-follow-up.md", 59),
         ("increments/release.md", 20),
     ] {
         let count = rows.iter().filter(|row| row.list == list).count();
