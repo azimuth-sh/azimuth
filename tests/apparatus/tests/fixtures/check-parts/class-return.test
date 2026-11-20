@@ -1,0 +1,7 @@
+# The class marker enrolls both tests, so one marker is not one test.
+# Check: late-return-is-fined
+test: charges-late-return
+outcome: failed
+
+test: accepts-exact-fine
+outcome: passed

@@ -1,0 +1,4 @@
+# The receipt has its own marker, apart from the class marker.
+test: issues-receipt
+# Check: late-return-is-fined
+outcome: passed

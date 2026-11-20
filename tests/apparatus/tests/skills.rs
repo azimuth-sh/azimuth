@@ -545,3 +545,515 @@ fn lint_still_reports_both_intent_findings_and_accepts_no_step_option() {
     let output = repo.azimuth(&["lint", "--step", "intent", "--json"]);
     output.expect_status(2);
 }
+
+fn installed_step(number: u32) -> String {
+    let repo = Repo::sample();
+    install(&repo, "codex");
+    step_text(&digest_line_is_correct(&repo, SKILL_FILE), number)
+}
+
+fn prose(text: &str) -> String {
+    text.replace(['`', '*'], "")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+fn contains_any(text: &str, words: &[&str]) -> bool {
+    words.iter().any(|word| text.contains(word))
+}
+
+fn rule_in_step(number: u32, rule: &str, holds: impl Fn(&str) -> bool) {
+    let step = installed_step(number);
+    assert!(
+        holds(&prose(&step)),
+        "step {number} does not say {rule}:\n{step}"
+    );
+}
+
+fn rule_in_paragraph(number: u32, rule: &str, holds: impl Fn(&str) -> bool) {
+    let step = installed_step(number);
+    assert!(
+        step.split("\n\n").any(|paragraph| holds(&prose(paragraph))),
+        "step {number} does not say {rule}:\n{step}"
+    );
+}
+
+fn arrival_command(step: &str) -> String {
+    let blocks: Vec<_> = step
+        .split("```sh\n")
+        .skip(1)
+        .map(|rest| rest.split_once("```").expect("the command fence closes").0)
+        .filter(|block| block.contains("<target-branch>") && block.contains("<name>"))
+        .collect();
+    assert_eq!(blocks.len(), 1,
+        "step 1 needs one sh fenced block with <target-branch> and <name> that prints the arrival day:\n{step}");
+    assert!(
+        blocks[0].contains("git "),
+        "the arrival command does not read git: {}",
+        blocks[0]
+    );
+    blocks[0].to_string()
+}
+
+fn date_for_git(repo: &mut Repo, date: &str) {
+    repo.set_env("GIT_AUTHOR_DATE", date);
+    repo.set_env("GIT_COMMITTER_DATE", date);
+}
+
+fn folder_merged_into_target() -> Repo {
+    let mut repo = Repo::sample();
+    repo.git(&["checkout", "--quiet", "-b", "prepared-change"]);
+    repo.write(
+        "azimuth/changes/return-receipt/proposal.md",
+        "A receipt for a returned book.\n",
+    );
+    date_for_git(&mut repo, "2031-03-05T00:10:00+1400");
+    repo.commit_all("prepare the receipt change");
+    repo.git(&["checkout", "--quiet", "main"]);
+    date_for_git(&mut repo, "2031-03-09T00:15:00+1400");
+    repo.git(&[
+        "merge",
+        "--quiet",
+        "--no-ff",
+        "prepared-change",
+        "-m",
+        "merge the receipt change",
+    ]);
+    assert_eq!(
+        repo.git(&["show", "-s", "--format=%cI", "HEAD"]).trim(),
+        "2031-03-09T00:15:00+14:00"
+    );
+    // The target tip is later than the arrival, so reading only its date cannot pass.
+    date_for_git(&mut repo, "2031-03-11T12:00:00+1400");
+    repo.commit_all("continue work on the target");
+    repo
+}
+
+fn printed_arrival_day(repo: &Repo, command: &str) -> String {
+    let script = command
+        .replace("<target-branch>", "main")
+        .replace("<name>", "return-receipt");
+    let mut shell = std::process::Command::new("sh");
+    shell
+        .args(["-eu", "-c", &script])
+        .current_dir(repo.root())
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("LC_ALL", "C")
+        .env("TZ", "Etc/GMT-14");
+    let output = run_with_time_limit(shell, std::time::Duration::from_secs(10), None);
+    output.expect_status(0);
+    output.stdout.trim().to_string()
+}
+
+// behavior-2-follow-up: Step 1 names the moved folder `<date>-<name>`
+#[test]
+fn step_1_names_finished_folders_with_date_and_name() {
+    rule_in_step(1, "the moved folder is named <date>-<name>", |s| {
+        s.contains("<date>-<name>") && s.contains("azimuth/changes/finished/")
+    });
+}
+
+// behavior-2-follow-up: It says which day the date is: the day on which the folder arrived on the target branch
+#[test]
+fn step_1_uses_the_day_the_folder_arrived_on_the_target() {
+    rule_in_paragraph(
+        1,
+        "the date is the day the folder arrived on the target branch",
+        |s| {
+            s.contains("date")
+                && s.contains("day")
+                && s.contains("target branch")
+                && contains_any(s, &["arriv", "reach", "merge"])
+        },
+    );
+}
+
+/// The command needs a stable place so these tests run the skill's command, not a copy.
+/// Step 1 has exactly one `sh` fenced block containing both `<target-branch>` and `<name>`.
+/// Its body runs as `sh -eu` from the repository root after literal substitution. It prints
+/// only YYYY-MM-DD on stdout. The two executable tests use that same block with TZ=Etc/GMT-14.
+// behavior-2-follow-up: It gives one git command that prints that day in UTC, and tells the agent not to type the date
+#[test]
+fn step_1_reads_the_utc_day_from_git_instead_of_typing_it() {
+    let step = installed_step(1);
+    arrival_command(&step);
+    let lower = prose(&step);
+    assert!(lower.contains("utc"), "step 1 does not name UTC:\n{step}");
+    assert!(
+        contains_any(
+            &lower,
+            &[
+                "do not type",
+                "never type",
+                "nobody types",
+                "don't type",
+                "do not enter",
+                "never enter"
+            ]
+        ),
+        "step 1 does not forbid typing the date:\n{step}"
+    );
+}
+
+// behavior-2-follow-up: For a folder that arrived by a merge, the command of the skill prints the day of the merge on the target branch, and not the day of the commit on the change branch
+#[test]
+fn the_skill_command_prints_the_target_merge_day_in_utc() {
+    let repo = folder_merged_into_target();
+    repo.git(&["checkout", "--quiet", "-b", "next-change"]);
+    let command = arrival_command(&installed_step(1));
+    assert_eq!(printed_arrival_day(&repo, &command), "2031-03-08",
+        "the skill command must print the target merge day in UTC, not the change commit day, the local merge day or the target tip day");
+}
+
+// behavior-2-follow-up: Run on two branches that start from the same target branch, the command prints the same day
+#[test]
+fn the_skill_command_prints_the_same_day_on_two_change_branches() {
+    let mut repo = folder_merged_into_target();
+    repo.git(&["checkout", "--quiet", "-b", "next-change-a", "main"]);
+    date_for_git(&mut repo, "2031-03-12T12:00:00+1400");
+    repo.commit_all("start the first change");
+    repo.git(&["checkout", "--quiet", "-b", "next-change-b", "main"]);
+    date_for_git(&mut repo, "2031-03-15T12:00:00+1400");
+    repo.commit_all("start the second change");
+    let command = arrival_command(&installed_step(1));
+    let second = printed_arrival_day(&repo, &command);
+    repo.git(&["checkout", "--quiet", "next-change-a"]);
+    let first = printed_arrival_day(&repo, &command);
+    assert_eq!(
+        first, second,
+        "branches from the same target disagree about the arrival day"
+    );
+    assert_eq!(
+        first, "2031-03-08",
+        "both branches must print the UTC arrival day"
+    );
+}
+
+// behavior-2-follow-up: Step 2 says that a Requirement and its Scenarios speak about the system as somebody outside it meets it
+#[test]
+fn step_2_keeps_requirements_and_scenarios_outside_the_system() {
+    rule_in_paragraph(
+        2,
+        "Requirements and Scenarios speak from outside the system",
+        |s| {
+            s.contains("requirement")
+                && s.contains("scenario")
+                && s.contains("system")
+                && contains_any(s, &["outside", "external"])
+                && contains_any(s, &["meet", "observ", "see", "experience"])
+        },
+    );
+}
+
+// behavior-2-follow-up: Step 2 says that a Check may be made of a test through a door of the system and of tests of one part in isolation
+#[test]
+fn step_2_allows_a_door_test_and_isolated_tests_in_one_check() {
+    rule_in_paragraph(
+        2,
+        "one Check may combine a door test and tests of a part in isolation",
+        |s| {
+            s.contains("check")
+                && s.contains("door")
+                && s.contains("part")
+                && contains_any(s, &["isolat", "unit test"])
+                && contains_any(s, &["may", "can", "combine"])
+        },
+    );
+}
+
+// behavior-2-follow-up: It says that every part carries the marker of the Check
+#[test]
+fn step_2_marks_every_part_for_the_check() {
+    rule_in_paragraph(2, "every part carries the marker of its Check", |s| {
+        s.contains("part")
+            && s.contains("marker")
+            && s.contains("check")
+            && contains_any(s, &["every", "each", "all"])
+    });
+}
+
+// behavior-2-follow-up: It says that a Check is never made only of tests of one part in isolation
+#[test]
+fn step_2_forbids_a_check_made_only_of_isolated_tests() {
+    rule_in_paragraph(2, "a Check is never made only of isolated tests", |s| {
+        s.contains("check")
+            && contains_any(s, &["isolat", "unit test"])
+            && contains_any(s, &["never", "must not", "cannot", "can't", "do not"])
+            && contains_any(s, &["only", "alone"])
+    });
+}
+
+// behavior-2-follow-up: It gives the order of the claim of such a Check: the door, what each part shows, and last what is not shown
+#[test]
+fn step_2_orders_the_claim_door_parts_then_limits() {
+    rule_in_paragraph(
+        2,
+        "the claim orders the door, what each part shows, and last what is not shown",
+        |s| {
+            let door = s.find("door");
+            let parts = s.find("each part").or_else(|| s.find("every part"));
+            let limit = s.find("not shown").or_else(|| s.find("not show"));
+            s.contains("claim")
+                && contains_any(s, &["order", "first"])
+                && contains_any(s, &["last", "finally"])
+                && matches!((door, parts, limit), (Some(d), Some(p), Some(l)) if d < p && p < l)
+        },
+    );
+}
+
+// behavior-2-follow-up: Step 2 says that the change needs a plan when a Requirement that it adds or changes declares `Realization:`
+#[test]
+fn step_2_requires_a_plan_for_an_added_or_changed_realization_requirement() {
+    rule_in_paragraph(
+        2,
+        "a plan is needed when an added or changed Requirement declares Realization:",
+        |s| {
+            s.contains("plan")
+                && s.contains("requirement")
+                && s.contains("realization:")
+                && s.contains("add")
+                && contains_any(s, &["chang", "alter"])
+                && contains_any(s, &["need", "require", "write"])
+        },
+    );
+}
+
+// behavior-2-follow-up: It says that a change with no such Requirement needs no plan
+#[test]
+fn step_2_needs_no_plan_without_such_a_requirement() {
+    rule_in_paragraph(2, "no such Requirement means no plan", |s| {
+        s.contains("plan")
+            && s.contains("requirement")
+            && contains_any(s, &["no such", "without", "none"])
+            && contains_any(
+                s,
+                &[
+                    "no plan",
+                    "needs no",
+                    "need no",
+                    "not need",
+                    "not required",
+                    "skip",
+                ],
+            )
+    });
+}
+
+// behavior-2-follow-up: It puts the writing of the plan after the Scenarios and the Checks, and before the one stop of the step
+#[test]
+fn step_2_writes_the_plan_after_scenarios_and_checks_before_its_only_stop() {
+    let step = installed_step(2);
+    let lower = prose(&step);
+    let plan_at = step
+        .split("\n\n")
+        .find(|p| {
+            let p = prose(p);
+            p.contains("plan") && contains_any(&p, &["write", "draft"])
+        })
+        .map(|p| step.find(p).unwrap())
+        .expect("step 2 never asks the agent to write the plan");
+    let scenario_at = lower.find("scenario").expect("step 2 names no Scenario");
+    let check_at = lower.find("check").expect("step 2 names no Check");
+    let plan_paragraph = prose(paragraph_at(&step, plan_at));
+    let plan_in_lower = lower.find(&plan_paragraph).unwrap();
+    let explicit_after = plan_paragraph.contains("after")
+        && plan_paragraph.contains("scenario")
+        && plan_paragraph.contains("check");
+    assert!(
+        explicit_after || (scenario_at < plan_in_lower && check_at < plan_in_lower),
+        "the plan is not written after the Scenarios and Checks:\n{step}"
+    );
+    let stops: Vec<_> = step.match_indices("Stop.").collect();
+    assert_eq!(
+        stops.len(),
+        1,
+        "the plan must share the one Intent stop:\n{step}"
+    );
+    assert!(
+        plan_at < stops[0].0,
+        "the plan is written after the Intent stop:\n{step}"
+    );
+    let stop = prose(paragraph_at(&step, stops[0].0));
+    assert!(
+        stop.contains("scenario") && stop.contains("check") && stop.contains("plan"),
+        "the one Intent stop does not offer all three to the person:\n{step}"
+    );
+}
+
+// behavior-2-follow-up: It names what the plan holds at the stop: the proposed decisions, the units to add, change or delete, and the migration steps
+#[test]
+fn step_2_names_the_plan_contents_at_the_stop() {
+    rule_in_paragraph(2, "the plan at the stop holds proposed decisions, units to add, change or delete, and migration steps", |s| {
+        s.contains("plan") && s.contains("proposed") && s.contains("decision")
+            && s.contains("unit") && s.contains("add") && s.contains("chang")
+            && contains_any(s, &["delet", "remov"]) && s.contains("migration") && s.contains("step")
+    });
+}
+
+// behavior-2-follow-up: It says that what somebody outside the system can observe is a Scenario and no line of the plan, and that the addresses and the answers between the team's own components are in the plan
+#[test]
+fn step_2_puts_observations_in_scenarios_and_internal_contracts_in_the_plan() {
+    rule_in_step(2, "outside observations belong to Scenarios, while internal addresses and answers belong to the plan", |s| {
+        s.contains("scenario") && s.contains("plan") && contains_any(s, &["outside", "external"])
+            && contains_any(s, &["observ", "see", "meet"])
+            && contains_any(s, &["not in the plan", "out of the plan", "only in", "belongs in", "belong in", "is a scenario", "are scenarios"])
+            && s.contains("address") && contains_any(s, &["answer", "response"])
+            && s.contains("component") && contains_any(s, &["own", "internal"])
+    });
+}
+
+// behavior-2-follow-up: It asks about data and the release before
+#[test]
+fn step_2_asks_about_data_and_the_release_before() {
+    let step = installed_step(2)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        step.contains(
+            "What data is added or changed, and how does the release before it run beside it?"
+        ),
+        "step 2 lacks the exact question about data and the release before:\n{step}"
+    );
+}
+
+// behavior-2-follow-up: It asks about the promises between components
+#[test]
+fn step_2_asks_about_promises_between_components() {
+    let step = installed_step(2)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        step.contains("What do the team's own components promise each other?"),
+        "step 2 lacks the exact question about promises between components:\n{step}"
+    );
+}
+
+// behavior-2-follow-up: It asks who may do it
+#[test]
+fn step_2_asks_who_may_do_it() {
+    let step = installed_step(2)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        step.contains("Who may do it, and where is that enforced?"),
+        "step 2 lacks the exact question about who may do it:\n{step}"
+    );
+}
+
+// behavior-2-follow-up: It asks how a refusal reaches the caller
+#[test]
+fn step_2_asks_how_a_refusal_reaches_the_caller() {
+    let step = installed_step(2)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        step.contains("How does a refusal reach the caller?"),
+        "step 2 lacks the exact question about how a refusal reaches the caller:\n{step}"
+    );
+}
+
+// behavior-2-follow-up: It asks about two requests that meet
+#[test]
+fn step_2_asks_about_two_requests_that_meet() {
+    let step = installed_step(2)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        step.contains("What happens when two requests meet?"),
+        "step 2 lacks the exact question about two requests that meet:\n{step}"
+    );
+}
+
+// behavior-2-follow-up: It asks what can no longer be deleted
+#[test]
+fn step_2_asks_what_can_no_longer_be_deleted() {
+    let step = installed_step(2)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        step.contains("What can no longer be deleted?"),
+        "step 2 lacks the exact question about what can no longer be deleted:\n{step}"
+    );
+}
+
+// behavior-2-follow-up: It says that a question with an answer becomes a proposed decision, and that a question with no answer leaves no line
+#[test]
+fn step_2_turns_answers_into_proposed_decisions_and_leaves_no_empty_line() {
+    rule_in_step(2, "an answered question becomes a proposed decision and an unanswered question leaves no line", |s| {
+        s.contains("question") && s.contains("answer") && s.contains("plan")
+            && s.contains("proposed") && s.contains("decision")
+            && contains_any(s, &["no answer", "unanswered", "without an answer"])
+            && contains_any(s, &["no line", "omit", "leave nothing", "write nothing"])
+    });
+}
+
+// behavior-2-follow-up: The stop of step 2 names the plan among what the person reads
+#[test]
+fn step_2_offers_the_plan_to_the_person_at_the_stop() {
+    let step = installed_step(2);
+    let stop_at = step.find("Stop.").expect("step 2 has no stop");
+    let stop = prose(paragraph_at(&step, stop_at));
+    assert!(
+        stop.contains("plan")
+            && stop.contains("person")
+            && contains_any(&stop, &["read", "review"]),
+        "the Intent stop does not ask the person to read the plan:\n{step}"
+    );
+}
+
+// behavior-2-follow-up: Step 3 tells the agent to move a proposed decision into `realization.md` only when the finished code follows it
+#[test]
+fn step_3_keeps_only_decisions_the_finished_code_follows() {
+    rule_in_paragraph(
+        3,
+        "a proposed decision moves to realization.md only when finished code follows it",
+        |s| {
+            s.contains("proposed")
+                && s.contains("decision")
+                && s.contains("realization.md")
+                && s.contains("code")
+                && contains_any(s, &["finished", "built", "completed"])
+                && contains_any(s, &["only if", "only when"])
+                && contains_any(s, &["follow", "implement", "match"])
+        },
+    );
+}
+
+// behavior-2-follow-up: Step 4 tells the agent to name every proposed decision that the finished code does not follow, and to say why
+#[test]
+fn step_4_names_every_departure_from_the_plan_and_why() {
+    rule_in_paragraph(
+        4,
+        "every proposed decision the finished code does not follow is named with its reason",
+        |s| {
+            s.contains("proposed")
+                && s.contains("decision")
+                && s.contains("code")
+                && contains_any(s, &["every", "each", "all"])
+                && contains_any(s, &["name", "list"])
+                && contains_any(
+                    s,
+                    &[
+                        "does not follow",
+                        "did not follow",
+                        "doesn't follow",
+                        "depart",
+                        "not implement",
+                        "not match",
+                    ],
+                )
+                && contains_any(s, &["why", "reason"])
+        },
+    );
+}

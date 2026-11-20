@@ -12,6 +12,7 @@ fn every_quote_of_the_increment_is_a_sentence_of_the_design() {
     for (list, at_least) in [
         ("increments/1.md", 300),
         ("increments/2.md", 100),
+        ("increments/2-follow-up.md", 38),
         ("increments/release.md", 20),
     ] {
         let count = rows.iter().filter(|row| row.list == list).count();
@@ -50,6 +51,28 @@ fn the_unanswered_section_of_the_increment_has_no_rows() {
             "{name}: the section of open questions holds table rows"
         );
     }
+}
+
+#[test]
+fn the_follow_up_waiting_section_has_no_rows() {
+    let text = fs::read_to_string(docs_dir().join("increments/2-follow-up.md")).unwrap();
+    let section = text
+        .split("## Waiting for a sentence of the design")
+        .nth(1)
+        .expect("the follow-up has a section waiting for design sentences")
+        .split("\n## ")
+        .next()
+        .unwrap();
+    assert!(
+        !section.lines().any(|line| line.starts_with('|')),
+        "the waiting section holds table rows"
+    );
+    assert!(
+        !behavior_rows().iter().any(|row| {
+            row.list == "increments/2-follow-up.md" && row.section == "Not in this pass"
+        }),
+        "the findings left for later were read as behaviors"
+    );
 }
 
 #[test]

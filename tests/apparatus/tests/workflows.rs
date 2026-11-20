@@ -2582,3 +2582,223 @@ fn ci_rehearsal_selection_requires_linux_pushes_and_a_later_version_check() {
         );
     }
 }
+
+struct SiteAttempt {
+    status: i32,
+    uploaded: bool,
+    deployed: bool,
+    diagnostic: String,
+}
+
+fn site_context(text: &str, event: &str, reference: &str) -> String {
+    let ref_type = if reference.starts_with("refs/tags/") {
+        "tag"
+    } else {
+        "branch"
+    };
+    let ref_name = reference
+        .strip_prefix("refs/tags/")
+        .or_else(|| reference.strip_prefix("refs/heads/"))
+        .unwrap();
+    let mut value = text.to_string();
+    for (key, content) in [
+        ("github.event_name", event),
+        ("github.ref", reference),
+        ("github.ref_type", ref_type),
+        ("github.ref_name", ref_name),
+    ] {
+        value = value.replace(&format!("${{{{ {key} }}}}"), content);
+    }
+    assert!(
+        !value.contains("${{"),
+        "the site replay cannot evaluate this expression: {text}"
+    );
+    value
+}
+
+/// GitHub supplies GITHUB_REF, GITHUB_REF_NAME, GITHUB_REF_TYPE and GITHUB_EVENT_NAME.
+/// A reusable workflow keeps its caller's event: publish.yml starts on push, not workflow_call.
+/// https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#github-context
+/// The shell guard runs with those variables in an empty temporary directory. Checkout is a
+/// no-op; upload and deploy are recorded when reached. This proves the local refusal and the
+/// order before publishing. It cannot prove a Pages deployment or GitHub's permissions.
+fn site_attempt(event: &str, reference: &str) -> SiteAttempt {
+    let (_, _, root) = workflows()
+        .into_iter()
+        .find(|(name, _, _)| name == "site.yml")
+        .unwrap();
+    let publishing: Vec<_> = jobs(&root)
+        .into_iter()
+        .filter(|job| {
+            job.descendants().iter().any(|node| {
+                node.key == "uses"
+                    && node
+                        .value
+                        .as_deref()
+                        .is_some_and(|v| v.starts_with("actions/deploy-pages@"))
+            })
+        })
+        .collect();
+    assert_eq!(publishing.len(), 1, "the site needs one publishing job");
+    let job = publishing[0];
+    assert!(
+        job.child("if").is_none(),
+        "the shell replay cannot prove a job condition; a manual tag must fail, not skip"
+    );
+    let temp = tempfile::tempdir().unwrap();
+    let mut attempt = SiteAttempt {
+        status: 0,
+        uploaded: false,
+        deployed: false,
+        diagnostic: String::new(),
+    };
+    let mut guards = 0;
+    for step in &job.child("steps").expect("site job has no steps").children {
+        assert!(
+            step.child("if").is_none(),
+            "the site replay cannot prove a conditional step at line {}",
+            step.line
+        );
+        assert!(
+            step.child("continue-on-error")
+                .is_none_or(|v| v.value.as_deref() == Some("false")),
+            "a guard failure must fail the job at line {}",
+            step.line
+        );
+        if let Some(action) = step.child("uses").and_then(|n| n.value.as_deref()) {
+            if action.starts_with("actions/checkout@") {
+                continue;
+            }
+            if action.starts_with("actions/upload-pages-artifact@") {
+                assert!(guards > 0, "there is no shell guard before the site upload");
+                attempt.uploaded = true;
+                continue;
+            }
+            if action.starts_with("actions/deploy-pages@") {
+                assert!(
+                    attempt.uploaded,
+                    "the site deploys before uploading its artifact"
+                );
+                attempt.deployed = true;
+                return attempt;
+            }
+            panic!("the site replay cannot run the action {action}");
+        }
+        let script = step
+            .child("run")
+            .and_then(|n| n.value.as_deref())
+            .unwrap_or_else(|| panic!("site step at line {} has neither run nor uses", step.line));
+        let script = site_context(script, event, reference);
+        let mut command = Command::new("bash");
+        command
+            .args([
+                "--noprofile",
+                "--norc",
+                "-e",
+                "-o",
+                "pipefail",
+                "-c",
+                &script,
+            ])
+            .current_dir(temp.path())
+            .env_clear()
+            .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+            .env("GITHUB_EVENT_NAME", event)
+            .env("GITHUB_REF", reference)
+            .env(
+                "GITHUB_REF_NAME",
+                reference
+                    .strip_prefix("refs/tags/")
+                    .or_else(|| reference.strip_prefix("refs/heads/"))
+                    .unwrap(),
+            )
+            .env(
+                "GITHUB_REF_TYPE",
+                if reference.starts_with("refs/tags/") {
+                    "tag"
+                } else {
+                    "branch"
+                },
+            );
+        for owner in [&root, job, step] {
+            if let Some(env) = owner.child("env") {
+                for variable in &env.children {
+                    command.env(
+                        &variable.key,
+                        site_context(
+                            variable.value.as_deref().unwrap_or_default(),
+                            event,
+                            reference,
+                        ),
+                    );
+                }
+            }
+        }
+        let output = run_with_time_limit(command, Duration::from_secs(10), None);
+        guards += 1;
+        attempt.diagnostic.push_str(&output.text());
+        if output.status != 0 {
+            attempt.status = output.status;
+            return attempt;
+        }
+    }
+    panic!("the site job never reaches its deploy action");
+}
+
+// behavior-2-follow-up: Started by hand on a version tag, the site workflow publishes nothing and its job fails
+#[test]
+fn a_manual_site_start_on_a_version_tag_fails_before_upload() {
+    let attempt = site_attempt("workflow_dispatch", "refs/tags/v0.2.0-alpha.73");
+    assert!(
+        attempt.status != 0 && !attempt.uploaded && !attempt.deployed,
+        "a manual tag must fail before upload or deploy; status={}, uploaded={}, deployed={}: {}",
+        attempt.status,
+        attempt.uploaded,
+        attempt.deployed,
+        attempt.diagnostic
+    );
+}
+
+// behavior-2-follow-up: Called by the release workflow on a version tag, it publishes
+#[test]
+fn a_release_call_on_a_version_tag_reaches_site_publication() {
+    let release = release_workflow();
+    assert!(
+        release
+            .child("on")
+            .and_then(|on| on.child("push"))
+            .is_some(),
+        "the caller must be the tag push workflow"
+    );
+    assert!(
+        jobs(&release)
+            .iter()
+            .any(|job| job.child("uses").and_then(|n| n.value.as_deref()) == Some(SITE_WORKFLOW)),
+        "the release no longer calls the site workflow"
+    );
+    let attempt = site_attempt("push", "refs/tags/v0.2.0-alpha.73");
+    assert_eq!(
+        attempt.status, 0,
+        "the release call was refused: {}",
+        attempt.diagnostic
+    );
+    assert!(
+        attempt.uploaded && attempt.deployed,
+        "the release call did not reach site publication"
+    );
+}
+
+// behavior-2-follow-up: Started by hand on `main`, it publishes as before
+#[test]
+fn a_manual_site_start_on_main_reaches_publication() {
+    let attempt = site_attempt("workflow_dispatch", "refs/heads/main");
+    assert_eq!(
+        attempt.status, 0,
+        "the manual main start was refused: {}",
+        attempt.diagnostic
+    );
+    assert!(
+        attempt.uploaded && attempt.deployed,
+        "the manual main start did not reach site publication"
+    );
+}

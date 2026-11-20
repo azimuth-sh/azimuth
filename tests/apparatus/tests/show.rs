@@ -507,3 +507,328 @@ fn reading_documents_keep_the_exact_file_list_for_each_check() {
         }
     }
 }
+
+const CLASS_RETURN: &str = "suites/desk-checks/class-return.test";
+const METHOD_RETURN: &str = "suites/desk-checks/method-return.test";
+const RETURN_TESTS: [(&str, &str); 3] = [
+    ("class-return.charges-late-return", "failed"),
+    ("class-return.accepts-exact-fine", "passed"),
+    ("method-return.issues-receipt", "passed"),
+];
+
+fn return_parts() -> Repo {
+    let repo = Repo::sample();
+    repo.remove(LATE_FINE_TESTS);
+    // The text-suite adapter gives a file marker the same meaning as a class marker.
+    repo.write(
+        CLASS_RETURN,
+        include_str!("fixtures/check-parts/class-return.test"),
+    );
+    repo.write(
+        METHOD_RETURN,
+        include_str!("fixtures/check-parts/method-return.test"),
+    );
+    repo
+}
+
+fn return_parts_result() -> Repo {
+    let repo = return_parts();
+    repo.run_json(&[], 1);
+    let ran = repo.tests_ran();
+    for (name, _) in RETURN_TESTS {
+        assert!(
+            ran.contains(name),
+            "the fixture did not run {name}: {ran:?}"
+        );
+    }
+    repo
+}
+
+fn return_parts_text(repo: &Repo) -> String {
+    let output = repo.azimuth(&["check", "show", LATE_RETURN]);
+    output.expect_status(0);
+    output.stdout
+}
+
+fn marker_lines<'a>(text: &'a str, file: &str, line: u64) -> Vec<&'a str> {
+    text.lines()
+        .filter(|shown| {
+            shown.contains(file)
+                && shown
+                    .split(|c: char| !c.is_ascii_digit())
+                    .any(|number| number == line.to_string())
+        })
+        .collect()
+}
+
+fn assert_test_outcome(text: &str, name: &str, outcome: &str) {
+    assert!(
+        text.lines()
+            .any(|line| line.contains(name) && line.contains(outcome)),
+        "the tests of the last result do not show {name} with outcome {outcome}:\n{text}"
+    );
+}
+
+fn list_length(document: &serde_json::Value, field: &str) -> usize {
+    document[field]
+        .as_array()
+        .unwrap_or_else(|| panic!("check-1 lacks the list {field}: {document:#}"))
+        .len()
+}
+
+fn mentions_result_time(text: &str) -> bool {
+    text.split_whitespace().any(|word| {
+        let word = word.trim_matches(|c: char| !c.is_ascii_alphanumeric());
+        let lower = word.to_lowercase();
+        if ["ago", "age", "old", "seconds", "minutes", "hours", "days"].contains(&lower.as_str()) {
+            return true;
+        }
+        let bytes = word.as_bytes();
+        let date = bytes.len() >= 10
+            && bytes[4] == b'-'
+            && bytes[7] == b'-'
+            && bytes[..4].iter().all(u8::is_ascii_digit)
+            && bytes[5..7].iter().all(u8::is_ascii_digit)
+            && bytes[8..10].iter().all(u8::is_ascii_digit);
+        let time = word.split_once(':').is_some_and(|(hour, rest)| {
+            hour.len() == 2
+                && hour.bytes().all(|c| c.is_ascii_digit())
+                && rest.len() >= 2
+                && rest.as_bytes()[..2].iter().all(u8::is_ascii_digit)
+        });
+        let short_age = ["ms", "s", "m", "h", "d"].iter().any(|unit| {
+            word.strip_suffix(unit)
+                .is_some_and(|n| !n.is_empty() && n.bytes().all(|c| c.is_ascii_digit()))
+        });
+        date || time || short_age
+    }) || text.to_lowercase().contains("just now")
+}
+
+// behavior-2-follow-up: `azimuth check show <id>` prints the marker lines of the Check, each with its file and line
+#[test]
+fn check_show_prints_each_marker_file_and_line() {
+    let repo = return_parts_result();
+    let text = return_parts_text(&repo);
+    for file in [CLASS_RETURN, METHOD_RETURN] {
+        let line = repo.line_of(file, &format!("# Check: {LATE_RETURN}"));
+        assert_eq!(
+            marker_lines(&text, file, line).len(),
+            1,
+            "check show must print the marker at {file}:{line} once:\n{text}"
+        );
+    }
+}
+
+// behavior-2-follow-up: A marker on a class is printed as one line, and no test is named beside it
+#[test]
+fn check_show_keeps_a_class_marker_as_one_line_without_test_names() {
+    let repo = return_parts_result();
+    let text = return_parts_text(&repo);
+    let lines = marker_lines(&text, CLASS_RETURN, repo.line_of(CLASS_RETURN, "# Check:"));
+    assert_eq!(
+        lines.len(),
+        1,
+        "the class marker is missing or expanded into tests:\n{text}"
+    );
+    assert_eq!(
+        text.lines()
+            .filter(|line| line.contains(CLASS_RETURN))
+            .count(),
+        1,
+        "the class marker must occupy only one line:\n{text}"
+    );
+    for (name, _) in RETURN_TESTS {
+        assert!(
+            !lines[0].contains(name),
+            "a class marker names a test beside it: {}",
+            lines[0]
+        );
+        assert!(
+            !lines[0].contains(name.split('.').next_back().unwrap()),
+            "a class marker names a short test name beside it: {}",
+            lines[0]
+        );
+    }
+}
+
+// behavior-2-follow-up: It prints the tests of the last result of the Check, each with its outcome
+#[test]
+fn check_show_prints_the_tests_of_the_last_result_with_outcomes() {
+    let repo = return_parts_result();
+    // The last result differs from the first, so this cannot pass by reading any old result.
+    repo.azimuth_with_env(
+        &["check", "run", LATE_RETURN, "--json"],
+        &[("TEXT_ADAPTER_FAIL", "method-return.issues-receipt")],
+    )
+    .expect_status(1);
+    let text = return_parts_text(&repo);
+    for (name, outcome) in RETURN_TESTS {
+        let last_outcome = if name == "method-return.issues-receipt" {
+            "failed"
+        } else {
+            outcome
+        };
+        assert_test_outcome(&text, name, last_outcome);
+        let other = if last_outcome == "passed" {
+            "failed"
+        } else {
+            "passed"
+        };
+        assert!(
+            !text
+                .lines()
+                .any(|line| line.contains(name) && line.contains(other)),
+            "check show also gives {name} an outcome from an earlier result:\n{text}"
+        );
+    }
+}
+
+// behavior-2-follow-up: The second list also holds the tests that passed
+#[test]
+fn check_show_includes_passed_tests_beside_failed_tests() {
+    let repo = return_parts_result();
+    let text = return_parts_text(&repo);
+    for (name, outcome) in RETURN_TESTS
+        .into_iter()
+        .filter(|(_, outcome)| *outcome == "passed")
+    {
+        assert_test_outcome(&text, name, outcome);
+    }
+}
+
+// behavior-2-follow-up: It says how old that result is
+#[test]
+fn check_show_dates_the_last_result_even_when_it_is_owed() {
+    let repo = return_parts_result();
+    for edited in [false, true] {
+        if edited {
+            repo.append(PRODUCT_FILE, "a return also issues a receipt\n");
+        }
+        let text = return_parts_text(&repo);
+        assert!(mentions_result_time(&text),
+            "check show gives neither the time nor the age of the last result (edited={edited}):\n{text}");
+    }
+}
+
+// behavior-2-follow-up: It starts no launch, also for a Check that is owed
+#[test]
+fn check_show_starts_no_launch_for_kept_or_owed_checks() {
+    let repo = return_parts_result();
+    repo.clear_log();
+    for check in [LATE_RETURN, SIXTH_LOAN] {
+        for json in [false, true] {
+            let args = if json {
+                vec!["check", "show", check, "--json"]
+            } else {
+                vec!["check", "show", check]
+            };
+            repo.azimuth(&args).expect_status(0);
+        }
+    }
+    repo.append(PRODUCT_FILE, "a return also issues a receipt\n");
+    for json in [false, true] {
+        let args = if json {
+            vec!["check", "show", SIXTH_LOAN, "--json"]
+        } else {
+            vec!["check", "show", SIXTH_LOAN]
+        };
+        repo.azimuth(&args).expect_status(0);
+    }
+    assert!(
+        repo.adapter_starts().is_empty(),
+        "check show started an adapter: {:?}",
+        repo.log_entries()
+    );
+    assert!(
+        repo.probe_starts().is_empty(),
+        "check show started a facility proof"
+    );
+}
+
+// behavior-2-follow-up: After an edit that adds a marked test, the first list shows the new marker and the second list is unchanged
+#[test]
+fn check_show_refreshes_markers_without_changing_the_last_tests() {
+    let repo = return_parts_result();
+    let before_text = return_parts_text(&repo);
+    let before = repo.check_show(LATE_RETURN);
+    repo.append(
+        METHOD_RETURN,
+        "\ntest: keeps-receipt\n# Check: late-return-is-fined\noutcome: passed\n",
+    );
+    let new_line = repo
+        .read(METHOD_RETURN)
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| *line == "# Check: late-return-is-fined")
+        .map(|(index, _)| index)
+        .last()
+        .unwrap()
+        + 1;
+    repo.clear_log();
+    let after_text = return_parts_text(&repo);
+    assert_eq!(
+        marker_lines(&after_text, METHOD_RETURN, new_line as u64).len(),
+        1,
+        "the new marker is not visible before the next run:\n{after_text}"
+    );
+    for (name, outcome) in RETURN_TESTS {
+        assert_test_outcome(&before_text, name, outcome);
+        assert_test_outcome(&after_text, name, outcome);
+    }
+    assert!(
+        !after_text.contains("method-return.keeps-receipt"),
+        "the new test has never run but is shown in the last result:\n{after_text}"
+    );
+    let after = repo.check_show(LATE_RETURN);
+    assert_eq!(list_length(&before, "markers"), 2);
+    assert_eq!(list_length(&after, "markers"), 3);
+    assert_eq!(list_length(&before, "tests"), 3);
+    assert_eq!(
+        after["tests"], before["tests"],
+        "the second list changed without a launch"
+    );
+    assert!(
+        repo.adapter_starts().is_empty(),
+        "show launched a runner after the edit"
+    );
+}
+
+// behavior-2-follow-up: With `--json` the document holds the fields `markers` and `tests`
+#[test]
+fn check_show_json_has_marker_and_test_lists_with_different_counts() {
+    let repo = return_parts_result();
+    let document = repo.check_show(LATE_RETURN);
+    assert_eq!(
+        list_length(&document, "markers"),
+        2,
+        "one entry per marker line"
+    );
+    assert_eq!(
+        list_length(&document, "tests"),
+        3,
+        "one entry per test of the last result"
+    );
+}
+
+// behavior-2-follow-up: `failing_tests` is still there and holds the failed tests of the second list
+#[test]
+fn check_show_failing_tests_keeps_only_the_failed_names() {
+    let repo = return_parts_result();
+    let document = repo.check_show(LATE_RETURN);
+    assert_eq!(
+        strings_of(&document["failing_tests"]),
+        vec!["class-return.charges-late-return"],
+        "failing_tests must keep the failed name and omit the two passed names: {document:#}"
+    );
+}
+
+// behavior-2-follow-up: The document still names its format `check-1`
+#[test]
+fn check_show_keeps_the_check_1_format_name() {
+    let repo = return_parts_result();
+    let document = repo.check_show(LATE_RETURN);
+    assert_eq!(
+        document["format"], "check-1",
+        "adding lists must not raise the format number"
+    );
+}
