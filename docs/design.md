@@ -176,7 +176,7 @@ Until increment 3 lands, a test has two outcomes only. Checks written before it 
 
 **The second adapter is the one for Playwright.** The first Requirement that needs it has a Scenario about what a person sees in a browser. A unit runner cannot prove it where a page loads its data on the server, because such a runner does not render that kind of page. A browser run does not have to be end to end: the suite may start only the frontend, with a stand-in where the API would be. A project can then have two Playwright suites with different facilities.
 
-**Increments 1 to 3 record no review.** A Requirement that declares one is shown with that review owed, and the reason says "this version records no reviews". A Requirement that declares none reads "not reviewed", as on every rung. So the first Requirements declare no review. Adding the declaration in increment 4 is class D and makes the approval of a person owed, once per Requirement.
+**Increments 1 to 3 record no review.** A Requirement that declares one is shown with that review owed, and the reason says "this version records no reviews". A Requirement that declares none reads "not reviewed", as on every rung. A Requirement may still declare a review. Until increment 4 the review is done outside Azimuth, and status shows it as owed. Adding the declaration in increment 4 is class D and makes the approval of a person owed, once per Requirement.
 
 A declaration is written `Verification: reviewed` or `Realization: reviewed`.
 
@@ -192,10 +192,14 @@ The cost. Through increments 1 to 3 no Requirement is reviewed by anything but t
 | --- | --- | --- |
 | 1. Proposal | writes the one page with its five parts | yes. The person reads it |
 | 2. Intent | writes the Requirement and its Scenarios, then the Checks, and runs `azimuth lint` | yes. The person reads `azimuth change diff` before any code exists |
-| 3. Build | writes the marked tests from the Scenarios, then the code, and runs `azimuth run` until `azimuth status` is quiet | no |
+| 3. Build | writes the marked tests from the Scenarios, then the code, and runs `azimuth run` until it succeeds and `azimuth status` names nothing that a run could settle | no |
 | 4. Hand over | runs `azimuth run --lane commit`, then prints `azimuth change diff` and `azimuth status` | yes. The person merges |
 
 **Where the change needs a plan, the Intent stop shows the plan too.** The part "The implementation plan" says when a change needs one. The number of stops stays the same.
+
+**The Build ends when a run can settle nothing more.** `azimuth status` may then still name a review, which this version does not record, or a Check that runs only in CI. The agent names what is left at the hand over. Anything else that status names is work of the Build.
+
+**`realization.md` is written before the last run of the Build.** Every file is an input of a Check, so a file that is written after the run makes its Checks owed again.
 
 **At the end of the Intent step lint may still report two findings, and no other.** A Check that this change adds has no marked test, because its test is written in the Build. A marker names a Check that this change removes, because the test leaves in the Build. Both findings are correct, and the order of the steps makes them unavoidable: the person reads the intent before any code exists. Every other finding and every reading error is gone before the stop. The skill names the two, and the agent lists what remains when it stops. Lint itself does not change and knows no step.
 
