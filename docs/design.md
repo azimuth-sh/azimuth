@@ -2841,7 +2841,7 @@ Example: in drim-dev a fix for a wrong status code in `Features/CliAuth/` is a b
 
 **A proposal that does not fit on one page, or has two outcomes, is several changes.** A proposal is not edited after approval. A later decision becomes a Scenario or a decision note, never a new paragraph.
 
-**A proposal is written from what its size of work gives it.** A change of an exploration is written from its row of the map. The row gives the change its name, and it names what the change takes from the sources and which rows must be finished first. The agent reads what the row names, and not the whole folder. A change with no exploration is written from the request of the person, and from `sources/` in its own folder when it has one. What the agent cannot find there, it asks the person and does not invent.
+**A proposal is written from what its size of work gives it.** A change of an exploration is written from its row of the map. The row gives the change its name, and it names what the change takes from the sources and which rows must be finished first. The agent reads what the row names, and not the whole folder. It copies those files into the `sources/` of the change. A change with no exploration is written from the request of the person, and from `sources/` in its own folder when it has one. What the agent cannot find there, it asks the person and does not invent.
 
 **The cost.** A one-page proposal says little about how the change will be built. A reader who wants that reads the Scenarios and the code. A proposal that describes the build becomes a second, unproven copy of the model.
 
@@ -2917,7 +2917,18 @@ Example: the change `cli-login` has its folder in drim-dev at `azimuth/changes/c
 | One snapshot is one file in `sources/`, with its address, version and date at the top | the agents and the approver compare against a fixed text |
 | A snapshot is never edited. A newer version of the page comes in as a new snapshot | the diff between the two shows what moved |
 | A source written directly in the repository goes in the same folder | one place to look, whoever wrote it |
-| For a chain of changes the folder sits with the exploration | each proposal names the part it takes, and nothing is copied twice |
+| A change of an exploration copies what it takes from the exploration's `sources/` into its own `sources/` | the change folder is whole by itself, and it moves to `finished/` as one piece |
+
+**Every change folder holds what its proposal relies on, and the proposal names each source by its path from that folder.** A proposal and what it cites then share one fate, and the path survives the move to `finished/`.
+
+- A copy is the whole file, unchanged, under the same path inside `sources/`. An excerpt would be an edited snapshot. The proposal says which part it takes.
+- A shared source or a decision note is first written in the exploration's `sources/`. The exploration is the pool, and the row of the map names what to copy from it.
+- A source that only one change needs is written in the folder of that change and nowhere else.
+- A copy is not touched when a later source replaces it. The folder shows what was understood when the change started.
+
+The cost. A document that ten changes rely on stands ten times in the tree. Git stores equal content once, so only the checkout grows. Nothing verifies yet that a copy equals its origin, or that a path in a proposal names a file. Lint reports both from increment 3 on.
+
+Example: in drim-dev the 61 decision notes of the exploration `first-lab` are 104 KB together, and its largest document is 92 KB. A change that relies on five notes and one document copies six files, and its proposal names `sources/decisions/2026-11-19-a-grant-names-a-user-or-a-group.md`.
 
 **Azimuth ships no downloader, and the core never parses the folder.** A person, or an agent with a connector, takes the snapshot. The default process tells the author and the reviewing agent to read it.
 
