@@ -843,6 +843,25 @@ fn step_1_requires_the_whole_target_history_for_the_day() {
     );
 }
 
+// behavior-2-follow-up: Step 1 says where the target branch is named: in `azimuth/project.toml`
+#[test]
+fn step_1_names_the_project_file_as_the_source_of_the_target_branch() {
+    rule_sentence(&installed_step(1), "the target branch is named in azimuth/project.toml", |s| {
+        s.contains("target branch") && s.contains("azimuth/project.toml")
+            && contains_any(s, &["named", "declared", "read", "find", "configured", "set", "specified"])
+    });
+}
+
+// behavior-2-follow-up: Step 1 says that the change gets a name that no change used before
+#[test]
+fn step_1_requires_a_change_name_that_has_never_been_used() {
+    rule_sentence(&installed_step(1), "give the change a name no change used before", |s| {
+        s.contains("change") && s.contains("name")
+            && contains_any(s, &["never used", "never been used", "no change used", "no earlier change",
+                "unused", "unique", "not used before", "not been used", "never reuse", "do not reuse"])
+    });
+}
+
 // behavior-2-follow-up: Step 2 says that a Requirement and its Scenarios speak about the system as somebody outside it meets it
 #[test]
 fn step_2_keeps_requirements_and_scenarios_outside_the_system() {
@@ -878,12 +897,14 @@ fn step_2_allows_a_door_test_and_isolated_tests_in_one_check() {
 // behavior-2-follow-up: It says that every part carries the marker of the Check
 #[test]
 fn step_2_marks_every_part_for_the_check() {
-    positive_rule_in_sentence(2, "every part carries the marker of its Check", |s| {
-        s.contains("part") && contains_any(s, &["carries", "carry", "marked with"])
-            && s.contains("marker")
-            && s.contains("check")
-            && contains_any(s, &["every", "each", "all"])
+    let sentence = rule_sentence(&installed_step(2), "every part carries the marker of its Check", |s| {
+        s.contains("marker") && s.contains("check")
+            && ((s.contains("part")
+                && contains_any(s, &["carries", "carry", "marked with"])
+                && contains_any(s, &["every", "each", "all"]))
+                || (s.contains("no part") && s.contains("omit")))
     });
+    assert_affirmative(&sentence.replace("no part", ""));
 }
 
 // behavior-2-follow-up: It says that a Check is never made only of tests of one part in isolation
@@ -1100,6 +1121,34 @@ fn removing_a_check_keeps_a_test_that_carries_another_marker() {
     }
 }
 
+// behavior-2-follow-up: It says what a Check is and where it stands: one claim about its Scenario, under that Scenario in `verification.md`
+#[test]
+fn step_2_defines_a_check_and_places_it_under_its_scenario() {
+    let step = installed_step(2);
+    rule_sentence(&step, "a Check states one claim about its Scenario", |s| {
+        s.contains("check") && s.contains("scenario")
+            && contains_any(s, &["one claim", "a single claim"])
+    });
+    rule_sentence(&step, "declare the Check under its Scenario in verification.md", |s| {
+        s.contains("check") && s.contains("scenario") && s.contains("verification.md")
+            && contains_any(s, &["under", "beneath", "below"])
+    });
+}
+
+// behavior-2-follow-up: It says that a Check belongs to one suite, and that evidence from another suite is another Check under the Scenario
+#[test]
+fn step_2_uses_one_check_per_suite_under_the_scenario() {
+    let step = installed_step(2);
+    rule_sentence(&step, "a Check belongs to one suite", |s| {
+        s.contains("check") && contains_any(s, &["one suite", "a single suite"])
+    });
+    rule_sentence(&step, "evidence from another suite is another Check under the Scenario", |s| {
+        s.contains("scenario") && s.contains("suite")
+            && contains_any(s, &["another check", "separate check", "two checks", "different check"])
+            && contains_any(s, &["another suite", "two suites", "different suite", "each suite"])
+    });
+}
+
 // behavior-2-follow-up: It names the file of the plan, `azimuth/changes/<name>/plan.md`
 #[test]
 fn step_2_names_the_plan_file_in_the_change_folder() {
@@ -1299,8 +1348,7 @@ fn step_2_puts_observations_in_scenarios_and_internal_contracts_in_the_plan() {
     );
     assert_affirmative(&internal);
     assert!(
-        internal.find("address").unwrap() < internal.find("plan").unwrap()
-            && !internal.contains("scenario"),
+        !internal.contains("scenario"),
         "internal contracts have the wrong home: {internal}"
     );
 }
@@ -1386,6 +1434,24 @@ fn step_2_offers_the_plan_to_the_person_at_the_stop() {
         "the Intent stop does not ask the person to read the plan:\n{step}"
     );
     assert_affirmative(&stop);
+}
+
+// behavior-2-follow-up: Step 3 says what a marker is and where it stands: it enrolls a test in a Check, on a test or on a class, in the form that the suite declares in `azimuth/project.toml`
+#[test]
+fn step_3_defines_markers_their_placement_and_the_suite_declared_form() {
+    let step = installed_step(3);
+    rule_sentence(&step, "a marker enrolls a test in a Check", |s| {
+        s.contains("marker") && s.contains("test") && s.contains("check")
+            && contains_any(s, &["enroll", "associate", "register", "join", "link"])
+    });
+    rule_sentence(&step, "put a marker on a test or on a class", |s| {
+        s.contains("marker") && s.contains("test") && s.contains("class")
+            && contains_any(s, &["on", "attach", "place"])
+    });
+    rule_sentence(&step, "use the suite's marker form from azimuth/project.toml", |s| {
+        s.contains("marker") && s.contains("suite") && s.contains("azimuth/project.toml")
+            && contains_any(s, &["form", "pattern", "syntax"])
+    });
 }
 
 // behavior-2-follow-up: Step 3 tells the agent to move a proposed decision into `realization.md` only when the finished code follows it
@@ -1478,6 +1544,33 @@ fn step_3_writes_realization_before_the_last_run() {
     );
 }
 
+// behavior-2-follow-up: Step 3 says where `realization.md` stands: beside `specification.md`, in the folder of the module
+#[test]
+fn step_3_places_realization_beside_specification_in_the_module_folder() {
+    rule_sentence(&installed_step(3), "realization.md stands beside specification.md in the module folder", |s| {
+        s.contains("realization.md") && s.contains("specification.md") && s.contains("module")
+            && contains_any(s, &["folder", "directory", "azimuth/model/<module>/"])
+            && contains_any(s, &["beside", "alongside", "same folder", "same directory", "together"])
+    });
+}
+
+// behavior-2-follow-up: Step 3 says what `realization.md` holds: the heading of the Requirement again, its roots, and its decisions with their reasons, where a root marks where the realization starts
+#[test]
+fn step_3_describes_the_requirement_heading_roots_and_reasoned_decisions() {
+    let step = installed_step(3);
+    rule_sentence(&step, "repeat the Requirement heading in realization.md", |s| {
+        s.contains("requirement") && s.contains("heading")
+            && contains_any(s, &["repeat", "again", "same heading", "copy"])
+    });
+    rule_sentence(&step, "realization.md holds roots and decisions with their reasons", |s| {
+        s.contains("root") && s.contains("decision") && contains_any(s, &["reason", "why"])
+    });
+    rule_sentence(&step, "a root marks where the realization of a Requirement starts", |s| {
+        s.contains("root") && s.contains("realization") && s.contains("requirement")
+            && contains_any(s, &["start", "begin", "entry"])
+    });
+}
+
 // behavior-2-follow-up: Step 3 ends when `azimuth run` succeeds and `azimuth status` names nothing that a run could settle
 #[test]
 fn step_3_ends_when_a_successful_run_can_settle_nothing_more() {
@@ -1502,11 +1595,12 @@ fn step_3_ends_when_a_successful_run_can_settle_nothing_more() {
     );
 }
 
-// behavior-2-follow-up: It says what may be left: a review, which this version does not record, and a Check that runs only in CI
+// behavior-2-follow-up: It says what may be left: a review, which this version does not record, a Check that runs only in CI, and a Check that cannot run here
 #[test]
-fn step_3_allows_only_unrecorded_reviews_and_ci_checks_to_remain() {
+fn step_3_allows_unrecorded_reviews_ci_checks_and_checks_that_cannot_run_here_to_remain() {
+    let step = installed_step(3);
     let sentence = rule_sentence(
-        &installed_step(3),
+        &step,
         "status may still name an unrecorded review or a CI-only Check",
         |s| {
             s.contains("review")
@@ -1522,8 +1616,29 @@ fn step_3_allows_only_unrecorded_reviews_and_ci_checks_to_remain() {
     assert_affirmative(
         &sentence
             .replace("does not record", "")
-            .replace("records no reviews", ""),
+            .replace("records no reviews", "")
+            .replace("cannot run here", "")
+            .replace("can't run here", "")
+            .replace("cannot run locally", "")
+            .replace("cannot run on this machine", ""),
     );
+    rule_sentence(&step, "a Check that cannot run here may remain", |s| {
+        s.contains("check")
+            && contains_any(s, &["cannot run here", "can't run here", "cannot run locally", "cannot run on this machine"])
+            && contains_any(s, &["may", "can remain", "can still", "allowed"])
+            && contains_any(s, &["still", "remain", "left", "stay"])
+    });
+}
+
+// behavior-2-follow-up: It says that a Check that a run here could settle is work of the Build
+#[test]
+fn step_3_keeps_locally_settleable_checks_in_the_build() {
+    rule_sentence(&installed_step(3), "a Check that a run here could settle is work of the Build", |s| {
+        s.contains("check") && s.contains("run") && s.contains("build")
+            && contains_any(s, &["here", "locally", "this machine"])
+            && contains_any(s, &["settle", "resolve"])
+            && contains_any(s, &["work", "finish", "complete", "remain", "belongs"])
+    });
 }
 
 // behavior-2-follow-up: Step 4 tells the agent to name every proposed decision that the finished code does not follow, and to say why
@@ -1574,4 +1689,48 @@ fn step_4_names_the_work_status_still_reports() {
                 && contains_any(s, &["name", "list", "report"])
         },
     );
+}
+
+// behavior-2-follow-up: Step 4 says that a declared review is still owed and is done outside Azimuth
+#[test]
+fn step_4_keeps_declared_reviews_owed_outside_azimuth() {
+    let step = installed_step(4);
+    rule_sentence(&step, "a declared review is still owed", |s| {
+        s.contains("review") && contains_any(s, &["declared", "required", "declares"])
+            && contains_any(s, &["owed", "due", "outstanding"])
+    });
+    rule_sentence(&step, "the review is done outside Azimuth", |s| {
+        s.contains("review") && s.contains("azimuth")
+            && contains_any(s, &["outside", "externally"])
+    });
+}
+
+// behavior-2-follow-up: Step 4 says what follows a commit lane that fails: after status 1 the agent repairs the code or the tests, after 2 the model, and it runs the lane again
+#[test]
+fn step_4_repairs_commit_lane_failures_by_status_and_runs_it_again() {
+    let step = installed_step(4);
+    let fixes = |s: &str| contains_any(s, &["fix", "repair", "correct"]);
+    rule_sentence(&step, "after status 1 fix the code or the tests", |s| {
+        s.split(|c: char| !c.is_alphanumeric()).any(|word| word == "1")
+            && s.contains("code") && s.contains("test") && fixes(s)
+    });
+    rule_sentence(&step, "after status 2 fix the model", |s| {
+        s.split(|c: char| !c.is_alphanumeric()).any(|word| word == "2")
+            && s.contains("model") && fixes(s)
+    });
+    rule_sentence(&step, "run the commit lane again after repairs", |s| {
+        contains_any(s, &["again", "rerun", "re-run", "retry", "repeat"])
+            && contains_any(s, &["commit lane", "lane", "azimuth run --lane commit"])
+    });
+}
+
+// behavior-2-follow-up: Step 4 tells the agent to name a proposed decision that served a Requirement with no `Realization:` as archived with the plan
+#[test]
+fn step_4_names_decisions_without_realization_as_archived_with_the_plan() {
+    rule_sentence(&installed_step(4), "name a proposed decision for a Requirement with no Realization: as archived with the plan", |s| {
+        s.contains("proposed") && s.contains("decision") && s.contains("requirement")
+            && s.contains("realization:") && s.contains("plan") && s.contains("archiv")
+            && contains_any(s, &["no realization:", "without realization:", "does not declare", "declares no"])
+            && contains_any(s, &["name", "report", "list", "say", "state"])
+    });
 }

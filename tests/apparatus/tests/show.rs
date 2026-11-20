@@ -246,10 +246,23 @@ fn check_show_names_the_files_that_differ() {
     assert_eq!(files_changed(&repo.check_show(ON_TIME_RETURN)), expected);
     let output = repo.azimuth(&["check", "show", ON_TIME_RETURN]);
     output.expect_status(0);
-    let (_, entries) = text_section(&output.stdout, |words| {
-        words.first() == Some(&"files") && words.contains(&"changed")
-    });
-    let shown: Vec<_> = entries.iter().map(|line| line.trim()).collect();
+    let mut lines = output.stdout.lines();
+    lines.find(|line| {
+        let lower = line.to_lowercase();
+        let words: Vec<_> = lower.split(|c: char| !c.is_alphanumeric())
+            .filter(|word| !word.is_empty()).collect();
+        matches!(words.first(), Some(&"files" | &"changed"))
+            && words.contains(&"files") && words.contains(&"changed")
+    }).unwrap_or_else(|| panic!("the text lacks the changed files part:\n{}", output.stdout));
+    // Paths in this sample have no spaces. Read them until the next part, regardless
+    // of whether they are indented more than the heading or are a flat list.
+    let shown: Vec<_> = lines
+        .map(|line| line.trim().trim_start_matches(['-', '*']).trim().trim_matches('`'))
+        .take_while(|line| line.is_empty()
+            || (!line.chars().any(char::is_whitespace)
+                && (line.contains('/') || line.contains('.'))))
+        .filter(|line| !line.is_empty())
+        .collect();
     assert_eq!(
         shown, expected,
         "check show names more than the differing files:\n{}",
@@ -960,6 +973,57 @@ fn check_show_uses_the_kept_pass_tests_after_restoring_inputs() {
 #[test]
 fn check_show_uses_the_older_failed_tests_after_restoring_inputs() {
     assert_restored_return_tests(&restored_return_result(false), false);
+}
+
+fn shown_result_kind(label: &str) -> Option<&'static str> {
+    let lower = label.to_lowercase();
+    let words: Vec<_> = lower.split(|c: char| !c.is_alphanumeric()).collect();
+    let kept = words.contains(&"kept");
+    let newest = ["newest", "latest", "last"].iter().any(|word| words.contains(word));
+    if kept {
+        Some("kept pass")
+    } else if newest {
+        Some("newest result")
+    } else if words.iter().any(|word| word.starts_with("fail")) {
+        Some("fail on these inputs")
+    } else {
+        None
+    }
+}
+
+// behavior-2-follow-up: The text says which result it shows: the kept pass, the fail on these inputs, or the newest result
+#[test]
+fn check_show_names_the_same_result_kind_above_and_in_the_test_list() {
+    let kept = restored_return_result(true);
+    let failed = restored_return_result(false);
+    let changed = return_parts_result();
+    changed.append(PRODUCT_FILE, "a return also issues a receipt\n");
+    assert_eq!(changed.results_of(LATE_RETURN).len(), 1);
+    let document = changed.check_show(LATE_RETURN);
+    assert_eq!(document["reason"], "an input changed", "{document:#}");
+
+    let mut differences = Vec::new();
+    for (repo, expected) in [
+        (&kept, "kept pass"),
+        (&failed, "fail on these inputs"),
+        (&changed, "newest result"),
+    ] {
+        let text = return_parts_text(repo);
+        let (heading, _) = text_section(&text, |words| words.first() == Some(&"tests"));
+        let result = text.lines().find(|line| {
+            let lower = line.to_lowercase();
+            let words: Vec<_> = lower.split(|c: char| !c.is_alphanumeric()).collect();
+            words.contains(&"result") && !words.contains(&"tests")
+        });
+        for (part, label) in [("result line", result), ("test list heading", Some(heading))] {
+            if label.and_then(shown_result_kind) != Some(expected) {
+                differences.push(format!(
+                    "{expected}: {part} must name that kind, got {label:?}\n{text}"
+                ));
+            }
+        }
+    }
+    assert!(differences.is_empty(), "{}", differences.join("\n\n"));
 }
 
 // behavior-2-follow-up: The document still names its format `check-1`
