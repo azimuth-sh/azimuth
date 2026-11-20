@@ -4,7 +4,7 @@ This is the list of behaviors for a short pass between the second and the third 
 
 Each row is one observable fact. The second cell is copied exactly from `docs/design.md`. A plain test fails when a quoted sentence is no longer in that file. A behavior with no sentence to quote is not built.
 
-Status of this list: read and accepted by a person on 2026-11-20, in three sittings: 38 rows, eleven more after five decisions, and ten more with three changed after an independent review.
+Status of this list: read and accepted by a person on 2026-11-20, in four sittings: 38 rows, eleven more after five decisions, ten more with three changed after an independent review, and one more about the order of tests and code.
 
 ## The skill: finished folders
 
@@ -65,6 +65,7 @@ Step 1 of the shipped skill already tells the agent to move every change folder 
 | Behavior | Quote from the design |
 | --- | --- |
 | Step 3 tells the agent to move a proposed decision into `realization.md` only when the finished code follows it | It moves to `realization.md` only if the finished code follows it. |
+| Step 3 puts the tests through a door before the code, and the tests of one part in isolation after it, written from the Scenario and not from the code | A test of one part in isolation needs the part and is written after it, from the Scenario and not from the code. |
 | Step 3 puts the writing of `realization.md` before the last run | `realization.md` is written before the last run of the Build. |
 | Step 3 ends when `azimuth run` succeeds and `azimuth status` names nothing that a run could settle | runs `azimuth run` until it succeeds and `azimuth status` names nothing that a run could settle |
 | It says what may be left: a review, which this version does not record, and a Check that runs only in CI | `azimuth status` may then still name a review, which this version does not record, or a Check that runs only in CI. |
