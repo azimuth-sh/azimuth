@@ -1591,7 +1591,7 @@ Measured on 2026-11-15 with Codex CLI 0.167.0: under its workspace sandbox a com
 | --- | --- | --- |
 | `azimuth/project.toml`, the project file, in the model repository | yes | the topology: repositories, areas with mounts, components, reference environments |
 | `azimuth/model/<module>/, with README.md, specification.md, realization.md and verification.md` | yes | Requirements, Scenarios, terms, roots, decisions |
-| `azimuth/changes/<name>/` | yes | `proposal.md` and `sources/`. Finished ones move to `changes/finished/<date>-<name>/` |
+| `azimuth/changes/<name>/` | yes | `proposal.md`, `sources/`, and `plan.md` when the change needs a plan. Finished ones move to `changes/finished/<date>-<name>/` |
 | `azimuth/explorations/<name>/` | yes | `map.md` and `sources/`, with the decision notes |
 | `azimuth/repository` file, in a code repository | yes | the project id and the repository's own name. Nothing else |
 | `.azimuth/` in the worktree | no, ignored by git | the outbox, and the local paths to the other checkouts |
@@ -2733,6 +2733,8 @@ The Mechanism as an entity with an id and tags goes away. Its three jobs move.
 | Written | Before the code | With the code |
 | Holds | Tasks in order, units to add, change or delete, migration steps, proposed decisions | Roots, and the decisions that survived |
 | After the change | Archived with the change, never an input again | Stays and is maintained |
+
+**The plan is the file `plan.md` in the folder of its change.** It moves to `finished/` with the folder, and nothing reads it afterwards.
 
 - **A decision starts in the plan as proposed.** It moves to `realization.md` only if the finished code follows it.
 - **The plan has no history.** It says what remains to be done now.
