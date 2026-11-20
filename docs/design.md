@@ -2841,6 +2841,8 @@ Example: in drim-dev a fix for a wrong status code in `Features/CliAuth/` is a b
 
 **A proposal that does not fit on one page, or has two outcomes, is several changes.** A proposal is not edited after approval. A later decision becomes a Scenario or a decision note, never a new paragraph.
 
+**A proposal is written from what its size of work gives it.** A change of an exploration is written from its row of the map. The row gives the change its name, and it names what the change takes from the sources and which rows must be finished first. The agent reads what the row names, and not the whole folder. A change with no exploration is written from the request of the person, and from `sources/` in its own folder when it has one. What the agent cannot find there, it asks the person and does not invent.
+
 **The cost.** A one-page proposal says little about how the change will be built. A reader who wants that reads the Scenarios and the code. A proposal that describes the build becomes a second, unproven copy of the model.
 
 Example: in drim-dev a proposal for a change that removes a set-aside feature reads as follows. Outcome: the API admits a request only from the BFF with a user, and the removed code is gone from the target branch. Sources: two decision notes and an earlier specification. Boundary: the old tables stay, see the map row that drops them. Decisions: a request with the removed service's credential is refused, instead of keeping the credential valid for a later service. Approver: the project owner.

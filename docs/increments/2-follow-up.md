@@ -4,7 +4,7 @@ This is the list of behaviors for a short pass between the second and the third 
 
 Each row is one observable fact. The second cell is copied exactly from `docs/design.md`. A plain test fails when a quoted sentence is no longer in that file. A behavior with no sentence to quote is not built.
 
-Status of this list: read and accepted by a person on 2026-11-20, in five sittings: 38 rows, eleven more after five decisions, ten more with three changed after an independent review, one more about the order of tests and code, and twelve more with two changed after a second review.
+Status of this list: read and accepted by a person on 2026-11-20, in six sittings: 38 rows, eleven more after five decisions, ten more with three changed after an independent review, one more about the order of tests and code, twelve more with two changed after a second review, and eleven more about the proposal.
 
 ## The skill: finished folders
 
@@ -21,6 +21,22 @@ Step 1 of the shipped skill already tells the agent to move every change folder 
 | Step 1 tells the agent to read the day in a clone that has the whole history of the target branch | The process reads the day in a clone that has the whole history of the target branch. |
 | Step 1 says where the target branch is named: in `azimuth/project.toml` | The target branch is named in the project file |
 | Step 1 says that the change gets a name that no change used before | A change name is never used twice. |
+
+## The skill: the proposal
+
+| Behavior | Quote from the design |
+| --- | --- |
+| Step 1 says what the Outcome holds: what somebody can do or observe after the change that they cannot now, in their words | what somebody can do or observe after the change that they cannot now, in their words |
+| It says what the Sources hold: the sources and decision notes that the proposal relies on, and which part of each | the sources and decision notes it relies on, and which part of each |
+| It says what the Boundary holds: what the change leaves out, each item with the name of its map row | what it leaves out, each item with the name of its map row |
+| It says what the Decisions hold: what this change settles, each with the alternative it rejects, one line each | what this change settles, each with the alternative it rejects, one line each |
+| It says what the Approver is: who is expected to approve the Scenarios | who is expected to approve the Scenarios |
+| It says that a proposal holds no Scenarios, no plan and no completion conditions | It holds no Scenarios, no plan and no completion conditions. |
+| It says that a proposal that does not fit on one page, or has two outcomes, is several changes | A proposal that does not fit on one page, or has two outcomes, is several changes. |
+| It says that a proposal is not edited after approval | A proposal is not edited after approval. |
+| It says that a change of an exploration is written from its row of the map, and takes its name from the row | A change of an exploration is written from its row of the map. The row gives the change its name |
+| It says that a change with no exploration is written from the request of the person, and from `sources/` in its own folder when it has one | A change with no exploration is written from the request of the person, and from `sources/` in its own folder when it has one. |
+| It says that the agent asks the person for what it cannot find there, and does not invent it | What the agent cannot find there, it asks the person and does not invent. |
 
 ## The skill: Scenarios
 
