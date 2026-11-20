@@ -1,6 +1,6 @@
 ---
 name: azimuth-change
-description: Make one change to a project that Azimuth tracks, from the proposal to the hand over. Use for a change that adds, changes or removes a Requirement, a statement of what must hold, or a Scenario, one concrete case of a Requirement.
+description: Make one change to a project that Azimuth tracks, from the proposal to the hand over. Use for a change of intent: one that adds, changes or removes a Requirement or a Scenario.
 ---
 
 # One change with Azimuth
@@ -50,9 +50,7 @@ Put a source that only this change needs in its `sources/` and nowhere else.
 A copy is not touched when a later source replaces it, including in this change's folder
 after its proposal was approved.
 
-Write `azimuth/changes/<name>/proposal.md` from the map row for a change of an exploration,
-or from the person's request and the change's own sources when it has them for another change.
-It is one page with five parts:
+Write `azimuth/changes/<name>/proposal.md`. It is one page with five parts:
 
 - Outcome: what somebody can do or observe after the change that they cannot now, in their words.
 - Sources: the sources and decision notes the proposal relies on, each named by its path from the
@@ -71,9 +69,9 @@ stop again. The proposal is not edited after approval.
 
 ## 2. Intent
 
-A module is a group of Requirements about one part of the product, and a folder in `azimuth/model/`.
+A module is a group of Requirements, each a statement of what must hold, about one part of the product, and a folder in `azimuth/model/`.
 Use the module whose Requirements the change adds or changes.
-In `azimuth/model/<module>/`, write the Requirement and its Scenarios in `specification.md`,
+In `azimuth/model/<module>/`, write the Requirement and its Scenarios, each one concrete case of a Requirement, in `specification.md`,
 then the Checks in `verification.md`. A Requirement and its Scenarios speak about the system
 as somebody outside it meets it.
 Run `azimuth lint` after each edit of the model.
@@ -86,7 +84,7 @@ A door is where a caller enters the system.
 A Check may combine a test through a door of the system and tests of one part of the system in isolation.
 Every test that is part of the Check carries its marker. A Check is never made only of isolated tests.
 A test through a door is needed once for each place where the part of the system is wired.
-Order the claim: through which door the test looks, what each part shows, and last what is not shown.
+Order the claim: through which door the test looks, what each test shows, and last what is not shown.
 
 A journey is one test through several real operations. It may be part of several Checks and
 carries the marker of every Check that relies on it. Each such Check's claim names
@@ -96,7 +94,7 @@ a part of the system in isolation.
 
 After the Scenarios and Checks, write `azimuth/changes/<name>/plan.md` when a Requirement the
 change adds or changes declares `Realization:`. A change with no such Requirement needs no plan.
-`Realization: reviewed` asks for a review, with Checks, of whether the roots are complete, whether
+`Realization: reviewed` asks for a review of three things: whether the roots are complete, whether
 the code follows each decision, and whether the code at the roots does something the Requirement
 does not ask for.
 The plan covers the whole change, also what it builds for a Requirement that declares no `Realization:`.
