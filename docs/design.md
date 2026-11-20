@@ -2970,6 +2970,10 @@ To be discussed: what the reviewer judges and records, who reviews, and when.
 
 **The cost.** On the target branch a folder stays at the top between its merge and the start of the next change. Nobody works there. The date does not order the changes of one day: inside a day the folders sort by name.
 
+After a fast-forward git keeps no trace of the arrival. The date is then the day of the commit that first brought the folder, which can be earlier than the arrival. Two branches still read the same day.
+
+The process reads the day in a clone that has the whole history of the target branch. In a shallow clone the day can be wrong.
+
 **After merge the change page is frozen and stays on the server.** Its records are keyed by content, so they remain true whatever happens to the commits.
 
 Example: the rebuilt lab engine change in drim-dev merges on 2 December 2026 with its folder at `azimuth/changes/lab-engine/`. A week later a change for the second lab starts. Its first commit moves the folder to `azimuth/changes/finished/2026-12-02-lab-engine/`. From then on the branch shows one open folder.
