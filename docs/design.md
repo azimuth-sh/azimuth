@@ -199,6 +199,8 @@ The cost. Through increments 1 to 3 no Requirement is reviewed by anything but t
 
 **The Build ends when a run can settle nothing more.** `azimuth status` may then still name what this machine cannot settle: a review, which this version does not record, a Check that runs only in CI, or a Check that cannot run here. A note that blocks nothing, such as an edited process, may stay too. The agent names what is left at the hand over. A Check that a run here could settle is work of the Build.
 
+On a machine where a Check cannot run, the commit lane fails at the hand over. The agent names that Check and says that the commit lane of CI decides. It repairs nothing for it.
+
 **`realization.md` is written before the last run of the Build.** Every file is an input of a Check, so a file that is written after the run makes its Checks owed again.
 
 **At the end of the Intent step lint may still report two findings, and no other.** A Check that this change adds has no marked test, because its test is written in the Build. A marker names a Check that this change removes, because the marker leaves in the Build. Its test leaves with it only when the test carries no other marker. Both findings are correct, and the order of the steps makes them unavoidable: the person reads the intent before any code exists. Every other finding and every reading error is gone before the stop. The skill names the two, and the agent lists what remains when it stops. Lint itself does not change and knows no step.
@@ -2811,7 +2813,7 @@ Example: a plan for grants named the unique index that decides between two admin
 **A change belongs to an exploration only through the map.** The link goes one way.
 
 - A change belongs to an exploration when a map lists its name. The proposal does not have to say anything.
-- A proposal may point at the exploration's sources. That is a reference to a text, not a membership.
+- A proposal names the copies it took from the exploration's sources. That is a reference to a text, not a membership.
 - An exploration can be born late. Its first row is then a change that is already finished.
 
 **The cost.** Whether one change is too big and should have been an exploration stays a judgment. The one-page rule for a proposal, below, is the only signal.

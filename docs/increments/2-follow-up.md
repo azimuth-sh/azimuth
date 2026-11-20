@@ -2,11 +2,13 @@
 
 This is the list of behaviors for a short pass between the second and the third increment of the core. The first real change that was made with increment 2 added rules to `docs/design.md` that the shipped skill does not say yet, and it asked for one more list in `azimuth check show`. A person reads this list before the build starts.
 
-Each row is one observable fact. The second cell is copied exactly from `docs/design.md`. A plain test fails when a quoted sentence is no longer in that file. A behavior with no sentence to quote is not built.
+A row is of one of two kinds. A row of behavior is one observable fact, and a test shows it. A row of prose says what a text tells its reader; its section begins with the words "Rows of prose", and no test reads the words of the text for it. Each row is one observable fact. The second cell is copied exactly from `docs/design.md`. A plain test fails when a quoted sentence is no longer in that file. A behavior with no sentence to quote is not built.
 
-Status of this list: read and accepted by a person on 2026-11-20, in seven sittings: 38 rows, eleven more after five decisions, ten more with three changed after an independent review, one more about the order of tests and code, twelve more with two changed after a second review, eleven more about the proposal, and five more about the copies of sources.
+Status of this list: read and accepted by a person on 2026-11-20, in eight sittings. The last one changed one row and added two after an independent reading of the skill text against this list.
 
 ## The skill: finished folders
+
+Rows of prose: a person reads the text, and one test compares the whole text with what that person accepted.
 
 Step 1 of the shipped skill already tells the agent to move every change folder that exists on the target branch into `azimuth/changes/finished/`.
 
@@ -15,14 +17,13 @@ Step 1 of the shipped skill already tells the agent to move every change folder 
 | Step 1 names the moved folder `<date>-<name>` | The moved folder is named `<date>-<name>`. |
 | It says which day the date is: the day on which the folder arrived on the target branch | The date is the day on which the folder arrived on the target branch. |
 | It gives one git command that prints that day in UTC, and tells the agent not to type the date | The process reads it from git, in UTC |
-| For a folder that arrived by a merge, the command of the skill prints the day of the merge on the target branch, and not the day of the commit on the change branch | The date is the day on which the folder arrived on the target branch. |
-| Run on two branches that start from the same target branch, the command prints the same day | both made the same rename, because both read the same date from git and nobody types it |
-| For a folder that arrived by a fast-forward, the command prints the day of the commit that first brought the folder | The date is then the day of the commit that first brought the folder, which can be earlier than the arrival. |
 | Step 1 tells the agent to read the day in a clone that has the whole history of the target branch | The process reads the day in a clone that has the whole history of the target branch. |
 | Step 1 says where the target branch is named: in `azimuth/project.toml` | The target branch is named in the project file |
 | Step 1 says that the change gets a name that no change used before | A change name is never used twice. |
 
 ## The skill: the proposal
+
+Rows of prose: a person reads the text, and one test compares the whole text with what that person accepted.
 
 | Behavior | Quote from the design |
 | --- | --- |
@@ -41,15 +42,20 @@ Step 1 of the shipped skill already tells the agent to move every change folder 
 | It says that a copy is the whole file, unchanged, under the same path inside `sources/` | A copy is the whole file, unchanged, under the same path inside `sources/`. |
 | It says that the Sources part names each source by its path from the change folder | the proposal names each source by its path from that folder |
 | It says that a source that only this change needs is written in the folder of this change and nowhere else | A source that only one change needs is written in the folder of that change and nowhere else. |
-| It says that a copy in a finished change folder is not touched when a later source replaces it | A copy is not touched when a later source replaces it. |
+| It says that a copy is not touched when a later source replaces it | A copy is not touched when a later source replaces it. |
+| The stop of step 1 and the stop of step 2 each end with the approval of the person, and after a request for a change the agent makes the change and stops again | a person approves each proposal when it is written, and that is the only decision |
 
 ## The skill: Scenarios
+
+Rows of prose: a person reads the text, and one test compares the whole text with what that person accepted.
 
 | Behavior | Quote from the design |
 | --- | --- |
 | Step 2 says that a Requirement and its Scenarios speak about the system as somebody outside it meets it | A Requirement and its Scenarios speak about the system as somebody outside it meets it: a learner, an admin, an operator, another system |
 
 ## The skill: the parts of a Check
+
+Rows of prose: a person reads the text, and one test compares the whole text with what that person accepted.
 
 | Behavior | Quote from the design |
 | --- | --- |
@@ -67,6 +73,8 @@ Step 1 of the shipped skill already tells the agent to move every change folder 
 | Step 3 says what a marker is and where it stands: it enrolls a test in a Check, on a test or on a class, in the form that the suite declares in `azimuth/project.toml` | A marker enrolls a test in a Check. |
 
 ## The skill: the plan
+
+Rows of prose: a person reads the text, and one test compares the whole text with what that person accepted.
 
 | Behavior | Quote from the design |
 | --- | --- |
@@ -88,6 +96,8 @@ Step 1 of the shipped skill already tells the agent to move every change folder 
 
 ## The skill: the Build and the hand over
 
+Rows of prose: a person reads the text, and one test compares the whole text with what that person accepted.
+
 | Behavior | Quote from the design |
 | --- | --- |
 | Step 3 tells the agent to move a proposed decision into `realization.md` only when the finished code follows it | It moves to `realization.md` only if the finished code follows it. |
@@ -102,7 +112,18 @@ Step 1 of the shipped skill already tells the agent to move every change folder 
 | Step 4 tells the agent to name what `azimuth status` still names | The agent names what is left at the hand over. |
 | Step 4 says that a declared review is still owed and is done outside Azimuth | Until increment 4 the review is done outside Azimuth, and status shows it as owed. |
 | Step 4 says what follows a commit lane that fails: after status 1 the agent repairs the code or the tests, after 2 the model, and it runs the lane again | after 1 an agent fixes the code or the tests, and after 2 it fixes the model, the command line or the installation |
+| Step 4 says that when the commit lane fails because a Check cannot run here, the agent names that Check, says that the commit lane of CI decides, and repairs nothing for it | The agent names that Check and says that the commit lane of CI decides. |
 | Step 4 tells the agent to name a proposed decision that served a Requirement with no `Realization:` as archived with the plan | A decision for such a Requirement has no `realization.md` to move to, and it is archived with the plan |
+
+## The command of the skill
+
+Step 1 of the skill gives one git command. A test takes it out of the installed text and runs it.
+
+| Behavior | Quote from the design |
+| --- | --- |
+| For a folder that arrived by a merge, the command of the skill prints the day of the merge on the target branch, and not the day of the commit on the change branch | The date is the day on which the folder arrived on the target branch. |
+| Run on two branches that start from the same target branch, the command prints the same day | both made the same rename, because both read the same date from git and nobody types it |
+| For a folder that arrived by a fast-forward, the command prints the day of the commit that first brought the folder | The date is then the day of the commit that first brought the folder, which can be earlier than the arrival. |
 
 ## `azimuth check show`
 
