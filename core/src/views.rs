@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use crate::clock;
 use crate::model::Requirement;
 use crate::output;
+use crate::result::{EnrolledTest, StoredResult};
 use crate::state::{Evaluation, State};
 use crate::survey::Survey;
 
@@ -128,6 +129,9 @@ fn state_line(evaluation: &Evaluation, count_files: bool) -> String {
 pub fn check_document(survey: &Survey, id: &str) -> Value {
     let check = survey.workspace.model.check(id).expect("the caller looked the Check up");
     let evaluation = &survey.evaluations[id];
+    let last = last_result(survey, id);
+    let markers: Vec<Value> = survey.markers.iter().filter(|marker| marker.check == id).map(|marker| json!({ "file": marker.file, "line": marker.line })).collect();
+    let tests: Vec<Value> = last.into_iter().flat_map(|result| &result.tests).map(EnrolledTest::to_json).collect();
     let mut document = json!({
         "format": "check-1",
         "id": check.id,
@@ -137,7 +141,9 @@ pub fn check_document(survey: &Survey, id: &str) -> Value {
         "state": evaluation.state.as_str(),
         "parts_changed": evaluation.parts_changed,
         "files_changed": evaluation.files_changed,
-        "failing_tests": evaluation.failing_tests,
+        "markers": markers,
+        "tests": tests,
+        "failing_tests": last.map(StoredResult::failing_tests).unwrap_or_default(),
     });
     output::set_present(&mut document, "suite", survey.suite_of(id));
     output::set_present(&mut document, "reason", evaluation.reason);
@@ -153,6 +159,11 @@ pub fn check_document(survey: &Survey, id: &str) -> Value {
         document["reuse"] = json!({ "value": reuse.value.as_str(), "reason": reuse.reason });
     }
     document
+}
+
+fn last_result<'s>(survey: &'s Survey, id: &'s str) -> Option<&'s StoredResult> {
+    // The result explaining the state can be older, for example after inputs are restored.
+    survey.records.of_check(id).max_by(|a, b| (&a.at, &a.file_name).cmp(&(&b.at, &b.file_name)))
 }
 
 pub fn check_text(survey: &Survey, id: &str) -> String {
@@ -179,8 +190,9 @@ pub fn check_text(survey: &Survey, id: &str) -> String {
             }
         }
     }
-    if !evaluation.failing_tests.is_empty() {
-        text.push_str(&format!("  failing tests: {}\n", evaluation.failing_tests.join(", ")));
+    text.push_str("  markers:\n");
+    for marker in survey.markers.iter().filter(|marker| marker.check == id) {
+        text.push_str(&format!("    {}:{}\n", marker.file, marker.line));
     }
     if let Some(result) = &evaluation.reference {
         let commit = result.commit.as_deref().map(|commit| &commit[..commit.len().min(7)]).unwrap_or("none");
@@ -192,6 +204,14 @@ pub fn check_text(survey: &Survey, id: &str) -> String {
             result.where_,
             clock::ago(&result.at)
         ));
+    }
+    if let Some(result) = last_result(survey, id) {
+        text.push_str(&format!("  tests of last result, {}:\n", clock::ago(&result.at)));
+        for test in &result.tests {
+            text.push_str(&format!("    {}  {}  {} ms\n", test.name, test.outcome, test.duration_ms));
+        }
+    } else {
+        text.push_str("  tests: no result yet\n");
     }
     text
 }
