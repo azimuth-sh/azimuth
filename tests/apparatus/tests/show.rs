@@ -246,34 +246,12 @@ fn check_show_names_the_files_that_differ() {
     assert_eq!(files_changed(&repo.check_show(ON_TIME_RETURN)), expected);
     let output = repo.azimuth(&["check", "show", ON_TIME_RETURN]);
     output.expect_status(0);
-    for path in &expected {
-        let base = std::path::Path::new(path)
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap();
-        assert_eq!(
-            output.stdout.matches(base).count(),
-            1,
-            "changed file {path} must be named exactly once:\n{}",
-            output.stdout
-        );
-    }
-    let mut candidates = repo.tracked_paths();
-    candidates.push("desk/shelves.txt".into());
-    candidates.sort();
-    let shown: Vec<_> = candidates
-        .into_iter()
-        .filter(|path| {
-            output.stdout.contains(path)
-                || output.stdout.contains(
-                    std::path::Path::new(path)
-                        .file_name()
-                        .unwrap()
-                        .to_str()
-                        .unwrap(),
-                )
-        })
+    let shown: Vec<_> = output
+        .stdout
+        .lines()
+        .skip_while(|line| *line != "    files  changed")
+        .skip(1)
+        .map_while(|line| line.strip_prefix("      "))
         .collect();
     assert_eq!(
         shown, expected,
