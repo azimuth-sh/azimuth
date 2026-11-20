@@ -707,7 +707,7 @@ Example: the API test project of drim-dev has 249 files with test methods. After
 
 **A Check may be made of parts: a test through a door of the system, and tests of one part in isolation.** All of them carry the marker of the Check, and the Check rule does not change: one failed test fails the Check.
 
-- **An isolated test alone is never a Check.** It shows what the part does. It does not show that the system uses the part.
+- **A Check is never made only of tests of one part in isolation.** Such a test shows what the part does. It does not show that the system uses the part.
 - **The test through a door shows that the part is wired in.** It is needed once for each place where the part is wired, for example once for each operation that has a validator, and not once for a Requirement.
 - **The claim says what each part shows.** Its order is fixed: through which door the test looks, what each part shows, and last what is not shown.
 - **The parts are one Check and not several.** The claim is one argument with two steps. As separate Checks, the test through the door could be deleted and the Scenario would still show Checks that pass.
