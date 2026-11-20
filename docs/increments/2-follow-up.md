@@ -4,7 +4,7 @@ This is the list of behaviors for a short pass between the second and the third 
 
 Each row is one observable fact. The second cell is copied exactly from `docs/design.md`. A plain test fails when a quoted sentence is no longer in that file. A behavior with no sentence to quote is not built.
 
-Status of this list: read and accepted by a person on 2026-11-20, in six sittings: 38 rows, eleven more after five decisions, ten more with three changed after an independent review, one more about the order of tests and code, twelve more with two changed after a second review, and eleven more about the proposal.
+Status of this list: read and accepted by a person on 2026-11-20, in seven sittings: 38 rows, eleven more after five decisions, ten more with three changed after an independent review, one more about the order of tests and code, twelve more with two changed after a second review, eleven more about the proposal, and five more about the copies of sources.
 
 ## The skill: finished folders
 
@@ -37,6 +37,11 @@ Step 1 of the shipped skill already tells the agent to move every change folder 
 | It says that a change of an exploration is written from its row of the map, and takes its name from the row | A change of an exploration is written from its row of the map. The row gives the change its name |
 | It says that a change with no exploration is written from the request of the person, and from `sources/` in its own folder when it has one | A change with no exploration is written from the request of the person, and from `sources/` in its own folder when it has one. |
 | It says that the agent asks the person for what it cannot find there, and does not invent it | What the agent cannot find there, it asks the person and does not invent. |
+| It says that a change of an exploration copies the files that its row names into `azimuth/changes/<name>/sources/` | It copies those files into the `sources/` of the change. |
+| It says that a copy is the whole file, unchanged, under the same path inside `sources/` | A copy is the whole file, unchanged, under the same path inside `sources/`. |
+| It says that the Sources part names each source by its path from the change folder | the proposal names each source by its path from that folder |
+| It says that a source that only this change needs is written in the folder of this change and nowhere else | A source that only one change needs is written in the folder of that change and nowhere else. |
+| It says that a copy in a finished change folder is not touched when a later source replaces it | A copy is not touched when a later source replaces it. |
 
 ## The skill: Scenarios
 
@@ -141,6 +146,7 @@ Step 1 of the shipped skill already tells the agent to move every change folder 
 | Finding | Where it goes | Why |
 | --- | --- | --- |
 | Lint reads the file roots in `realization.md` and reports one that names no file | increment 3 | the design says so, and the written form of a file root is decided there |
+| Lint reports a path in a proposal that names no file, and a copy of a source that differs from its origin | increment 3 | the design says so, and lint learns to read files of a change there |
 | A second run of the site job can fail, because the upload of the first run is still there | a later pass | it is older than this pass. Until then a person starts the workflow again and does not run the job again |
 | The sentence about the profile that calls a journey Check the marked exception to the rule of one endpoint | increment 6 | a journey is a test that several Checks share. The profile is built there, and nothing reads the sentence before |
 | The brief of each review carries the six questions | increment 4 | the reviews are built there. Until then a person writes the brief |
