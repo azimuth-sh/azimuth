@@ -4,7 +4,7 @@ This is the list of behaviors for a short pass between the second and the third 
 
 Each row is one observable fact. The second cell is copied exactly from `docs/design.md`. A plain test fails when a quoted sentence is no longer in that file. A behavior with no sentence to quote is not built.
 
-Status of this list: read and accepted by a person on 2026-11-20.
+Status of this list: read and accepted by a person on 2026-11-20, 38 rows first and eleven more after five decisions of the same day.
 
 ## The skill: finished folders
 
@@ -32,6 +32,9 @@ Step 1 of the shipped skill already tells the agent to move every change folder 
 | It says that every part carries the marker of the Check | All of them carry the marker of the Check |
 | It says that a Check is never made only of tests of one part in isolation | A Check is never made only of tests of one part in isolation. |
 | It gives the order of the claim of such a Check: the door, what each part shows, and last what is not shown | Its order is fixed: through which door the test looks, what each part shows, and last what is not shown. |
+| It says that a journey, one test through several real operations, may be a part of several Checks and carries the marker of each | It carries the marker of every Check whose Scenario it passes through. |
+| It says that the claim of each such Check names the stretch of the journey that it relies on | The claim of each such Check names the stretch of the journey that it relies on |
+| It says that a Check also has a test of one operation alone, where that operation can be tested alone | Where one operation can be tested alone, the Check also has a test of that operation alone |
 
 ## The skill: the plan
 
@@ -50,6 +53,7 @@ Step 1 of the shipped skill already tells the agent to move every change folder 
 | It asks what can no longer be deleted | What can no longer be deleted? |
 | It says that a question with an answer becomes a proposed decision, and that a question with no answer leaves no line | A question with an answer becomes a proposed decision in the plan. A question with no answer leaves no line. |
 | The stop of step 2 names the plan among what the person reads | The person reads the plan at the Intent stop. |
+| It names the file of the plan, `azimuth/changes/<name>/plan.md` | The plan is the file `plan.md` in the folder of its change. |
 
 ## The skill: the Build and the hand over
 
@@ -72,6 +76,10 @@ Step 1 of the shipped skill already tells the agent to move every change folder 
 | With `--json` the document holds the fields `markers` and `tests` | The format `check-1` gains two fields for it, `markers` and `tests`. |
 | `failing_tests` is still there and holds the failed tests of the second list | `failing_tests` stays, and it holds the tests of that list whose outcome is "failed". |
 | The document still names its format `check-1` | Adding a field does not raise the number of a format. |
+| With `--json` an entry of `markers` holds `file`, the path from the root of the repository, and `line` | An entry of `markers` holds `file`, the path from the root of the repository, and `line`. |
+| An entry of `tests` holds `name`, `outcome` and `duration_ms` | An entry of `tests` holds `name`, `outcome` and `duration_ms`, as a result keeps them. |
+| For a Check with no result, `tests` is an empty list and the text says that no result exists yet | A Check with no result has an empty `tests`, and the text says that no result exists yet. |
+| For a Check with no marker, `markers` is an empty list | A Check with no marker has an empty `markers`. |
 
 ## The site workflow
 
@@ -81,15 +89,13 @@ Step 1 of the shipped skill already tells the agent to move every change folder 
 | Called by the release workflow on a version tag, it publishes | a version tag, where the site follows the release |
 | Started by hand on `main`, it publishes as before | a manual start of the site workflow from `main` |
 
-## Waiting for a sentence of the design
+## The release workflow
 
-These are wanted in this pass and have no sentence to quote, so they are not rows. Each needs words in `docs/design.md` that a person confirmed.
-
-- **The file of the plan.** The design names no file for the plan. The first use wrote `azimuth/changes/<name>/plan.md`. Until the design says it, the skill cannot name the file.
-- **One approval in GitHub for a release.** Today two jobs name the environment, the push to NuGet and the publishing of the draft, and the design describes that as it is. The wanted change is one job that pushes to NuGet and then publishes the draft. It changes the table of steps, the paragraph about the approval for each job, and the cost that counts four acts of a person.
-- **The fields inside `markers` and `tests`.** The design names the two fields of `check-1` and not what an entry holds. The text view needs a file and a line for a marker, and a name and an outcome for a test.
-- **A Check with no result.** The design does not say what the second list is then.
-- **A journey as a part of a Check.** The first use made a test that goes through several real operations a part of every Check whose Scenario it passes through. The design knows a test through a door and tests in isolation as parts, and it knows a journey Check. It does not say that one journey may carry the markers of several Checks.
+| Behavior | Quote from the design |
+| --- | --- |
+| One job of the release workflow pushes to NuGet and then publishes the draft | the workflow pushes to NuGet and then publishes the draft, in one job |
+| Exactly one job of the release workflow names the environment `release` | GitHub asks for the approval once for each job, so one job holds everything that follows the approval. |
+| That job may write to the contents of the repository and may ask for the identity for the registry, and no other job may do both | The job that follows the approval holds two rights at once: the identity for the registry and the right to write to the repository |
 
 ## Not in this pass
 
