@@ -1736,17 +1736,19 @@ They run nothing and need no network. They read the tree and the local store. Ea
 | List | Where it comes from | Its limit |
 | --- | --- | --- |
 | The marker lines, each with its file and line | The scan of the source | A marker on a class is one line, and it names no test |
-| The tests of the last result, each with its outcome | The record of that result | It is as old as that result, and the command says how old |
+| The tests of the result that the command shows, each with its outcome | The record of that result | It is as old as that result, and the command says how old |
+
+The result that the command shows is the one the state rests on: the kept result, or else the last one. So one output describes one result.
 
 **A result keeps the name and the outcome of every test of its Check, and not only of the failed ones.**
 
-The format `check-1` gains two fields for it, `markers` and `tests`. `failing_tests` stays, and it holds the tests of that list whose outcome is "failed". Adding a field does not raise the number of a format.
+The format `check-1` gains two fields for it, `markers` and `tests`. `failing_tests` stays as it is. Adding a field does not raise the number of a format.
 
 An entry of `markers` holds `file`, the path from the root of the repository, and `line`. An entry of `tests` holds `name`, `outcome` and `duration_ms`, as a result keeps them. A Check with no result has an empty `tests`, and the text says that no result exists yet. A Check with no marker has an empty `markers`.
 
 The cost. Every result grows by the names of its tests. And after an edit that adds a test, the second list lacks that test until the next run. The first list shows its marker at once.
 
-Example: the Check `admin-takes-back-a-grant` has three tests in two classes. `azimuth check show` prints two marker lines, one on a class and one on a method, and under the last result three names, each with "passed". Without the second list a reader sees a Check that passed and cannot tell that two of its three tests are isolated tests of a validator.
+Example: the Check `admin-takes-back-a-grant` has three tests in two classes. `azimuth check show` prints two marker lines, one on a class and one on a method, and under the result three names, each with "passed". Without the second list a reader sees a Check that passed and cannot tell that two of its three tests are isolated tests of a validator.
 
 **The structured form is one JSON document, asked for with `--json`.**
 

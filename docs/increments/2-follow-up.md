@@ -68,13 +68,14 @@ Step 1 of the shipped skill already tells the agent to move every change folder 
 | --- | --- |
 | `azimuth check show <id>` prints the marker lines of the Check, each with its file and line | The marker lines, each with its file and line |
 | A marker on a class is printed as one line, and no test is named beside it | A marker on a class is one line, and it names no test |
-| It prints the tests of the last result of the Check, each with its outcome | The tests of the last result, each with its outcome |
+| It prints the tests of the result that the command shows, each with its outcome | The tests of the result that the command shows, each with its outcome |
 | The second list also holds the tests that passed | A result keeps the name and the outcome of every test of its Check, and not only of the failed ones. |
 | It says how old that result is | It is as old as that result, and the command says how old |
 | It starts no launch, also for a Check that is owed | It prints two lists, and it starts no launch. |
 | After an edit that adds a marked test, the first list shows the new marker and the second list is unchanged | The first list shows its marker at once. |
 | With `--json` the document holds the fields `markers` and `tests` | The format `check-1` gains two fields for it, `markers` and `tests`. |
-| `failing_tests` is still there and holds the failed tests of the second list | `failing_tests` stays, and it holds the tests of that list whose outcome is "failed". |
+| `failing_tests` is still there and names what it named before | `failing_tests` stays as it is. |
+| For a Check that is kept by an older pass while a newer fail is stored, the second list and `failing_tests` describe the kept pass | The result that the command shows is the one the state rests on: the kept result, or else the last one. |
 | The document still names its format `check-1` | Adding a field does not raise the number of a format. |
 | With `--json` an entry of `markers` holds `file`, the path from the root of the repository, and `line` | An entry of `markers` holds `file`, the path from the root of the repository, and `line`. |
 | An entry of `tests` holds `name`, `outcome` and `duration_ms` | An entry of `tests` holds `name`, `outcome` and `duration_ms`, as a result keeps them. |
