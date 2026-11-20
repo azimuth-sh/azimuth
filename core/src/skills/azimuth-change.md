@@ -11,7 +11,8 @@ its words.
 
 ## 1. Proposal
 
-Fetch the target branch and use its name in this clone, for example `origin/main`, as
+The target branch is named in `azimuth/project.toml`.
+Fetch it and use its name in this clone, for example `origin/main`, as
 `<target-branch>` below. Read the day in a clone that has the whole history of the target branch.
 
 Before you write the proposal, move every change folder that already exists on the target branch
@@ -31,6 +32,7 @@ fi
 
 If the command prints nothing, stop and tell the person; never type a date.
 
+Give the change a name that no change used before.
 Write `azimuth/changes/<name>/proposal.md`, one page with five parts: Outcome, Sources,
 Boundary, Decisions and Approver.
 
@@ -42,6 +44,11 @@ In `azimuth/model/<module>/`, write the Requirement and its Scenarios in `specif
 then the Checks in `verification.md`. A Requirement and its Scenarios speak about the system
 as somebody outside it meets it.
 
+A Check states one claim about its Scenario. Write the Check under that Scenario in
+`verification.md`. A Check belongs to one suite, a declared group of tests, normally one test project.
+Evidence from another suite is another Check under the same Scenario.
+
+A door is where a caller enters the system.
 A Check may combine a test through a door of the system and tests of one part in isolation.
 Every part carries the marker of the Check. A Check is never made only of isolated tests.
 A test through a door is needed once for each place where the part is wired.
@@ -54,6 +61,7 @@ also has a test of that operation alone.
 
 After the Scenarios and Checks, write `azimuth/changes/<name>/plan.md` when a Requirement the
 change adds or changes declares `Realization:`. A change with no such Requirement needs no plan.
+`Realization: reviewed` asks for a review of how the Requirement is built.
 The plan covers the whole change, also what it builds for a Requirement that declares no `Realization:`.
 The plan holds proposed decisions, units to add, change or delete, and migration steps.
 What somebody outside the system can observe belongs in a Scenario, not in the plan. The addresses and
@@ -86,24 +94,35 @@ in `verification.md` and, where needed, `azimuth/changes/<name>/plan.md`.
 
 ## 3. Build
 
+A marker enrolls a test in a Check. Put the marker on a test or on a class, where it enrolls
+all tests of the class. Use the marker form that the suite declares in `azimuth/project.toml`.
+
 Write the marked tests through a door from the Scenarios before the code. Then write the code.
 Tests of one part in isolation need the part: write them after the part, from the Scenario
 and not from the code.
 
 For a Requirement that declares `Realization:`, move a proposed decision into `realization.md`
-only if the finished code follows it. Write `realization.md` for such Requirements with the code,
-before the last run.
+only if the finished code follows it. Write `azimuth/model/<module>/realization.md` beside
+`specification.md` for such Requirements with the code, before the last run.
+Repeat the Requirement heading and list its roots and decisions with their reasons.
+A root marks where the realization of a Requirement starts.
 
 Run `azimuth run` until it succeeds and `azimuth status` names nothing that a run could settle.
-Status may still name a review, which this version does not record, or a Check that runs only in CI.
-Anything else that status names is work of the Build. This step does not stop for a person.
+Status may still name a review, which this version does not record, a Check that runs only in CI,
+or a Check that cannot run here. A note that blocks nothing, such as "the process here differs
+from the default", may stay too. A Check that a run here could settle is work of the Build.
+This step does not stop for a person.
 
 ## 4. Hand over
 
-Run `azimuth run --lane commit`. Then print `azimuth change diff` and `azimuth status` for the
-person.
+Run `azimuth run --lane commit`. The commit lane lints first and runs every Check.
+After exit status 1, repair the code or the tests. After exit status 2, repair the model,
+the command line or the installation. Run the commit lane again after repairs, before the hand over.
+Then print `azimuth change diff` and `azimuth status` for the person.
 
 Name every proposed decision the finished code does not follow, and say why.
+Name every proposed decision for a Requirement with no `Realization:` as archived with the plan.
 Name what `azimuth status` still names beside these departures from the plan.
+Tell the person that a declared review is still owed and is done outside Azimuth.
 
 Stop. The person merges.
