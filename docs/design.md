@@ -715,6 +715,7 @@ Example: the API test project of drim-dev has 249 files with test methods. After
 - **The test through a door shows that the part is wired in.** It is needed once for each place where the part is wired, for example once for each operation that has a validator, and not once for a Requirement.
 - **The claim says what each part shows.** Its order is fixed: through which door the test looks, what each part shows, and last what is not shown.
 - **The parts are one Check and not several.** The claim is one argument with two steps. As separate Checks, the test through the door could be deleted and the Scenario would still show Checks that pass.
+- **The test through a door is written before the code.** A test of one part in isolation needs the part and is written after it, from the Scenario and not from the code.
 
 The cost. That the two parts together show the Scenario is a judgment, and no tool makes it. The Verification Review does. A reader needs to see the parts, so `azimuth check show` names the tests of a Check.
 
