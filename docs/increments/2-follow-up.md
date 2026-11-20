@@ -4,7 +4,7 @@ This is the list of behaviors for a short pass between the second and the third 
 
 Each row is one observable fact. The second cell is copied exactly from `docs/design.md`. A plain test fails when a quoted sentence is no longer in that file. A behavior with no sentence to quote is not built.
 
-Status of this list: read and accepted by a person on 2026-11-20, 38 rows first and eleven more after five decisions of the same day.
+Status of this list: read and accepted by a person on 2026-11-20, in three sittings: 38 rows, eleven more after five decisions, and ten more with three changed after an independent review.
 
 ## The skill: finished folders
 
@@ -17,6 +17,8 @@ Step 1 of the shipped skill already tells the agent to move every change folder 
 | It gives one git command that prints that day in UTC, and tells the agent not to type the date | The process reads it from git, in UTC |
 | For a folder that arrived by a merge, the command of the skill prints the day of the merge on the target branch, and not the day of the commit on the change branch | The date is the day on which the folder arrived on the target branch. |
 | Run on two branches that start from the same target branch, the command prints the same day | both made the same rename, because both read the same date from git and nobody types it |
+| For a folder that arrived by a fast-forward, the command prints the day of the commit that first brought the folder | The date is then the day of the commit that first brought the folder, which can be earlier than the arrival. |
+| Step 1 tells the agent to read the day in a clone that has the whole history of the target branch | The process reads the day in a clone that has the whole history of the target branch. |
 
 ## The skill: Scenarios
 
@@ -31,10 +33,12 @@ Step 1 of the shipped skill already tells the agent to move every change folder 
 | Step 2 says that a Check may be made of a test through a door of the system and of tests of one part in isolation | A Check may be made of parts: a test through a door of the system, and tests of one part in isolation. |
 | It says that every part carries the marker of the Check | All of them carry the marker of the Check |
 | It says that a Check is never made only of tests of one part in isolation | A Check is never made only of tests of one part in isolation. |
+| It says that a test through a door is needed once for each place where the part is wired | It is needed once for each place where the part is wired, for example once for each operation that has a validator, and not once for a Requirement. |
 | It gives the order of the claim of such a Check: the door, what each part shows, and last what is not shown | Its order is fixed: through which door the test looks, what each part shows, and last what is not shown. |
 | It says that a journey, one test through several real operations, may be a part of several Checks and carries the marker of each Check that relies on it | It carries the marker of every Check that relies on it. |
 | It says that the claim of each such Check names the stretch of the journey that it relies on | The claim of each such Check names the stretch of the journey that it relies on |
 | It says that a Check also has a test of one operation alone, where that operation can be tested alone | Where one operation can be tested alone, the Check also has a test of that operation alone |
+| It says that when the change removes a Check, the marker leaves, and its test leaves only when the test carries no other marker | Its test leaves with it only when the test carries no other marker. |
 
 ## The skill: the plan
 
@@ -42,6 +46,7 @@ Step 1 of the shipped skill already tells the agent to move every change folder 
 | --- | --- |
 | Step 2 says that the change needs a plan when a Requirement that it adds or changes declares `Realization:` | A change needs a plan when a Requirement that it adds or changes declares `Realization:` |
 | It says that a change with no such Requirement needs no plan | A change with no such Requirement needs no plan |
+| It says that the plan covers the whole change, also what is built for a Requirement that declares no `Realization:` | A plan covers the whole change, also what the change builds for a Requirement that declares no `Realization:` |
 | It puts the writing of the plan after the Scenarios and the Checks, and before the one stop of the step | The agent writes the plan in the Intent step, after the Scenarios and the Checks, and the person reads all three at the one stop |
 | It names what the plan holds at the stop: the proposed decisions, the units to add, change or delete, and the migration steps | At that stop the plan holds the proposed decisions, the units to add, change or delete, and the migration steps |
 | It says that what somebody outside the system can observe is a Scenario and no line of the plan, and that the addresses and the answers between the team's own components are in the plan | What somebody outside the system can observe is not in the plan. It is a Scenario. The addresses and the answers between the team's own components are in the plan |
@@ -60,7 +65,11 @@ Step 1 of the shipped skill already tells the agent to move every change folder 
 | Behavior | Quote from the design |
 | --- | --- |
 | Step 3 tells the agent to move a proposed decision into `realization.md` only when the finished code follows it | It moves to `realization.md` only if the finished code follows it. |
+| Step 3 puts the writing of `realization.md` before the last run | `realization.md` is written before the last run of the Build. |
+| Step 3 ends when `azimuth run` succeeds and `azimuth status` names nothing that a run could settle | runs `azimuth run` until it succeeds and `azimuth status` names nothing that a run could settle |
+| It says what may be left: a review, which this version does not record, and a Check that runs only in CI | `azimuth status` may then still name a review, which this version does not record, or a Check that runs only in CI. |
 | Step 4 tells the agent to name every proposed decision that the finished code does not follow, and to say why | At the hand over the agent names every proposed decision that the finished code does not follow, and says why |
+| Step 4 tells the agent to name what `azimuth status` still names | The agent names what is left at the hand over. |
 
 ## `azimuth check show`
 
@@ -103,5 +112,7 @@ Step 1 of the shipped skill already tells the agent to move every change folder 
 | Finding | Where it goes | Why |
 | --- | --- | --- |
 | Lint reads the file roots in `realization.md` and reports one that names no file | increment 3 | the design says so, and the written form of a file root is decided there |
+| A second run of the site job can fail, because the upload of the first run is still there | a later pass | it is older than this pass. Until then a person starts the workflow again and does not run the job again |
+| The sentence about the profile that calls a journey Check the marked exception to the rule of one endpoint | increment 6 | a journey is a test that several Checks share. The profile is built there, and nothing reads the sentence before |
 | The brief of each review carries the six questions | increment 4 | the reviews are built there. Until then a person writes the brief |
 | The suites of this repository run under `cargo-nextest`, CI runs in three jobs, and the tests of the launch limits are split | after this pass | they change how this repository is tested and no behavior of the product |
