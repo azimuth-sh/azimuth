@@ -482,7 +482,7 @@ A Requirement or Scenario may carry `Context:` conditions. They say under which 
 | The contract between the team's own components is realization. It is proposed in the plan and kept in `realization.md` when the code follows it | it can change without any change of what was promised |
 | A feature that is built layer by layer keeps its Requirement, and each layer adds Checks | the Requirement does not change when the building does |
 
-**The cost.** A Requirement without `Realization:` has no plan. For such a Requirement the contract between components is the agent's choice alone, and a person sees it only in the code.
+**The cost.** A change in which no Requirement declares `Realization:` has no plan. In such a change the contract between components is the agent's choice alone, and a person sees it only in the code.
 
 Example: in drim-dev an admin gives a user access to a lab. The Scenario says that an admin gives a grant for a lab to a user, and that the user then holds access. Its first Check looks through the API, because no page for an admin exists yet, and its claim says so. When the page is built, a Check in a browser is added to the same Scenario. The address `POST /api/grants` and its statuses are in the plan. The Requirement `private-api-admits-only-the-bff` below is the other case: its promise is made at the API itself, to whoever goes around the website.
 
@@ -2765,6 +2765,7 @@ The Mechanism as an entity with an id and tags goes away. Its three jobs move.
 | --- | --- |
 | A change needs a plan when a Requirement that it adds or changes declares `Realization:` | the declaration says that how the Requirement is built matters. It buys a review after the code, and it buys the person's look before the code |
 | A change with no such Requirement needs no plan | a routine change stays fast |
+| A plan covers the whole change, also what the change builds for a Requirement that declares no `Realization:` | half a plan hides the migration and the units of the other half. A decision for such a Requirement has no `realization.md` to move to, and it is archived with the plan |
 | The agent writes the plan in the Intent step, after the Scenarios and the Checks, and the person reads all three at the one stop | no further wait for a person |
 | At that stop the plan holds the proposed decisions, the units to add, change or delete, and the migration steps | a person can judge these before code exists. The order of the tasks is the agent's own |
 | What somebody outside the system can observe is not in the plan. It is a Scenario. The addresses and the answers between the team's own components are in the plan | a person approves what the product does in the Scenarios, and how its parts talk to each other in the plan |
