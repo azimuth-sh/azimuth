@@ -192,12 +192,12 @@ The cost. Through increments 1 to 3 no Requirement is reviewed by anything but t
 | --- | --- | --- |
 | 1. Proposal | writes the one page with its five parts | yes. The person reads it |
 | 2. Intent | writes the Requirement and its Scenarios, then the Checks, and runs `azimuth lint` | yes. The person reads `azimuth change diff` before any code exists |
-| 3. Build | writes the marked tests from the Scenarios, then the code, and runs `azimuth run` until it succeeds and `azimuth status` names nothing that a run could settle | no |
+| 3. Build | writes the marked tests through a door from the Scenarios, then the code and the tests of one part in isolation, and runs `azimuth run` until it succeeds and `azimuth status` names nothing that a run could settle | no |
 | 4. Hand over | runs `azimuth run --lane commit`, then prints `azimuth change diff` and `azimuth status` | yes. The person merges |
 
 **Where the change needs a plan, the Intent stop shows the plan too.** The part "The implementation plan" says when a change needs one. The number of stops stays the same.
 
-**The Build ends when a run can settle nothing more.** `azimuth status` may then still name a review, which this version does not record, or a Check that runs only in CI. The agent names what is left at the hand over. Anything else that status names is work of the Build.
+**The Build ends when a run can settle nothing more.** `azimuth status` may then still name what this machine cannot settle: a review, which this version does not record, a Check that runs only in CI, or a Check that cannot run here. A note that blocks nothing, such as an edited process, may stay too. The agent names what is left at the hand over. A Check that a run here could settle is work of the Build.
 
 **`realization.md` is written before the last run of the Build.** Every file is an input of a Check, so a file that is written after the run makes its Checks owed again.
 
@@ -479,7 +479,7 @@ A Requirement or Scenario may carry `Context:` conditions. They say under which 
 | A Requirement and its Scenarios speak about the system as somebody outside it meets it: a learner, an admin, an operator, another system | that somebody does not know where the website ends and the API begins. A cut by component repeats the architecture in the model |
 | A Requirement names a component boundary only when the promise is made at that boundary to somebody outside it | a security boundary must hold when somebody goes around the component in front of it. A consumer that is not the team's own, or is released apart, was promised the address and the answer |
 | A Scenario may have Checks at several doors, in several suites. The claim of each Check says through which door it looks | a Scenario about the whole can look proven while one layer is untested. The Verification Review judges whether the Checks together show the Scenario |
-| The contract between the team's own components is realization. It is proposed in the plan and kept in `realization.md` when the code follows it | it can change without any change of what was promised |
+| The contract between the team's own components is realization. It is proposed in the plan and kept in `realization.md` when the code follows it and its Requirement declares `Realization:` | it can change without any change of what was promised |
 | A feature that is built layer by layer keeps its Requirement, and each layer adds Checks | the Requirement does not change when the building does |
 
 **The cost.** A change in which no Requirement declares `Realization:` has no plan. In such a change the contract between components is the agent's choice alone, and a person sees it only in the code.
@@ -1743,7 +1743,7 @@ They run nothing and need no network. They read the tree and the local store. Ea
 | The marker lines, each with its file and line | The scan of the source | A marker on a class is one line, and it names no test |
 | The tests of the result that the command shows, each with its outcome | The record of that result | It is as old as that result, and the command says how old |
 
-The result that the command shows is the one the state rests on: the kept result, or else the last one. So one output describes one result.
+The result that the command shows is the one the state rests on: the kept pass, or the fail on these inputs, or, when the state rests on neither, the newest result. The text says which of the three it is. So one output describes one result.
 
 **A result keeps the name and the outcome of every test of its Check, and not only of the failed ones.**
 
@@ -2542,7 +2542,7 @@ The Check ids are real. The states are invented for the example.
 - Small finished changes. Big work is a chain of changes that come from one exploration.
 - One branch per change.
 - The proposal is a historical document and is not edited after approval.
-- Expectations are written from intent, before the author of a Check sees the code.
+- Expectations are taken from intent and never from the code.
 
 **Records leave and enter a server only as an export.** Records live in the server and never in the tree. One mechanism serves a lost server, a move between regions, a move between hosted and self-hosted in either direction, and an audit years later.
 

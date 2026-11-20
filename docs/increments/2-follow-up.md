@@ -68,7 +68,8 @@ Step 1 of the shipped skill already tells the agent to move every change folder 
 | Step 3 puts the tests through a door before the code, and the tests of one part in isolation after it, written from the Scenario and not from the code | A test of one part in isolation needs the part and is written after it, from the Scenario and not from the code. |
 | Step 3 puts the writing of `realization.md` before the last run | `realization.md` is written before the last run of the Build. |
 | Step 3 ends when `azimuth run` succeeds and `azimuth status` names nothing that a run could settle | runs `azimuth run` until it succeeds and `azimuth status` names nothing that a run could settle |
-| It says what may be left: a review, which this version does not record, and a Check that runs only in CI | `azimuth status` may then still name a review, which this version does not record, or a Check that runs only in CI. |
+| It says what may be left: a review, which this version does not record, a Check that runs only in CI, and a Check that cannot run here | a review, which this version does not record, a Check that runs only in CI, or a Check that cannot run here |
+| It says that a Check that a run here could settle is work of the Build | A Check that a run here could settle is work of the Build. |
 | Step 4 tells the agent to name every proposed decision that the finished code does not follow, and to say why | At the hand over the agent names every proposed decision that the finished code does not follow, and says why |
 | Step 4 tells the agent to name what `azimuth status` still names | The agent names what is left at the hand over. |
 
@@ -85,7 +86,8 @@ Step 1 of the shipped skill already tells the agent to move every change folder 
 | After an edit that adds a marked test, the first list shows the new marker and the second list is unchanged | The first list shows its marker at once. |
 | With `--json` the document holds the fields `markers` and `tests` | The format `check-1` gains two fields for it, `markers` and `tests`. |
 | `failing_tests` is still there and names what it named before | `failing_tests` stays as it is. |
-| For a Check that is kept by an older pass while a newer fail is stored, the second list and `failing_tests` describe the kept pass | The result that the command shows is the one the state rests on: the kept result, or else the last one. |
+| For a Check that is kept by an older pass while a newer fail is stored, the second list and `failing_tests` describe the kept pass | The result that the command shows is the one the state rests on: the kept pass, or the fail on these inputs, or, when the state rests on neither, the newest result. |
+| The text says which result it shows: the kept pass, the fail on these inputs, or the newest result | The text says which of the three it is. |
 | The document still names its format `check-1` | Adding a field does not raise the number of a format. |
 | With `--json` an entry of `markers` holds `file`, the path from the root of the repository, and `line` | An entry of `markers` holds `file`, the path from the root of the repository, and `line`. |
 | An entry of `tests` holds `name`, `outcome` and `duration_ms` | An entry of `tests` holds `name`, `outcome` and `duration_ms`, as a result keeps them. |
