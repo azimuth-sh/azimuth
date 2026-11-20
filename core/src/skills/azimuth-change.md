@@ -32,9 +32,34 @@ fi
 
 If the command prints nothing, stop and tell the person; never type a date.
 
-Give the change a name that no change used before.
-Write `azimuth/changes/<name>/proposal.md`, one page with five parts: Outcome, Sources,
-Boundary, Decisions and Approver.
+An exploration is a folder for work that needs several changes. A change belongs to it when
+its map has a row with the change's name. A change of an exploration takes the name of its row;
+for any other change, propose a name. In both cases, use a name that no change used before.
+For a change of an exploration, write the proposal from its row in
+`azimuth/explorations/<exploration>/map.md`. The row names what the change
+takes from the sources and which rows must be finished first. Read what the row names, not the
+whole folder. Copy the files the row names from `azimuth/explorations/<exploration>/sources/`
+into `azimuth/changes/<name>/sources/`. A copy is the whole file, unchanged, under the same
+path inside `sources/`. For a change with no exploration, use the request of the person and
+`sources/` in the change's own folder when it has one. Ask the person for what you cannot find
+there; do not invent it.
+Write a source that only this change needs in the change folder's `sources/` and nowhere else.
+A copy in a finished change folder is not touched when a later source replaces it.
+
+Write `azimuth/changes/<name>/proposal.md`, one page with five parts:
+
+- Outcome: what somebody can do or observe after the change that they cannot now, in their words.
+- Sources: the sources and decision notes the proposal relies on, each named by its path from the
+  change folder (for example `sources/decisions/<file>.md`), and which part of each it takes.
+  Never cite a path into the exploration.
+- Boundary: what the change leaves out, each item with the name of its map row.
+- Decisions: what this change settles, each with the alternative it rejects, one line each.
+- Approver: who is expected to approve the Scenarios.
+
+The proposal holds no Scenarios, no plan and no completion conditions.
+A proposal that does not fit on one page, or has two outcomes, is several changes.
+If so, tell the person and do not write one long proposal.
+A proposal is not edited after approval.
 
 Stop. The person reads the proposal.
 
@@ -61,7 +86,7 @@ also has a test of that operation alone.
 
 After the Scenarios and Checks, write `azimuth/changes/<name>/plan.md` when a Requirement the
 change adds or changes declares `Realization:`. A change with no such Requirement needs no plan.
-`Realization: reviewed` asks for a review of how the Requirement is built.
+`Realization: reviewed` asks for a review of whether the code does what each Scenario says.
 The plan covers the whole change, also what it builds for a Requirement that declares no `Realization:`.
 The plan holds proposed decisions, units to add, change or delete, and migration steps.
 What somebody outside the system can observe belongs in a Scenario, not in the plan. The addresses and
