@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use crate::clock;
 use crate::model::Requirement;
 use crate::output;
-use crate::result::{EnrolledTest, StoredResult};
+use crate::result::EnrolledTest;
 use crate::state::{Evaluation, State};
 use crate::survey::Survey;
 
@@ -129,9 +129,8 @@ fn state_line(evaluation: &Evaluation, count_files: bool) -> String {
 pub fn check_document(survey: &Survey, id: &str) -> Value {
     let check = survey.workspace.model.check(id).expect("the caller looked the Check up");
     let evaluation = &survey.evaluations[id];
-    let last = last_result(survey, id);
     let markers: Vec<Value> = survey.markers.iter().filter(|marker| marker.check == id).map(|marker| json!({ "file": marker.file, "line": marker.line })).collect();
-    let tests: Vec<Value> = last.into_iter().flat_map(|result| &result.tests).map(EnrolledTest::to_json).collect();
+    let tests: Vec<Value> = evaluation.reference.iter().flat_map(|result| &result.tests).map(EnrolledTest::to_json).collect();
     let mut document = json!({
         "format": "check-1",
         "id": check.id,
@@ -143,7 +142,7 @@ pub fn check_document(survey: &Survey, id: &str) -> Value {
         "files_changed": evaluation.files_changed,
         "markers": markers,
         "tests": tests,
-        "failing_tests": last.map(StoredResult::failing_tests).unwrap_or_default(),
+        "failing_tests": evaluation.failing_tests,
     });
     output::set_present(&mut document, "suite", survey.suite_of(id));
     output::set_present(&mut document, "reason", evaluation.reason);
@@ -159,11 +158,6 @@ pub fn check_document(survey: &Survey, id: &str) -> Value {
         document["reuse"] = json!({ "value": reuse.value.as_str(), "reason": reuse.reason });
     }
     document
-}
-
-fn last_result<'s>(survey: &'s Survey, id: &'s str) -> Option<&'s StoredResult> {
-    // The result explaining the state can be older, for example after inputs are restored.
-    survey.records.of_check(id).max_by(|a, b| (&a.at, &a.file_name).cmp(&(&b.at, &b.file_name)))
 }
 
 pub fn check_text(survey: &Survey, id: &str) -> String {
@@ -195,18 +189,16 @@ pub fn check_text(survey: &Survey, id: &str) -> String {
         text.push_str(&format!("    {}:{}\n", marker.file, marker.line));
     }
     if let Some(result) = &evaluation.reference {
+        let result_kind = if evaluation.state == State::Kept { "kept" } else { "last" };
+        let age = clock::ago(&result.at);
         let commit = result.commit.as_deref().map(|commit| &commit[..commit.len().min(7)]).unwrap_or("none");
         let edited = if result.edits.is_empty() { "" } else { " with uncommitted edits" };
         text.push_str(&format!(
-            "  {} result: {} on {}, commit {commit}{edited}, {}\n",
-            if evaluation.state == State::Kept { "kept" } else { "last" },
+            "  {result_kind} result: {} on {}, commit {commit}{edited}, {age}\n",
             result.outcome.as_str(),
-            result.where_,
-            clock::ago(&result.at)
+            result.where_
         ));
-    }
-    if let Some(result) = last_result(survey, id) {
-        text.push_str(&format!("  tests of last result, {}:\n", clock::ago(&result.at)));
+        text.push_str(&format!("  tests of {result_kind} result, {age}:\n"));
         for test in &result.tests {
             text.push_str(&format!("    {}  {}  {} ms\n", test.name, test.outcome, test.duration_ms));
         }
