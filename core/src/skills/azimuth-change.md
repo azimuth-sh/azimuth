@@ -81,10 +81,16 @@ Write `azimuth/changes/<name>/proposal.md`. It is one page with five parts:
 
 The proposal holds no Scenarios, no plan and no completion conditions.
 A proposal that does not fit on one page, or has two outcomes, is several changes.
-If so, tell the person and do not write one long proposal.
 
-Stop. The person reads and approves the proposal. If the person asks for a change, make it and
-stop again. The proposal is not edited after approval.
+A change of an initiative has no proposal stop. Write its proposal from the row and go on
+to the Intent step.
+
+For a change with no initiative, stop for the person to read and approve the proposal.
+At this stop, when the proposal would not fit on one page or has two outcomes, say so and ask:
+one change, or an initiative. Do not stop earlier for it or write one long proposal.
+When the person chooses an initiative, go on with `azimuth-exploration`.
+If the person asks for a change to the proposal, make it and stop again.
+The proposal is not edited after approval.
 
 ## 2. Intent
 
@@ -131,6 +137,12 @@ What can no longer be deleted?
 A question with an answer becomes a proposed decision in the plan. A question with no answer
 leaves no line.
 
+When a change finds that a decision holds for several changes, the exploration opens again
+for that one decision. Ask it as `azimuth-exploration` says.
+Write the note in the initiative's `sources/decisions/` and add its name to every row it bears on.
+A row that the decision makes wrong is changed or deleted in the same commit.
+A finished row is not opened again. What the decision asks of it becomes a new row.
+
 Only two kinds of finding may remain at this stop, however many of each:
 a Check that this change adds has no marked test, and a marker names a Check that this change
 removes. The added Check's test is written in the Build. In the Build, remove the marker of a
@@ -147,6 +159,7 @@ Stop. Before any code exists, the person reads `azimuth change diff`, the Scenar
 `specification.md`, the Checks in `verification.md` and, where needed,
 `azimuth/changes/<name>/plan.md`, and approves. If the person asks for a change, make it,
 bring the plan in step when there is one, and stop again.
+For a change of an initiative, the person reads the proposal at this stop too, beside the Scenarios.
 
 ## 3. Build
 
@@ -159,6 +172,16 @@ Write the marked tests through a door from the Scenarios before the code. Then w
 Tests of one part of the system in isolation need that part of the system: write them after it,
 from the Scenario and not from the code.
 
+What a change finds is repaired inside it or becomes a row, by one test:
+does it make a Scenario of this change untrue?
+
+- A fault that makes an approved Scenario of this change untrue is repaired inside the change.
+- A fault older than the change, outside what the change promises, becomes a row in the map.
+- A repair that no test can reach, or half of a wider repair, is a limit named at the hand over
+  and a row.
+
+The person may choose otherwise at any stop. Follow the person.
+
 For a Requirement that declares `Realization:`, move a proposed decision into `realization.md`
 only if the finished code follows it. Write `azimuth/model/<module>/realization.md` beside
 `specification.md` for such Requirements once the code works, and before the last run of the Build.
@@ -170,7 +193,7 @@ could settle.
 Status may still name a review, which this version does not record, a Check that runs only in CI,
 or a Check that cannot run here. A note that blocks nothing, such as "the process here differs
 from the default", may stay too. A Check that a run here could settle is work of the Build.
-This step does not stop for a person.
+This step does not stop for a person unless it opens the exploration again for a decision.
 
 ## 4. Hand over
 

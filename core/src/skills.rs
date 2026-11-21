@@ -11,9 +11,10 @@ struct Skill {
     text: &'static str,
 }
 
-const SKILLS: [Skill; 2] = [
+const SKILLS: [Skill; 3] = [
     Skill { name: "azimuth-change", text: include_str!("skills/azimuth-change.md") },
     Skill { name: "azimuth-initiative", text: include_str!("skills/azimuth-initiative.md") },
+    Skill { name: "azimuth-exploration", text: include_str!("skills/azimuth-exploration.md") },
 ];
 
 impl Skill {

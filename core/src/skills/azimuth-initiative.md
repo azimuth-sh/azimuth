@@ -79,6 +79,9 @@ An initiative is never approved.
 A person approves each proposal when it is written.
 A row may exist with no change behind it for as long as needed.
 
+The map has a part "Not cut yet", which names in one line each piece of the work
+that is not understood yet.
+
 A row cites a decision note by its short name alone.
 Whoever writes a decision note adds its short name to every row it bears on, in the same commit.
 After its names, a row may say in one line which part of a source its change takes, or what the
