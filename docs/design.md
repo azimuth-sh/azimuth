@@ -2986,7 +2986,7 @@ Example: a person asks a web shop's agent for gift cards and for a store balance
 | In which languages, and for which countries? | text and formats that only one market can read |
 | What exists today that it replaces, changes or must leave as it is? | a row that breaks a promise of the running product |
 | What happens when two people act on the same thing at once? | a rule that only one of them can win |
-| How does it reach production: behind a release toggle, or with data that must move first? | a toggle or the second half of a migration with no row |
+| How does it reach production? | a toggle or the second half of a migration with no row |
 
 **A question with an answer becomes a decision note or a row. A question that does not apply leaves nothing.**
 
