@@ -2943,8 +2943,9 @@ Example: in drim-dev the 61 decision notes of the exploration `first-lab` are 10
 | A proposal cites the notes it relies on | the approver sees which decisions shaped the change |
 | A note binds nobody by itself. It becomes binding when a person approves Scenarios that follow it | approval stays the only act that commits a person |
 | Decision notes stand together in `sources/decisions/`, one note to a file | a reader finds every decision in one folder, and a change's copy keeps the same path |
+| A note's file name is the day of the decision and a short name, as `2026-11-19-admin-pages-are-their-own-row.md`. A row of the map cites the note by the short name alone | the map stays readable, and the folder lists the decisions in the order they were made |
 
-**The cost.** To know what holds now, a reader goes through the notes in order. If that hurts, the map may carry a short list of the notes in force, which is only a pointer. The folder is a convention that the core does not read. A note written elsewhere in `sources/` is still a note, and nothing reports it.
+**The cost.** To know what holds now, a reader goes through the notes in order. If that hurts, the map may carry a short list of the notes in force, which is only a pointer. The folder is a convention that the core does not read. A note written elsewhere in `sources/` is still a note, and nothing reports it. A short name must be unique in the exploration, and nothing verifies it.
 
 Example: while the lab of drim-dev was being split, its owner first decided to deploy only after all changes, and an hour later to deploy after each merge, to see problems early. That is one note with the final decision and its reason. The proposal of the first change cites it, because the note explains why that change already removes a service from the deployment chart.
 
