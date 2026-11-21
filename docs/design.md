@@ -229,6 +229,12 @@ The cost. There is no separate reviewing agent in increment 1. Between the secon
 
 The command is `azimuth skills install <harness>`, and the first increment knows the harnesses `claude` and `codex`. The text is always in `.agents/skills/azimuth-change/SKILL.md`. For `claude` the command adds a link at `.claude/skills/azimuth-change`. The digest line is the last line of the file, written `<!-- azimuth text-1:<hex> -->`. The link is relative, so it survives a move of the clone.
 
+**`azimuth skills install <harness>` installs two skills, one for a change and one for an exploration.** The skill for an exploration is `azimuth-exploration`. Its text is always in `.agents/skills/azimuth-exploration/SKILL.md`, and for `claude` the command adds a link at `.claude/skills/azimuth-exploration`. Each file carries its own digest line, so an upgrade replaces each one only when it was not edited.
+
+The cost. The command offers no choice of skills. A team that never makes an exploration still gets its skill, which costs one more folder.
+
+Example: a repository on the version before installs again with the new CLI. The command writes `.agents/skills/azimuth-exploration/SKILL.md` and its link, and replaces the change skill when nobody edited it.
+
 The cost. Another harness gets nothing until it is added to the CLI.
 
 **A change to an installed skill file is class D.** The skill decides where an agent stops for a person, and an agent that edits it could remove its own stops.
