@@ -89,9 +89,13 @@ will not fit on one page, propose how to cut the row again before the Intent ste
 The exploration opens again for that one row.
 The first of the new rows waits for no row that is not finished.
 Before the person agrees, have a fresh reader read the new rows as `azimuth-exploration` says.
+When no new row can be first, say so together with the findings and the new cut,
+and ask the person to decide at this stop whether this change waits or ends.
 Stop. The person reads the findings together with the new cut.
-When no new row can be first, say so and stop for the person to decide whether this change
-waits or ends.
+If the change ends, delete its folder, never merge its branch, and leave its new rows in the map
+for changes of their own.
+If the change waits, keep everything and go on from its proposal once the row it waits for
+is finished.
 When the person agrees, change the map and go on with the first of the new rows,
 under this change's own name. Read that row, the rows it needs finished first and what it names,
 and copy the files it names as above before writing its proposal.
