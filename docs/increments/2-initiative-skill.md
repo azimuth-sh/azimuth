@@ -4,7 +4,7 @@ This is the list of behaviors for a short pass between the second and the third 
 
 A row is of one of two kinds. A row of behavior is one observable fact, and a test shows it. A row of prose says what a text tells its reader; its section begins with the words "Rows of prose", and no test reads the words of the text for it. Each row is one observable fact. The second cell is copied exactly from `docs/design.md`. A plain test fails when a quoted sentence is no longer in that file. A behavior with no sentence to quote is not built.
 
-Status of this list: read and accepted by a person on 2026-11-21, in one sitting. Later that day the same person agreed to two repairs, because a quote must not come from an example of the design: one row of behavior now quotes the rule it follows, and one row of prose was deleted. The same day the person renamed the folder concept from exploration to initiative and chose that a change with no initiative adds its leftover rows to an open initiative where the work belongs; the rows follow both. The person also agreed to one added row of prose, on what the word names, and to a reworded row that no longer calls the map one table.
+Status of this list: read and accepted by a person on 2026-11-21, in one sitting. Later that day the same person agreed to two repairs, because a quote must not come from an example of the design: one row of behavior now quotes the rule it follows, and one row of prose was deleted. The same day the person renamed the folder concept from exploration to initiative and chose that a change with no initiative adds its leftover rows to an open initiative where the work belongs; the rows follow both. The person also agreed to one added row of prose, on what the word names, and to a reworded row that no longer calls the map one table. Last, one row of prose on a name that no initiative used before.
 
 ## `azimuth skills install`
 
@@ -134,6 +134,7 @@ Rows of prose: a person reads the text, and one test compares the whole text wit
 | It says that a change with no initiative that leaves something adds its rows to an open initiative that the work belongs to, and creates one with itself as the first row only when none fits | adds its rows to an open initiative that the work belongs to. Only when none fits does it create one, with itself as the first row. |
 | It says that at the hand over the agent names the initiative that it chose, and for a new one proposes a name for the work that the map holds, not for the change | At the hand over the agent names the initiative that it chose. For a new one it proposes a name for the work that the map holds, not for the change. |
 | It says that the person may choose another initiative, or rename the new one, before the merge | The person may choose another or rename it before the merge. |
+| It says that the name of a new initiative is one that no initiative used before | **An initiative name is never used twice either.** |
 
 ## Not in this pass
 

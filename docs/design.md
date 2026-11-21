@@ -3016,6 +3016,12 @@ To be discussed: what the reviewer judges and records, who reviews, and when.
 | A change name is never used twice. Lint refuses a name that already exists on the target branch, with a date in front of it or without | the folder and the page stay addressable |
 | A team may delete old change folders in an ordinary commit | nothing is computed from them |
 
+**An initiative name is never used twice either.** The arrival day and the folder in `initiatives/finished/` then name one initiative.
+
+The cost. Nothing verifies it. A reused name makes the command of the skill print the day of the earlier folder.
+
+Example: after `first-lab` in drim-dev has finished, the next lab work gets a new name, such as `second-lab`, and not `first-lab` again.
+
 **The result.** On any change branch, `changes/` holds only open changes at the top and everything else under `finished/`.
 
 **Why the move is not the last step of the change.** Before acceptance the folder would say "finished" while fixes may still come, and the gate would have to verify the move, which is a finalize step again. After the merge someone would have to push to the target branch every time.
