@@ -211,7 +211,7 @@ Example: a change adds the Check `other-header-names-say-nothing`. At the stop o
 
 **A skill says the route and where to stop. It never restates a rule that the CLI checks.** A lint finding itself says what is wrong and what to do. A rule written in two places goes stale in one of them.
 
-Each later increment adds to this skill or adds one more: reviews and work records in increment 4, Challenges in increment 7. An exploration gets a skill of its own for its form: which files it leaves, where they stand, and what a row of the map and a decision note hold. The skill for a change reads that form, so the form cannot stay a habit. How to explore is not decided yet, and that skill says nothing about it.
+Each later increment adds to this skill or adds one more: reviews and work records in increment 4, Challenges in increment 7. An initiative gets a skill of its own for its form: which files it leaves, where they stand, and what a row of the map and a decision note hold. The skill for a change reads that form, so the form cannot stay a habit. How to explore is not decided yet, and that skill says nothing about it.
 
 The cost. There is no separate reviewing agent in increment 1. Between the second stop and the hand over the agent works alone, and the person is the only reader of what it built. That lasts until increment 4.
 
@@ -231,11 +231,11 @@ The command is `azimuth skills install <harness>`, and the first increment knows
 
 The cost. Another harness gets nothing until it is added to the CLI.
 
-**`azimuth skills install <harness>` installs two skills, one for a change and one for an exploration.** The skill for an exploration is `azimuth-exploration`. Its text is always in `.agents/skills/azimuth-exploration/SKILL.md`, and for `claude` the command adds a link at `.claude/skills/azimuth-exploration`. Each file carries its own digest line, so an upgrade replaces each one only when it was not edited.
+**`azimuth skills install <harness>` installs two skills, one for a change and one for an initiative.** The skill for an initiative is `azimuth-initiative`. Its text is always in `.agents/skills/azimuth-initiative/SKILL.md`, and for `claude` the command adds a link at `.claude/skills/azimuth-initiative`. Each file carries its own digest line, so an upgrade replaces each one only when it was not edited.
 
-The cost. The command offers no choice of skills. A team that never makes an exploration still gets its skill, which costs one more folder.
+The cost. The command offers no choice of skills. A team that never makes an initiative still gets its skill, which costs one more folder.
 
-Example: a repository on the version before installs again with the new CLI. The command writes `.agents/skills/azimuth-exploration/SKILL.md` and its link, and replaces the change skill when nobody edited it.
+Example: a repository on the version before installs again with the new CLI. The command writes `.agents/skills/azimuth-initiative/SKILL.md` and its link, and replaces the change skill when nobody edited it.
 
 **A change to an installed skill file is class D.** The skill decides where an agent stops for a person, and an agent that edits it could remove its own stops.
 
@@ -1615,7 +1615,7 @@ Measured on 2026-11-15 with Codex CLI 0.167.0: under its workspace sandbox a com
 | `azimuth/project.toml`, the project file, in the model repository | yes | the topology: repositories, areas with mounts, components, reference environments |
 | `azimuth/model/<module>/, with README.md, specification.md, realization.md and verification.md` | yes | Requirements, Scenarios, terms, roots, decisions |
 | `azimuth/changes/<name>/` | yes | `proposal.md`, `sources/`, and `plan.md` when the change needs a plan. Finished ones move to `changes/finished/<date>-<name>/` |
-| `azimuth/explorations/<name>/` | yes | `map.md` and `sources/`, with the decision notes |
+| `azimuth/initiatives/<name>/` | yes | `map.md` and `sources/`, with the decision notes |
 | `azimuth/repository` file, in a code repository | yes | the project id and the repository's own name. Nothing else |
 | `.azimuth/` in the worktree | no, ignored by git | the outbox, and the local paths to the other checkouts |
 | `azimuth/` inside the clone's shared git directory | no | the store that `azimuth sync` fills |
@@ -1665,7 +1665,7 @@ The cost. Later content, such as components and reference environments, nests de
 
 **The cost.** Two folders with nearly the same name in one repository. Lint refuses a tracked file under `.azimuth/`.
 
-Example: after adoption, `azimuth/` in drim-dev holds the project file, the model, and `explorations/first-lab/` with its map and sources. The first change adds `changes/<name>/proposal.md` and the first `specification.md`. The local paths to the other checkouts, which are a git-ignored file under `azimuth/` today, become an entry in `.azimuth/`.
+Example: after adoption, `azimuth/` in drim-dev holds the project file, the model, and `initiatives/first-lab/` with its map and sources. The first change adds `changes/<name>/proposal.md` and the first `specification.md`. The local paths to the other checkouts, which are a git-ignored file under `azimuth/` today, become an entry in `.azimuth/`.
 
 ### The commit record
 
@@ -2547,7 +2547,7 @@ The Check ids are real. The states are invented for the example.
 
 **Kept from the conclusions of 9 November.**
 
-- Small finished changes. Big work is a chain of changes that come from one exploration.
+- Small finished changes. Big work is a chain of changes that come from one initiative.
 - One branch per change.
 - The proposal is a historical document and is not edited after approval.
 - Expectations are taken from intent and never from the code.
@@ -2806,25 +2806,25 @@ Example: a plan for grants named the unique index that decides between two admin
 
 ### Sizes of work
 
-**Work comes in three sizes, and only the largest needs an exploration.**
+**Work comes in three sizes, and only the largest needs an initiative.**
 
 | Size | What it needs |
 | --- | --- |
 | A fix that changes no intent | a branch and its work records. No folder |
 | One change | a change folder with a proposal and, if needed, its own `sources/` |
-| Several changes | an exploration with shared `sources/` and a map |
+| Several changes | an initiative with shared `sources/` and a map |
 
-**The core needs no folder at all.** The change page appears on the first sync from a branch, and an agent that fixes a failed Check under a grant writes no proposal. The change folder and the exploration belong to the process.
+**The core needs no folder at all.** The change page appears on the first sync from a branch, and an agent that fixes a failed Check under a grant writes no proposal. The change folder and the initiative belong to the process.
 
-**A change belongs to an exploration only through the map.** The link goes one way.
+**A change belongs to an initiative only through the map.** The link goes one way.
 
-- A change belongs to an exploration when a map lists its name. The proposal does not have to say anything.
-- A proposal names the copies it took from the exploration's sources. That is a reference to a text, not a membership.
-- An exploration can be born late. Its first row is then a change that is already finished.
+- A change belongs to an initiative when a map lists its name. The proposal does not have to say anything.
+- A proposal names the copies it took from the initiative's sources. That is a reference to a text, not a membership.
+- An initiative can be born late. Its first row is then a change that is already finished.
 
-**The cost.** Whether one change is too big and should have been an exploration stays a judgment. The one-page rule for a proposal, below, is the only signal.
+**The cost.** Whether one change is too big and should have been an initiative stays a judgment. The one-page rule for a proposal, below, is the only signal.
 
-Example: in drim-dev a fix for a wrong status code in `Features/CliAuth/` is a branch with no folder. Renaming the learner routes from `…/runs` to `…/executions` changes Scenarios, so it is one change with a short proposal and no exploration. The lab engine needs many changes, so it gets a map.
+Example: in drim-dev a fix for a wrong status code in `Features/CliAuth/` is a branch with no folder. Renaming the learner routes from `…/runs` to `…/executions` changes Scenarios, so it is one change with a short proposal and no initiative. The lab engine needs many changes, so it gets a map.
 
 **A proposal has five parts and fits on one page.**
 
@@ -2849,13 +2849,19 @@ Example: in drim-dev a fix for a wrong status code in `Features/CliAuth/` is a b
 
 **A proposal that does not fit on one page, or has two outcomes, is several changes.** A proposal is not edited after approval. A later decision becomes a Scenario or a decision note, never a new paragraph.
 
-**A proposal is written from what its size of work gives it.** A change of an exploration is written from its row of the map. The row gives the change its name, and it names what the change takes from the sources and which rows must be finished first. The agent reads what the row names, and not the whole folder. It copies those files into the `sources/` of the change. A change with no exploration is written from the request of the person, and from `sources/` in its own folder when it has one. What the agent cannot find there, it asks the person and does not invent.
+**A proposal is written from what its size of work gives it.** A change of an initiative is written from its row of the map. The row gives the change its name, and it names what the change takes from the sources and which rows must be finished first. The agent reads what the row names, and not the whole folder. It copies those files into the `sources/` of the change. A change with no initiative is written from the request of the person, and from `sources/` in its own folder when it has one. What the agent cannot find there, it asks the person and does not invent.
 
 **The cost.** A one-page proposal says little about how the change will be built. A reader who wants that reads the Scenarios and the code. A proposal that describes the build becomes a second, unproven copy of the model.
 
 Example: in drim-dev a proposal for a change that removes a set-aside feature reads as follows. Outcome: the API admits a request only from the BFF with a user, and the removed code is gone from the target branch. Sources: two decision notes and an earlier specification. Boundary: the old tables stay, see the map row that drops them. Decisions: a request with the removed service's credential is refused, instead of keeping the credential valid for a later service. Approver: the project owner.
 
-**An exploration is a folder with shared `sources/` and one map.** The sources follow the rules of a change's sources. The map lists the candidate changes.
+**An initiative is a folder with shared `sources/` and one map.** The sources follow the rules of a change's sources. The map lists the candidate changes.
+
+The word names the work, not the talk. Exploring is how a person and an agent work an initiative out, and it leaves nothing in the tree of its own.
+
+The cost. Other tools call similar things an epic or a project, and Jira's planning has an "initiative" above its epics, so a reader may expect a tracker item. An initiative here is a folder in the tree.
+
+Example: `first-lab` in drim-dev is an initiative. The talk in which its owner and an agent split it into rows was its exploration.
 
 ```
 | Change              | Takes from the sources             | After        |
@@ -2872,7 +2878,7 @@ The table shows the form only. It is not a split of any real work.
 | A row carries the name its change will get | the state is then computed: not started, open on a branch, or finished on the target branch. Nobody types it |
 | "After" names rows that must be finished first | it is the only ordering. The core does not read it, and the default process does |
 | The map is edited freely, in ordinary commits | a plan for work not yet started is wrong by design |
-| An exploration is never approved | a person approves each proposal when it is written, and that is the only decision |
+| An initiative is never approved | a person approves each proposal when it is written, and that is the only decision |
 | A row may exist with no change behind it for as long as needed | that is how deferred work stays visible |
 | Whoever writes a decision note adds its short name to every row it bears on, in the same commit | the agent of a row reads what the row names and not the whole folder, so a note that no row names never reaches a change |
 | After its names, a row may say in one line which part of a source its change takes, or what the work is when no source says it. A decision is never written only in a row | the agent of the row knows what to read and why, and a decision stays in a note that is never edited |
@@ -2882,13 +2888,13 @@ The table shows the form only. It is not a split of any real work.
 
 The cost. A change that merged with no folder leaves its row looking unfinished. The design gives every change a folder, so only a fix that was wrongly given a row shows this.
 
-Example: in drim-dev the row `lab-access` is finished, because `azimuth/changes/lab-access/` stands on `main`. The exploration `first-lab` has not ended, because `lab-access-admin` has no folder there.
+Example: in drim-dev the row `lab-access` is finished, because `azimuth/changes/lab-access/` stands on `main`. The initiative `first-lab` has not ended, because `lab-access-admin` has no folder there.
 
 **Why the map may change and a proposal may not.** A proposal records what was understood when one change started. A map is a plan for work not yet started.
 
 **The cost.** The map is free text that nothing verifies. A row that was split or dropped without an edit misleads the next agent. The only guard is the computed state, which shows a row whose change never appeared. Whether a note bears on a row is a judgment. A note left out of a row stays unseen by that row's change, which may then decide again what was decided. A line in a row is a second, shorter wording of a source. Where the two differ, the source holds. A row dropped for a trivial reason costs a note too.
 
-Example: an exploration in drim-dev lists eight candidates with a column for dependencies. When one candidate was split, a section was added under the table to explain it. Under these rules the table itself is edited: the row becomes two rows, and git keeps the earlier version.
+Example: an initiative in drim-dev lists eight candidates with a column for dependencies. When one candidate was split, a section was added under the table to explain it. Under these rules the table itself is edited: the row becomes two rows, and git keeps the earlier version.
 
 Example: in drim-dev the note `admin-pages-are-their-own-row` was written in the same commit that added it to two rows, `lab-access` and `lab-access-admin`.
 
@@ -2908,21 +2914,24 @@ Example: if the row `further-stacks` of drim-dev were dropped, the same commit w
 
 - The model says only what is built. A Requirement appears with the change that builds it, so no Requirement on the target branch ever waits for code.
 - A change that leaves something adds its row before it merges. The reviewing agent of the default process asks at the end: what does this change leave undone, and does the map say so?
-- An exploration ends when every row is finished or deleted. The next change then moves its folder to `explorations/finished/`, the same way as a change folder, with the date of the folder's arrival in front of its name.
-- A change with no exploration that leaves something creates one at that moment, with itself as the first row.
-- The agent proposes a name for the work that the map holds, not for the change, and names the new exploration at the hand over. The person may rename it before the merge.
+- An initiative ends when every row is finished or deleted. The next change then moves its folder to `initiatives/finished/`, the same way as a change folder, with the date of the folder's arrival in front of its name.
+- Later: lint reports an initiative in `initiatives/finished/` whose map has a row with no change folder in the tree.
+- A change with no initiative that leaves something adds its rows to an open initiative that the work belongs to. Only when none fits does it create one, with itself as the first row.
+- At the hand over the agent names the initiative that it chose. For a new one it proposes a name for the work that the map holds, not for the change. The person may choose another or rename it before the merge.
 
-**The cost.** The core computes none of this. A forgotten toggle stays forgotten if nobody wrote the row. The person reads one more name at the hand over.
+**The cost.** The core computes none of this. A forgotten toggle stays forgotten if nobody wrote the row. The person reads one more name at the hand over. The agent judges where the work belongs. A wrong choice ties unrelated work together until the person corrects it at the hand over.
 
 Example: `FeatureFlagsOptions` in drim-dev has the flags `Labs` and `CliAuth`, and the project's rules say that deleting a flag is part of "done". The map of the lab engine gets a row such as `remove-cli-auth-flag`, with "After" naming the change that ships CLI access. The flag is then visible work with a name, and its state is computed like any other row.
 
-Example: the change that renames the learner routes from `…/runs` to `…/executions` keeps the old routes for one release. It creates the exploration `learner-routes` with two rows: itself, and `remove-old-learner-routes`.
+Example: the change that renames the learner routes from `…/runs` to `…/executions` keeps the old routes for one release. It creates the initiative `learner-routes` with two rows: itself, and `remove-old-learner-routes`.
 
-**Change folders and explorations live in the repository that holds the model.** A change is a change of intent, and intent lives in the model. A repository without Requirements has nothing to propose.
+Example, with a supposed change: a change with no initiative adds a second flag to the labs pages of drim-dev. The row for removing that flag goes into the open initiative `first-lab`, not into a new one.
+
+**Change folders and initiatives live in the repository that holds the model.** A change is a change of intent, and intent lives in the model. A repository without Requirements has nothing to propose.
 
 | Rule | Why |
 | --- | --- |
-| Change folders and explorations live in the repository that holds the model | intent, sources and proposals stay in one place |
+| Change folders and initiatives live in the repository that holds the model | intent, sources and proposals stay in one place |
 | A change may touch code in several repositories of the project. It is still one change with one name | the unit is the intent, not the repository |
 | In the other repositories the change is only a branch. Its work records carry the change name | that label ties the branches together |
 | A row of the map is a plain change name | no repository column is needed |
@@ -2943,18 +2952,18 @@ Example: the change `cli-login` has its folder in drim-dev at `azimuth/changes/c
 | One snapshot is one file in `sources/`, with its address, version and date at the top | the agents and the approver compare against a fixed text |
 | A snapshot is never edited. A newer version of the page comes in as a new snapshot | the diff between the two shows what moved |
 | A source written directly in the repository goes in the same folder | one place to look, whoever wrote it |
-| A change of an exploration copies what it takes from the exploration's `sources/` into its own `sources/` | the change folder is whole by itself, and it moves to `finished/` as one piece |
+| A change of an initiative copies what it takes from the initiative's `sources/` into its own `sources/` | the change folder is whole by itself, and it moves to `finished/` as one piece |
 
 **Every change folder holds what its proposal relies on, and the proposal names each source by its path from that folder.** A proposal and what it cites then share one fate, and the path survives the move to `finished/`.
 
 - A copy is the whole file, unchanged, under the same path inside `sources/`. An excerpt would be an edited snapshot. The proposal says which part it takes.
-- A shared source or a decision note is first written in the exploration's `sources/`. The exploration is the pool, and the row of the map names what to copy from it.
+- A shared source or a decision note is first written in the initiative's `sources/`. The initiative is the pool, and the row of the map names what to copy from it.
 - A source that only one change needs is written in the folder of that change and nowhere else.
 - A copy is not touched when a later source replaces it. The folder shows what was understood when the change started.
 
 The cost. A document that ten changes rely on stands ten times in the tree. Git stores equal content once, so only the checkout grows. Nothing verifies yet that a copy equals its origin, or that a path in a proposal names a file. Lint reports both from increment 3 on.
 
-Example: in drim-dev the 61 decision notes of the exploration `first-lab` are 104 KB together, and its largest document is 92 KB. A change that relies on five notes and one document copies six files, and its proposal names `sources/decisions/2026-11-19-a-grant-names-a-user-or-a-group.md`.
+Example: in drim-dev the 61 decision notes of the initiative `first-lab` are 104 KB together, and its largest document is 92 KB. A change that relies on five notes and one document copies six files, and its proposal names `sources/decisions/2026-11-19-a-grant-names-a-user-or-a-group.md`.
 
 **Azimuth ships no downloader, and the core never parses the folder.** A person, or an agent with a connector, takes the snapshot. The default process tells the author and the reviewing agent to read it.
 
@@ -2962,14 +2971,14 @@ Example: in drim-dev the 61 decision notes of the exploration `first-lab` are 10
 
 | Rule | Why |
 | --- | --- |
-| A decision note is a file in the exploration's `sources/`, with the date, who decided, and the words | it needs no new kind of artifact |
+| A decision note is a file in the initiative's `sources/`, with the date, who decided, and the words | it needs no new kind of artifact |
 | It is never edited. A later decision is a new note that names the one it replaces | the history of the thinking stays readable |
 | A proposal cites the notes it relies on | the approver sees which decisions shaped the change |
 | A note binds nobody by itself. It becomes binding when a person approves Scenarios that follow it | approval stays the only act that commits a person |
 | Decision notes stand together in `sources/decisions/`, one note to a file | a reader finds every decision in one folder, and a change's copy keeps the same path |
 | A note's file name is the day of the decision and a short name, as `2026-11-19-admin-pages-are-their-own-row.md`. A row of the map cites the note by the short name alone | the map stays readable, and the folder lists the decisions in the order they were made |
 
-**The cost.** To know what holds now, a reader goes through the notes in order. If that hurts, the map may carry a short list of the notes in force, which is only a pointer. The folder is a convention that the core does not read. A note written elsewhere in `sources/` is still a note, and nothing reports it. A short name must be unique in the exploration, and nothing verifies it.
+**The cost.** To know what holds now, a reader goes through the notes in order. If that hurts, the map may carry a short list of the notes in force, which is only a pointer. The folder is a convention that the core does not read. A note written elsewhere in `sources/` is still a note, and nothing reports it. A short name must be unique in the initiative, and nothing verifies it.
 
 Example: while the lab of drim-dev was being split, its owner first decided to deploy only after all changes, and an hour later to deploy after each merge, to see problems early. That is one note with the final decision and its reason. The proposal of the first change cites it, because the note explains why that change already removes a service from the deployment chart.
 
@@ -4022,7 +4031,7 @@ This part lists everything that is not settled, so that nothing is lost between 
 | Topic | Note |
 | --- | --- |
 | The hosted product | Organizations, sign-up, billing, shared evidence about configurations |
-| The authoring process | Explorations, chains of changes, follow-up obligations |
+| The authoring process | Initiatives, chains of changes, follow-up obligations |
 | Server features | The pages in detail, the full list of rights, how long records are kept |
 | Intent | Scenarios written by an analyst in the model's own form, and a link from a Requirement back to its source |
 
