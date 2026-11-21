@@ -2967,7 +2967,7 @@ Example: the change `cli-login` has its folder in drim-dev at `azimuth/changes/c
 
 ### Exploring
 
-**An exploration starts when a person asks for one, or when the person chooses it at the proposal stop of a change with no initiative.** When a proposal would not fit on one page or has two outcomes, the agent says so at that stop and asks: one change, or an initiative. It does not stop earlier for it. When the person chooses an initiative, the agent moves the sources of the change folder into the initiative's `sources/`, deletes the folder with its proposal, and the initiative starts from the request.
+**An exploration starts when a person asks for one, or when the person chooses it at the proposal stop of a change with no initiative.** When a proposal would not fit on one page or has two outcomes, the agent says so at that stop and asks: one change, or an initiative. It does not stop earlier for it. When the person chooses one change, that answer approves the proposal as it is. When the person chooses an initiative, the agent moves the sources of the change folder into the initiative's `sources/`, deletes the folder with its proposal, and the initiative starts from the request.
 
 **The first source is the request in the person's own words.** The agent writes it as a source in the repository before it asks anything, and takes a snapshot of every page that the request names. Later, only what stands in a source written by the person, or in a note that the person approved, counts as the person's.
 
