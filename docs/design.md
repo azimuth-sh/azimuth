@@ -2942,8 +2942,9 @@ Example: in drim-dev the 61 decision notes of the exploration `first-lab` are 10
 | It is never edited. A later decision is a new note that names the one it replaces | the history of the thinking stays readable |
 | A proposal cites the notes it relies on | the approver sees which decisions shaped the change |
 | A note binds nobody by itself. It becomes binding when a person approves Scenarios that follow it | approval stays the only act that commits a person |
+| Decision notes stand together in `sources/decisions/`, one note to a file | a reader finds every decision in one folder, and a change's copy keeps the same path |
 
-**The cost.** To know what holds now, a reader goes through the notes in order. If that hurts, the map may carry a short list of the notes in force, which is only a pointer.
+**The cost.** To know what holds now, a reader goes through the notes in order. If that hurts, the map may carry a short list of the notes in force, which is only a pointer. The folder is a convention that the core does not read. A note written elsewhere in `sources/` is still a note, and nothing reports it.
 
 Example: while the lab of drim-dev was being split, its owner first decided to deploy only after all changes, and an hour later to deploy after each merge, to see problems early. That is one note with the final decision and its reason. The proposal of the first change cites it, because the note explains why that change already removes a service from the deployment chart.
 
