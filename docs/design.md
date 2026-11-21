@@ -3004,6 +3004,14 @@ The cost. A row cut by what somebody can do often touches every layer, so rows a
 
 Example: the gift-card initiative is cut into `gift-card-sale`, `gift-card-payment` and `store-balance`. Card expiry is not understood yet, so it stands under "Not cut yet" in one line. A row `gift-card-tables` for the database alone is not cut, because nobody can do anything after it.
 
+**After the cut, and before the person reads it, a session that took no part in the talk reads each row as its change will: the row and what it names, not the whole folder.** It reports only where an agent writing that proposal would have to guess, and where a wrong guess would matter.
+
+**The person reads the findings together with the cut. A finding is repaired in the map or in a new decision note, never in the talk alone.**
+
+The cost. One more session per initiative, and its findings add turns before any change starts. The reader finds only gaps that a row leaves open. A wrong decision that is clearly written passes.
+
+Example: the reader takes the row `gift-card-payment` and the files it names. They say that a card pays, but not whether a card and the balance can pay one order together. A wrong guess would change the checkout, so the reader reports it. The person decides it in a new note, and the row then names that note.
+
 ### Sources
 
 **A source says what was asked for.** It is written before the work, by an analyst, a product owner or whoever asked, in whatever form they use. The model says what is built, and it is written increment by increment. The proposal names its sources.
