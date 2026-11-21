@@ -2957,6 +2957,25 @@ The cost. A proposal for work that turns out to be an initiative is written and 
 
 Example: a person asks a web shop's agent for gift cards and for a store balance that refunds go to. The proposal has two outcomes: a customer can pay with a gift card, and a customer keeps a balance. At the stop the agent says so, and the person chooses an initiative. Its first file is `sources/request.md` with the person's message, then the snapshot of the pricing page that the message links.
 
+**Before its first question, the agent reads the sources and the code that the request touches. It asks the person only what neither answers.**
+
+**The exploration asks its topics as questions, as the plan does.** The skill for an exploration carries the list.
+
+| Question | What it catches |
+| --- | --- |
+| Who uses it, and in which roles? | a role found after the rows are cut |
+| Who sees what, and who may not? | a page or a field shown to the wrong person |
+| In which languages, and for which countries? | text and formats that only one market can read |
+| What exists today that it replaces, changes or must leave as it is? | a row that breaks a promise of the running product |
+| What happens when two people act on the same thing at once? | a rule that only one of them can win |
+| How does it reach production: behind a release toggle, or with data that must move first? | a toggle or the second half of a migration with no row |
+
+**A question with an answer becomes a decision note or a row. A question that does not apply leaves nothing.**
+
+The cost. A fixed list asks some questions that do not apply, and the person answers "no" to them. It catches only what it lists.
+
+Example: for the gift cards the agent asks in which countries the shop sells. The person answers that a card bought in one country cannot be spent in another. That becomes a decision note, and nobody finds the rule only after the payment row is built.
+
 ### Sources
 
 **A source says what was asked for.** It is written before the work, by an analyst, a product owner or whoever asked, in whatever form they use. The model says what is built, and it is written increment by increment. The proposal names its sources.
