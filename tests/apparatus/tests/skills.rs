@@ -66,9 +66,9 @@ fn written(repo: &Repo) -> Vec<String> {
 // text equal to what was read.
 #[test]
 fn installed_skill_matches_the_text_a_person_accepted() {
-    // A person accepted the skill text on 2026-11-20 and its changes on 2026-11-21.
+    // A person accepted the skill text on 2026-11-20 and its changes on 2026-11-21 and 2026-11-22.
     const ACCEPTED_SKILL_SHA256: &str =
-        "d525e128cda650911483d8fd062ab7ad9eceedb769f93e65e629dec674c5a4ca";
+        "f33ef41214bef00274edb4f0916295cc4c33510e1f0bdb8cc384cf81a612ac20";
 
     let repo = Repo::sample();
     install(&repo, "codex");
@@ -84,13 +84,31 @@ fn installed_skill_matches_the_text_a_person_accepted() {
 
 #[test]
 fn installed_initiative_skill_matches_the_text_a_person_accepted() {
-    // A person accepted the whole skill text on 2026-11-21.
+    // A person accepted the whole skill text on 2026-11-21 and its changes on 2026-11-22.
     const ACCEPTED_SKILL_SHA256: &str =
-        "f9c896cf335fb472fd5b6ad42bef406139d13e6ecd3af7031a1a184639a1b62d";
+        "86721b0ac7e5efd0a4e0835e29022db059c054b361d5f5aa5ed2af1b14f130a0";
 
     let repo = Repo::sample();
     install(&repo, "codex");
     let (text, _) = split_last_line(&repo.read(INITIATIVE_SKILL_FILE));
+    assert_eq!(
+        sha256_hex(text.as_bytes()),
+        ACCEPTED_SKILL_SHA256,
+        "The skill text differs from the text that a person accepted. A person reads the new \
+         text or its diff; then a session that did not write the text sets this value. \
+         The author of a text never does."
+    );
+}
+
+#[test]
+fn installed_exploration_skill_matches_the_text_a_person_accepted() {
+    // A person accepted the whole skill text on 2026-11-22.
+    const ACCEPTED_SKILL_SHA256: &str =
+        "0eacb3bb7d50d490e732754636ae86210b76e2a55517c9751b57caabfa497e14";
+
+    let repo = Repo::sample();
+    install(&repo, "codex");
+    let (text, _) = split_last_line(&repo.read(EXPLORATION_SKILL_FILE));
     assert_eq!(
         sha256_hex(text.as_bytes()),
         ACCEPTED_SKILL_SHA256,
