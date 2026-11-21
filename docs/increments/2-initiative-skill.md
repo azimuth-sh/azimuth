@@ -41,6 +41,7 @@ Rows of prose: a person reads the text, and one test compares the whole text wit
 | --- | --- |
 | The description of the skill says that it is for the form of an initiative: which files it leaves, where they stand, and what a row of the map and a decision note hold | An initiative gets a skill of its own for its form: which files it leaves, where they stand, and what a row of the map and a decision note hold. |
 | The text says nothing about how to explore | How to explore is not decided yet, and that skill says nothing about it. |
+| It says that the word names the work and not the talk, and that exploring is how a person and an agent work an initiative out | The word names the work, not the talk. |
 | It says that only work of several changes needs an initiative | only the largest needs an initiative |
 | It says that a change belongs to an initiative only when a map lists its name, and the proposal does not have to say anything | A change belongs to an initiative when a map lists its name. The proposal does not have to say anything. |
 | It says that an initiative can be born late, and its first row is then a change that is already finished | An initiative can be born late. Its first row is then a change that is already finished. |
@@ -87,7 +88,7 @@ Rows of prose: a person reads the text, and one test compares the whole text wit
 
 | Behavior | Quote from the design |
 | --- | --- |
-| It says that the map is one table with the columns "Change", "Takes from the sources" and "After", and that a row names what its change takes from the sources and which rows must be finished first | it names what the change takes from the sources and which rows must be finished first |
+| It says that every row of the map has the columns "Change", "Takes from the sources" and "After", and that a row names what its change takes from the sources and which rows must be finished first | it names what the change takes from the sources and which rows must be finished first |
 | It says that a row carries the name its change will get, a plain change name, and that only work under another model gets a prefixed row | A row of the map is a plain change name |
 | It says that the state of a row is never typed | Nobody types it |
 | It says how the agent reads the state of a row: finished when the folder of its change stands on the target branch, in `changes/` or in `changes/finished/` | A row is finished when the folder of its change stands there, in `changes/` or in `changes/finished/`. |
