@@ -4,7 +4,7 @@ This is the list of behaviors for a short pass after the skill for the form of a
 
 A row is of one of two kinds. A row of behavior is one observable fact, and a test shows it. A row of prose says what a text tells its reader; its section begins with the words "Rows of prose", and no test reads the words of the text for it. Each row is one observable fact. The second cell is copied exactly from `docs/design.md`. A plain test fails when a quoted sentence is no longer in that file. A behavior with no sentence to quote is not built.
 
-Status of this list: read and accepted by a person on 2026-11-21, in one sitting. Later that day, after an independent reading of the texts, the person agreed to two added rows of prose: a line under "Not cut yet" keeps an initiative open, in the initiative skill and in step 1 of the change skill.
+Status of this list: read and accepted by a person on 2026-11-21, in one sitting. Later that day, after an independent reading of the texts, the person agreed to two added rows of prose: a line under "Not cut yet" keeps an initiative open, in the initiative skill and in step 1 of the change skill. The person also agreed to a row on where a change with no initiative writes a decision that holds for several changes.
 
 ## `azimuth skills install`
 
@@ -123,6 +123,7 @@ Rows of prose: a person reads the text, and one test compares the whole text wit
 | It says that when a change finds that a decision holds for several changes, the exploration opens again for that one decision, and the agent asks it as the skill `azimuth-exploration` says | **An exploration opens again for one decision when a change finds that a decision holds for several changes.** |
 | It says that the agent writes the note in the initiative's `sources/decisions/` and adds its name to every row that it bears on | It writes the note in the initiative's `sources/decisions/` and adds its name to every row that it bears on. |
 | It says that a row that the decision makes wrong is changed or deleted in the same commit | A row that the decision makes wrong is changed or deleted in the same commit. |
+| It says that a change with no initiative writes the note into an open initiative that the work belongs to, and creates one with itself as the first row only when none fits | A change with no initiative writes the note into an open initiative that the work belongs to. Only when none fits does it create one, with itself as the first row, as it does for its leftovers. |
 | It says that a finished row is not opened again, and what the decision asks of it becomes a new row | **A finished row is not opened again.** What the decision asks of it becomes a new row. |
 
 ## The change skill: a finished initiative

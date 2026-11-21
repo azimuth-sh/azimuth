@@ -3026,7 +3026,7 @@ The cost. One more session per initiative, and its findings add turns before any
 
 Example: the reader takes the row `gift-card-payment` and the files it names. They say that a card pays, but not whether a card and the balance can pay one order together. A wrong guess would change the checkout, so the reader reports it. The person decides it in a new note, and the row then names that note.
 
-**An exploration opens again for one decision when a change finds that a decision holds for several changes.** The agent of the change asks it as the exploration asks: one question at a time, with real approaches, invented cases, and a note that says whose words it holds. It writes the note in the initiative's `sources/decisions/` and adds its name to every row that it bears on. A row that the decision makes wrong is changed or deleted in the same commit.
+**An exploration opens again for one decision when a change finds that a decision holds for several changes.** The agent of the change asks it as the exploration asks: one question at a time, with real approaches, invented cases, and a note that says whose words it holds. It writes the note in the initiative's `sources/decisions/` and adds its name to every row that it bears on. A row that the decision makes wrong is changed or deleted in the same commit. A change with no initiative writes the note into an open initiative that the work belongs to. Only when none fits does it create one, with itself as the first row, as it does for its leftovers.
 
 **A finished row is not opened again.** What the decision asks of it becomes a new row.
 
