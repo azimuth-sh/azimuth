@@ -2,7 +2,7 @@
 //! names its row with a line `// behavior: <the exact behavior text of the row>` beside it. Rows
 //! in a section that a pushed tag or a later increment proves need no test.
 //! Increment 2 uses `// behavior-2:` so a shared sentence in increment 1 cannot silently cover a new adapter.
-//! Its follow-ups use `// behavior-2-follow-up:` and `// behavior-2-exploration-skill:` for the same reason.
+//! Its follow-ups use `// behavior-2-follow-up:` and `// behavior-2-initiative-skill:` for the same reason.
 //! Rows of prose need no annotation, and an annotation naming one is an error.
 
 use std::collections::BTreeSet;
@@ -29,7 +29,7 @@ fn every_behavior_of_the_increment_has_a_test() {
                 if line.trim_start().starts_with("// behavior:")
                     || line.trim_start().starts_with("// behavior-2:")
                     || line.trim_start().starts_with("// behavior-2-follow-up:")
-                    || line.trim_start().starts_with("// behavior-2-exploration-skill:")
+                    || line.trim_start().starts_with("// behavior-2-initiative-skill:")
                 {
                     let mut next = index + 1;
                     while next < lines.len()
@@ -40,7 +40,7 @@ fn every_behavior_of_the_increment_has_a_test() {
                                 .starts_with("// behavior-2-follow-up:")
                             || lines[next]
                                 .trim_start()
-                                .starts_with("// behavior-2-exploration-skill:"))
+                                .starts_with("// behavior-2-initiative-skill:"))
                     {
                         next += 1;
                     }
@@ -67,10 +67,10 @@ fn every_behavior_of_the_increment_has_a_test() {
                         index + 1
                     );
                 }
-                if let Some(behavior) = line.trim_start().strip_prefix("// behavior-2-exploration-skill: ")
+                if let Some(behavior) = line.trim_start().strip_prefix("// behavior-2-initiative-skill: ")
                 {
                     named.insert((
-                        "increments/2-exploration-skill.md".to_string(),
+                        "increments/2-initiative-skill.md".to_string(),
                         behavior.trim_end().to_string(),
                     ));
                 } else if let Some(behavior) = line.trim_start().strip_prefix("// behavior-2-follow-up: ")

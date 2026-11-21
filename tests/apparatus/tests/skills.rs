@@ -52,8 +52,8 @@ fn written(repo: &Repo) -> Vec<String> {
         assert!(
             path.starts_with(&format!("{SKILL_FOLDER}/"))
                 || path == CLAUDE_SKILL_LINK
-                || path.starts_with(&format!("{EXPLORATION_SKILL_FOLDER}/"))
-                || path == CLAUDE_EXPLORATION_SKILL_LINK,
+                || path.starts_with(&format!("{INITIATIVE_SKILL_FOLDER}/"))
+                || path == CLAUDE_INITIATIVE_SKILL_LINK,
             "skills install wrote {path}, outside the skill folders"
         );
     }
@@ -107,10 +107,10 @@ fn skills_install_writes_one_visible_copy() {
         .filter(|file| file.file_name().is_some_and(|name| name == "SKILL.md"))
         .collect();
     let mut expected = vec![repo.path(SKILL_FILE)];
-    // The exploration skill has its own copy; this test still checks the change skill on a
-    // CLI that has not added the exploration skill yet.
-    if repo.path(EXPLORATION_SKILL_FILE).is_file() {
-        expected.push(repo.path(EXPLORATION_SKILL_FILE));
+    // The initiative skill has its own copy; this test still checks the change skill on a
+    // CLI that has not added the initiative skill yet.
+    if repo.path(INITIATIVE_SKILL_FILE).is_file() {
+        expected.push(repo.path(INITIATIVE_SKILL_FILE));
     }
     let mut copies = copies;
     copies.sort();
@@ -170,7 +170,7 @@ fn the_two_known_harnesses_install_and_another_is_refused() {
 }
 
 // behavior: The text is written to `.agents/skills/azimuth-change/SKILL.md` for either harness
-// behavior-2-exploration-skill: For either harness the command still writes the change skill to `.agents/skills/azimuth-change/SKILL.md`
+// behavior-2-initiative-skill: For either harness the command still writes the change skill to `.agents/skills/azimuth-change/SKILL.md`
 #[test]
 fn the_text_is_in_the_agents_folder_for_either_harness() {
     let claude = Repo::sample();
@@ -182,138 +182,138 @@ fn the_text_is_in_the_agents_folder_for_either_harness() {
     assert!(!codex.path(".claude").exists(), "codex got a link for claude");
 }
 
-// behavior-2-exploration-skill: For either harness the command writes the text of the exploration skill to `.agents/skills/azimuth-exploration/SKILL.md`
+// behavior-2-initiative-skill: For either harness the command writes the text of the initiative skill to `.agents/skills/azimuth-initiative/SKILL.md`
 #[test]
-fn the_exploration_text_is_in_the_agents_folder_for_either_harness() {
+fn the_initiative_text_is_in_the_agents_folder_for_either_harness() {
     let mut texts = Vec::new();
     for harness in ["claude", "codex"] {
         let repo = Repo::sample();
         install(&repo, harness);
-        assert!(repo.path(EXPLORATION_SKILL_FILE).is_file(),
-            "the exploration skill is not installed for {harness}");
-        assert!(fs::symlink_metadata(repo.path(EXPLORATION_SKILL_FILE)).unwrap().is_file());
-        let text = repo.read(EXPLORATION_SKILL_FILE);
-        assert!(!split_last_line(&text).0.trim().is_empty(), "the exploration skill has no text");
+        assert!(repo.path(INITIATIVE_SKILL_FILE).is_file(),
+            "the initiative skill is not installed for {harness}");
+        assert!(fs::symlink_metadata(repo.path(INITIATIVE_SKILL_FILE)).unwrap().is_file());
+        let text = repo.read(INITIATIVE_SKILL_FILE);
+        assert!(!split_last_line(&text).0.trim().is_empty(), "the initiative skill has no text");
         texts.push(text);
         if harness == "codex" {
             assert!(!repo.path(".claude").exists(), "codex got a link for claude");
         }
     }
-    assert_eq!(texts[0], texts[1], "the harnesses got different exploration texts");
+    assert_eq!(texts[0], texts[1], "the harnesses got different initiative texts");
 }
 
-// behavior-2-exploration-skill: For `claude` it adds a link at `.claude/skills/azimuth-exploration`
+// behavior-2-initiative-skill: For `claude` it adds a link at `.claude/skills/azimuth-initiative`
 #[test]
-fn claude_gets_a_link_to_the_exploration_skill_folder() {
+fn claude_gets_a_link_to_the_initiative_skill_folder() {
     let repo = Repo::sample();
     install(&repo, "claude");
-    assert!(repo.path(EXPLORATION_SKILL_FILE).is_file(), "the exploration skill is not installed");
-    let link = repo.path(CLAUDE_EXPLORATION_SKILL_LINK);
-    assert!(fs::symlink_metadata(&link).expect("the exploration skill link").file_type().is_symlink());
-    assert_eq!(fs::canonicalize(&link).unwrap(), fs::canonicalize(repo.path(EXPLORATION_SKILL_FOLDER)).unwrap());
-    assert_eq!(fs::read_to_string(link.join("SKILL.md")).unwrap(), repo.read(EXPLORATION_SKILL_FILE));
+    assert!(repo.path(INITIATIVE_SKILL_FILE).is_file(), "the initiative skill is not installed");
+    let link = repo.path(CLAUDE_INITIATIVE_SKILL_LINK);
+    assert!(fs::symlink_metadata(&link).expect("the initiative skill link").file_type().is_symlink());
+    assert_eq!(fs::canonicalize(&link).unwrap(), fs::canonicalize(repo.path(INITIATIVE_SKILL_FOLDER)).unwrap());
+    assert_eq!(fs::read_to_string(link.join("SKILL.md")).unwrap(), repo.read(INITIATIVE_SKILL_FILE));
 }
 
-// behavior-2-exploration-skill: The link is relative, and the skill is still found through it after the clone is moved
+// behavior-2-initiative-skill: The link is relative, and the skill is still found through it after the clone is moved
 #[test]
-fn the_exploration_skill_link_survives_a_move_of_the_clone() {
+fn the_initiative_skill_link_survives_a_move_of_the_clone() {
     let repo = Repo::sample();
     install(&repo, "claude");
-    assert!(repo.path(EXPLORATION_SKILL_FILE).is_file(), "the exploration skill is not installed");
-    let original = repo.read(EXPLORATION_SKILL_FILE);
-    let target = fs::read_link(repo.path(CLAUDE_EXPLORATION_SKILL_LINK)).unwrap();
-    assert!(target.is_relative(), "the exploration skill link is absolute: {target:?}");
+    assert!(repo.path(INITIATIVE_SKILL_FILE).is_file(), "the initiative skill is not installed");
+    let original = repo.read(INITIATIVE_SKILL_FILE);
+    let target = fs::read_link(repo.path(CLAUDE_INITIATIVE_SKILL_LINK)).unwrap();
+    assert!(target.is_relative(), "the initiative skill link is absolute: {target:?}");
     repo.commit_all("install the two skills");
     let cloned = repo.beside("clone");
     repo.git(&["clone", "--quiet", repo.root().to_str().unwrap(), cloned.to_str().unwrap()]);
     let moved = repo.beside("moved-clone");
     fs::rename(&cloned, &moved).unwrap();
     assert!(!cloned.exists(), "the original clone location remains");
-    let link = moved.join(CLAUDE_EXPLORATION_SKILL_LINK);
+    let link = moved.join(CLAUDE_INITIATIVE_SKILL_LINK);
     assert!(fs::read_link(&link).unwrap().is_relative());
-    assert_eq!(fs::canonicalize(&link).unwrap(), fs::canonicalize(moved.join(EXPLORATION_SKILL_FOLDER)).unwrap());
+    assert_eq!(fs::canonicalize(&link).unwrap(), fs::canonicalize(moved.join(INITIATIVE_SKILL_FOLDER)).unwrap());
     assert_eq!(fs::read_to_string(link.join("SKILL.md")).unwrap(), original);
 }
 
-// behavior-2-exploration-skill: The last line of the exploration skill file is its own digest line, `<!-- azimuth text-1:<hex> -->` over the file's text without that line
+// behavior-2-initiative-skill: The last line of the initiative skill file is its own digest line, `<!-- azimuth text-1:<hex> -->` over the file's text without that line
 #[test]
-fn the_exploration_skill_ends_with_its_own_text_1_digest() {
+fn the_initiative_skill_ends_with_its_own_text_1_digest() {
     for harness in ["claude", "codex"] {
         let repo = Repo::sample();
         install(&repo, harness);
-        assert!(repo.path(EXPLORATION_SKILL_FILE).is_file(), "the exploration skill is not installed for {harness}");
-        let text = digest_line_is_correct(&repo, EXPLORATION_SKILL_FILE);
-        assert!(!text.contains("<!-- azimuth text-1:"), "the exploration skill has another digest line");
+        assert!(repo.path(INITIATIVE_SKILL_FILE).is_file(), "the initiative skill is not installed for {harness}");
+        let text = digest_line_is_correct(&repo, INITIATIVE_SKILL_FILE);
+        assert!(!text.contains("<!-- azimuth text-1:"), "the initiative skill has another digest line");
     }
 }
 
-fn earlier_exploration_shipped_file() -> String {
-    let text = "# azimuth-exploration\n\nAn earlier version of the exploration form.\n";
+fn earlier_initiative_shipped_file() -> String {
+    let text = "# azimuth-initiative\n\nAn earlier version of the initiative form.\n";
     format!("{text}{}\n", skill_digest_line(text))
 }
 
-// behavior-2-exploration-skill: Run again, the command replaces an exploration skill file that carries a correct digest line of another text
+// behavior-2-initiative-skill: Run again, the command replaces an initiative skill file that carries a correct digest line of another text
 #[test]
-fn a_second_install_replaces_an_unedited_earlier_exploration_skill() {
+fn a_second_install_replaces_an_unedited_earlier_initiative_skill() {
     for harness in ["claude", "codex"] {
         let repo = Repo::sample();
         install(&repo, harness);
-        assert!(repo.path(EXPLORATION_SKILL_FILE).is_file(), "the exploration skill is not installed for {harness}");
-        let expected = repo.read(EXPLORATION_SKILL_FILE);
-        let earlier = earlier_exploration_shipped_file();
+        assert!(repo.path(INITIATIVE_SKILL_FILE).is_file(), "the initiative skill is not installed for {harness}");
+        let expected = repo.read(INITIATIVE_SKILL_FILE);
+        let earlier = earlier_initiative_shipped_file();
         assert_ne!(expected, earlier);
-        repo.write(EXPLORATION_SKILL_FILE, &earlier);
-        digest_line_is_correct(&repo, EXPLORATION_SKILL_FILE);
-        repo.commit_all("an unedited exploration skill from an earlier version");
+        repo.write(INITIATIVE_SKILL_FILE, &earlier);
+        digest_line_is_correct(&repo, INITIATIVE_SKILL_FILE);
+        repo.commit_all("an unedited initiative skill from an earlier version");
         install(&repo, harness);
-        assert_eq!(repo.read(EXPLORATION_SKILL_FILE), expected, "the unedited exploration skill was not replaced for {harness}");
-        digest_line_is_correct(&repo, EXPLORATION_SKILL_FILE);
+        assert_eq!(repo.read(INITIATIVE_SKILL_FILE), expected, "the unedited initiative skill was not replaced for {harness}");
+        digest_line_is_correct(&repo, INITIATIVE_SKILL_FILE);
     }
 }
 
-// behavior-2-exploration-skill: Run again, it leaves an edited exploration skill file alone and names it, and still replaces an unedited change skill
+// behavior-2-initiative-skill: Run again, it leaves an edited initiative skill file alone and names it, and still replaces an unedited change skill
 #[test]
-fn an_edited_exploration_skill_does_not_prevent_a_change_skill_upgrade() {
+fn an_edited_initiative_skill_does_not_prevent_a_change_skill_upgrade() {
     for harness in ["claude", "codex"] {
         let repo = Repo::sample();
         install(&repo, harness);
-        assert!(repo.path(EXPLORATION_SKILL_FILE).is_file(), "the exploration skill is not installed for {harness}");
+        assert!(repo.path(INITIATIVE_SKILL_FILE).is_file(), "the initiative skill is not installed for {harness}");
         let expected_change = repo.read(SKILL_FILE);
-        let edited = earlier_exploration_shipped_file().replacen("\n", "\nA team edit.\n", 1);
-        repo.write(EXPLORATION_SKILL_FILE, &edited);
+        let edited = earlier_initiative_shipped_file().replacen("\n", "\nA team edit.\n", 1);
+        repo.write(INITIATIVE_SKILL_FILE, &edited);
         repo.write(SKILL_FILE, &earlier_shipped_file());
         assert_ne!(repo.read(SKILL_FILE), expected_change);
-        repo.commit_all("edit the exploration skill and leave the earlier change skill unedited");
+        repo.commit_all("edit the initiative skill and leave the earlier change skill unedited");
         let output = install(&repo, harness);
-        assert_eq!(repo.read(EXPLORATION_SKILL_FILE), edited, "the edited exploration skill was replaced");
-        assert!(output.text().contains(EXPLORATION_SKILL_FILE), "the edited exploration skill is not named:\n{}", output.text());
+        assert_eq!(repo.read(INITIATIVE_SKILL_FILE), edited, "the edited initiative skill was replaced");
+        assert!(output.text().contains(INITIATIVE_SKILL_FILE), "the edited initiative skill is not named:\n{}", output.text());
         assert_eq!(repo.read(SKILL_FILE), expected_change, "the unedited change skill was not upgraded");
         digest_line_is_correct(&repo, SKILL_FILE);
     }
 }
 
-// behavior-2-exploration-skill: Run again, it leaves an edited change skill file alone and names it, and still replaces an unedited exploration skill
+// behavior-2-initiative-skill: Run again, it leaves an edited change skill file alone and names it, and still replaces an unedited initiative skill
 #[test]
-fn an_edited_change_skill_does_not_prevent_an_exploration_skill_upgrade() {
+fn an_edited_change_skill_does_not_prevent_an_initiative_skill_upgrade() {
     for harness in ["claude", "codex"] {
         let repo = Repo::sample();
         install(&repo, harness);
-        assert!(repo.path(EXPLORATION_SKILL_FILE).is_file(), "the exploration skill is not installed for {harness}");
-        let expected_exploration = repo.read(EXPLORATION_SKILL_FILE);
+        assert!(repo.path(INITIATIVE_SKILL_FILE).is_file(), "the initiative skill is not installed for {harness}");
+        let expected_initiative = repo.read(INITIATIVE_SKILL_FILE);
         let edited = earlier_shipped_file().replacen("\n", "\nA team edit.\n", 1);
         repo.write(SKILL_FILE, &edited);
-        repo.write(EXPLORATION_SKILL_FILE, &earlier_exploration_shipped_file());
-        assert_ne!(repo.read(EXPLORATION_SKILL_FILE), expected_exploration);
-        repo.commit_all("edit the change skill and leave the earlier exploration skill unedited");
+        repo.write(INITIATIVE_SKILL_FILE, &earlier_initiative_shipped_file());
+        assert_ne!(repo.read(INITIATIVE_SKILL_FILE), expected_initiative);
+        repo.commit_all("edit the change skill and leave the earlier initiative skill unedited");
         let output = install(&repo, harness);
         assert_eq!(repo.read(SKILL_FILE), edited, "the edited change skill was replaced");
         assert!(output.text().contains(SKILL_FILE), "the edited change skill is not named:\n{}", output.text());
-        assert_eq!(repo.read(EXPLORATION_SKILL_FILE), expected_exploration, "the unedited exploration skill was not upgraded");
-        digest_line_is_correct(&repo, EXPLORATION_SKILL_FILE);
+        assert_eq!(repo.read(INITIATIVE_SKILL_FILE), expected_initiative, "the unedited initiative skill was not upgraded");
+        digest_line_is_correct(&repo, INITIATIVE_SKILL_FILE);
     }
 }
 
-// behavior-2-exploration-skill: In a repository that has only the change skill of the version before, the command writes the exploration skill and its link, and replaces the change skill
+// behavior-2-initiative-skill: In a repository that has only the change skill of the version before, the command writes the initiative skill and its link, and replaces the change skill
 #[test]
 fn an_install_with_only_the_earlier_change_skill_gets_both_current_skills() {
     let repo = Repo::sample();
@@ -322,20 +322,20 @@ fn an_install_with_only_the_earlier_change_skill_gets_both_current_skills() {
     fs::create_dir_all(repo.path(".claude/skills")).unwrap();
     std::os::unix::fs::symlink("../../.agents/skills/azimuth-change", repo.path(CLAUDE_SKILL_LINK)).unwrap();
     repo.commit_all("only the unedited change skill of an earlier version");
-    assert!(!repo.path(EXPLORATION_SKILL_FOLDER).exists());
+    assert!(!repo.path(INITIATIVE_SKILL_FOLDER).exists());
     install(&repo, "claude");
-    assert!(repo.path(EXPLORATION_SKILL_FILE).is_file(), "the exploration skill is not installed");
+    assert!(repo.path(INITIATIVE_SKILL_FILE).is_file(), "the initiative skill is not installed");
     let fresh = Repo::sample();
     install(&fresh, "claude");
     assert_ne!(repo.read(SKILL_FILE), earlier, "the earlier change skill was not replaced");
     assert_eq!(repo.read(SKILL_FILE), fresh.read(SKILL_FILE));
-    assert_eq!(repo.read(EXPLORATION_SKILL_FILE), fresh.read(EXPLORATION_SKILL_FILE));
-    let link = repo.path(CLAUDE_EXPLORATION_SKILL_LINK);
+    assert_eq!(repo.read(INITIATIVE_SKILL_FILE), fresh.read(INITIATIVE_SKILL_FILE));
+    let link = repo.path(CLAUDE_INITIATIVE_SKILL_LINK);
     assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
-    assert_eq!(fs::canonicalize(&link).unwrap(), fs::canonicalize(repo.path(EXPLORATION_SKILL_FOLDER)).unwrap());
-    assert_eq!(fs::read_to_string(link.join("SKILL.md")).unwrap(), repo.read(EXPLORATION_SKILL_FILE));
+    assert_eq!(fs::canonicalize(&link).unwrap(), fs::canonicalize(repo.path(INITIATIVE_SKILL_FOLDER)).unwrap());
+    assert_eq!(fs::read_to_string(link.join("SKILL.md")).unwrap(), repo.read(INITIATIVE_SKILL_FILE));
     digest_line_is_correct(&repo, SKILL_FILE);
-    digest_line_is_correct(&repo, EXPLORATION_SKILL_FILE);
+    digest_line_is_correct(&repo, INITIATIVE_SKILL_FILE);
 }
 
 // behavior: For `claude` it adds a link at `.claude/skills/azimuth-change`
@@ -751,7 +751,7 @@ fn arrival_command(step: &str, folder: &str) -> String {
         .collect();
     assert!(!blocks.is_empty(),
         "the {} command is missing from step 1: no sh block names {path}\n{step}",
-        if folder == "explorations" { "exploration" } else { "change" });
+        if folder == "initiatives" { "initiative" } else { "change" });
     assert_eq!(blocks.len(), 1,
         "step 1 needs exactly one sh fenced block naming {path}:\n{step}");
     assert!(blocks[0].contains("<target-branch>") && blocks[0].contains("<name>"),
@@ -888,61 +888,61 @@ fn the_skill_command_prints_the_first_folder_commit_day_after_fast_forward() {
     );
 }
 
-// behavior-2-exploration-skill: For an exploration folder that arrived by a merge, the command prints the day of the merge on the target branch, and not the day of a commit on the change branch
+// behavior-2-initiative-skill: For an initiative folder that arrived by a merge, the command prints the day of the merge on the target branch, and not the day of a commit on the change branch
 #[test]
-fn the_exploration_command_prints_the_target_merge_day_in_utc() {
-    let mut repo = folder_merged_into_target("azimuth/explorations/return-receipt/map.md");
+fn the_initiative_command_prints_the_target_merge_day_in_utc() {
+    let mut repo = folder_merged_into_target("azimuth/initiatives/return-receipt/map.md");
     // A same-named change arrived on a different day, so the wrong folder cannot pass.
     repo.write("azimuth/changes/return-receipt/proposal.md", "A receipt change.\n");
     date_for_git(&mut repo, "2031-03-13T12:00:00+1400");
-    repo.commit_all("a separate change with the exploration's name");
+    repo.commit_all("a separate change with the initiative's name");
     repo.git(&["checkout", "--quiet", "-b", "next-change"]);
-    let command = arrival_command(&installed_step(1), "explorations");
+    let command = arrival_command(&installed_step(1), "initiatives");
     assert_eq!(printed_arrival_day(&repo, &command), "2031-03-08",
-        "use the exploration's target merge day in UTC, not its branch commit, local merge day, target tip or same-named change");
+        "use the initiative's target merge day in UTC, not its branch commit, local merge day, target tip or same-named change");
 }
 
-// behavior-2-exploration-skill: For an exploration folder that arrived by a fast-forward, the command prints the day of the commit that first brought the folder
+// behavior-2-initiative-skill: For an initiative folder that arrived by a fast-forward, the command prints the day of the commit that first brought the folder
 #[test]
-fn the_exploration_command_prints_the_first_folder_commit_day_after_fast_forward() {
+fn the_initiative_command_prints_the_first_folder_commit_day_after_fast_forward() {
     let mut repo = Repo::sample();
-    repo.git(&["checkout", "--quiet", "-b", "prepared-exploration"]);
-    let folder = "azimuth/explorations/return-receipt/map.md";
+    repo.git(&["checkout", "--quiet", "-b", "prepared-initiative"]);
+    let folder = "azimuth/initiatives/return-receipt/map.md";
     repo.write(folder, "A map of receipt work.\n");
     date_for_git(&mut repo, "2031-03-05T00:10:00+1400");
-    repo.commit_all("prepare the receipt exploration");
+    repo.commit_all("prepare the receipt initiative");
     // A later edit separates first introduction from the folder's most recent commit.
     repo.append(folder, "Another row of receipt work.\n");
     date_for_git(&mut repo, "2031-03-07T12:00:00+1400");
-    repo.commit_all("extend the receipt exploration");
-    let exploration_tip = repo.head();
+    repo.commit_all("extend the receipt initiative");
+    let initiative_tip = repo.head();
     repo.git(&["checkout", "--quiet", "main"]);
     date_for_git(&mut repo, "2031-03-09T12:00:00+1400");
-    repo.git(&["merge", "--quiet", "--ff-only", "prepared-exploration"]);
-    assert_eq!(repo.head(), exploration_tip, "the arrival must be a fast-forward");
+    repo.git(&["merge", "--quiet", "--ff-only", "prepared-initiative"]);
+    assert_eq!(repo.head(), initiative_tip, "the arrival must be a fast-forward");
     repo.write("azimuth/changes/return-receipt/proposal.md", "A separate receipt change.\n");
     date_for_git(&mut repo, "2031-03-11T12:00:00+1400");
     repo.commit_all("continue work on the target with a same-named change");
     repo.git(&["checkout", "--quiet", "-b", "next-change"]);
-    let command = arrival_command(&installed_step(1), "explorations");
+    let command = arrival_command(&installed_step(1), "initiatives");
     assert_eq!(printed_arrival_day(&repo, &command), "2031-03-04",
-        "use the exploration's first folder commit in UTC, even when arrival left no merge commit");
+        "use the initiative's first folder commit in UTC, even when arrival left no merge commit");
 }
 
-// behavior-2-exploration-skill: For an exploration folder that is not on the target branch, the command prints nothing
+// behavior-2-initiative-skill: For an initiative folder that is not on the target branch, the command prints nothing
 #[test]
-fn the_exploration_command_prints_nothing_for_a_folder_absent_from_the_target() {
+fn the_initiative_command_prints_nothing_for_a_folder_absent_from_the_target() {
     let mut repo = Repo::sample();
     repo.write("azimuth/changes/return-receipt/proposal.md", "A separate receipt change.\n");
     date_for_git(&mut repo, "2031-03-05T00:10:00+1400");
     repo.commit_all("a same-named change on the target");
-    repo.git(&["checkout", "--quiet", "-b", "open-exploration"]);
-    repo.write("azimuth/explorations/return-receipt/map.md", "An exploration only on this branch.\n");
+    repo.git(&["checkout", "--quiet", "-b", "open-initiative"]);
+    repo.write("azimuth/initiatives/return-receipt/map.md", "An initiative only on this branch.\n");
     date_for_git(&mut repo, "2031-03-07T12:00:00+1400");
-    repo.commit_all("an exploration not yet on the target");
-    let command = arrival_command(&installed_step(1), "explorations");
+    repo.commit_all("an initiative not yet on the target");
+    let command = arrival_command(&installed_step(1), "initiatives");
     let output = run_arrival_command(&repo, &command);
     output.expect_status(0);
-    assert!(output.stdout.is_empty(), "an exploration absent from the target printed output: {:?}", output.stdout);
-    assert!(output.stderr.is_empty(), "an exploration absent from the target printed errors: {:?}", output.stderr);
+    assert!(output.stdout.is_empty(), "an initiative absent from the target printed output: {:?}", output.stdout);
+    assert!(output.stderr.is_empty(), "an initiative absent from the target printed errors: {:?}", output.stderr);
 }

@@ -35,10 +35,10 @@ Rows of prose: a person reads the text, and one test compares the whole text wit
 | It says that a proposal holds no Scenarios, no plan and no completion conditions | It holds no Scenarios, no plan and no completion conditions. |
 | It says that a proposal that does not fit on one page, or has two outcomes, is several changes | A proposal that does not fit on one page, or has two outcomes, is several changes. |
 | It says that a proposal is not edited after approval | A proposal is not edited after approval. |
-| It says that a change of an exploration is written from its row of the map, and takes its name from the row | A change of an exploration is written from its row of the map. The row gives the change its name |
-| It says that a change with no exploration is written from the request of the person, and from `sources/` in its own folder when it has one | A change with no exploration is written from the request of the person, and from `sources/` in its own folder when it has one. |
+| It says that a change of an initiative is written from its row of the map, and takes its name from the row | A change of an initiative is written from its row of the map. The row gives the change its name |
+| It says that a change with no initiative is written from the request of the person, and from `sources/` in its own folder when it has one | A change with no initiative is written from the request of the person, and from `sources/` in its own folder when it has one. |
 | It says that the agent asks the person for what it cannot find there, and does not invent it | What the agent cannot find there, it asks the person and does not invent. |
-| It says that a change of an exploration copies the files that its row names into `azimuth/changes/<name>/sources/` | It copies those files into the `sources/` of the change. |
+| It says that a change of an initiative copies the files that its row names into `azimuth/changes/<name>/sources/` | It copies those files into the `sources/` of the change. |
 | It says that a copy is the whole file, unchanged, under the same path inside `sources/` | A copy is the whole file, unchanged, under the same path inside `sources/`. |
 | It says that the Sources part names each source by its path from the change folder | the proposal names each source by its path from that folder |
 | It says that a source that only this change needs is written in the folder of this change and nowhere else | A source that only one change needs is written in the folder of that change and nowhere else. |
