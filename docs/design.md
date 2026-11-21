@@ -203,6 +203,10 @@ The cost. A proposal that misreads its row is found one step later, after its Sc
 
 Example: the row `gift-card-payment` of a web shop's initiative names the pricing page. The agent writes the proposal from the row, then the Scenarios, and the person reads both at the Intent stop.
 
+**A change of an initiative whose row turns out to have two outcomes, or a proposal that will not fit on one page, stops before the Intent step.** The agent proposes how to cut the row again, and the exploration opens again for that one row. When the person agrees, the map changes in the same commit, and the change goes on with the first of the new rows, under its own name.
+
+The cost. The one stop that a change of an initiative saves comes back for a row that was cut badly.
+
 **The Build ends when a run can settle nothing more.** `azimuth status` may then still name what this machine cannot settle: a review, which this version does not record, a Check that runs only in CI, or a Check that cannot run here. A note that blocks nothing, such as an edited process, may stay too. The agent names what is left at the hand over. A Check that a run here could settle is work of the Build.
 
 On a machine where a Check cannot run, the commit lane fails at the hand over. The agent names that Check and says that the commit lane of CI decides. It repairs nothing for it.

@@ -4,7 +4,7 @@ This is the list of behaviors for a short pass after the skill for the form of a
 
 A row is of one of two kinds. A row of behavior is one observable fact, and a test shows it. A row of prose says what a text tells its reader; its section begins with the words "Rows of prose", and no test reads the words of the text for it. Each row is one observable fact. The second cell is copied exactly from `docs/design.md`. A plain test fails when a quoted sentence is no longer in that file. A behavior with no sentence to quote is not built.
 
-Status of this list: read and accepted by a person on 2026-11-21, in one sitting. Later that day, after an independent reading of the texts, the person agreed to two added rows of prose: a line under "Not cut yet" keeps an initiative open, in the initiative skill and in step 1 of the change skill. The person also agreed to a row on where a change with no initiative writes a decision that holds for several changes.
+Status of this list: read and accepted by a person on 2026-11-21, in one sitting. Later that day, after an independent reading of the texts, the person agreed to two added rows of prose: a line under "Not cut yet" keeps an initiative open, in the initiative skill and in step 1 of the change skill. The person also agreed to a row on where a change with no initiative writes a decision that holds for several changes. And to a row on a change of an initiative whose row turns out to be too large.
 
 ## `azimuth skills install`
 
@@ -99,6 +99,7 @@ Rows of prose: a person reads the text, and one test compares the whole text wit
 | It says that a change of an initiative has no proposal stop: the agent writes the proposal from the row and goes on to the Intent step | Its row was agreed in the exploration, so the agent writes the proposal from the row and goes on to the Intent step. |
 | It says that the person then reads the proposal at the Intent stop, beside the Scenarios | The person reads the proposal at the Intent stop, beside the Scenarios. |
 | It says that a change with no initiative keeps the proposal stop | A change with no initiative keeps the stop |
+| It says that a change of an initiative whose row turns out to have two outcomes, or a proposal that will not fit on one page, stops before the Intent step, proposes how to cut the row again, and goes on with the first of the new rows under its own name once the person agrees | **A change of an initiative whose row turns out to have two outcomes, or a proposal that will not fit on one page, stops before the Intent step.** |
 | It says that when a proposal would not fit on one page or has two outcomes, the agent says so at the proposal stop and asks: one change, or an initiative, and does not stop earlier for it | When a proposal would not fit on one page or has two outcomes, the agent says so at that stop and asks: one change, or an initiative. It does not stop earlier for it. |
 | It says that when the person chooses an initiative, the agent goes on with the skill `azimuth-exploration` | or when the person chooses it at the proposal stop of a change with no initiative |
 
