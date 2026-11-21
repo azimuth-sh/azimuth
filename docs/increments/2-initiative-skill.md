@@ -4,21 +4,21 @@ This is the list of behaviors for a short pass between the second and the third 
 
 A row is of one of two kinds. A row of behavior is one observable fact, and a test shows it. A row of prose says what a text tells its reader; its section begins with the words "Rows of prose", and no test reads the words of the text for it. Each row is one observable fact. The second cell is copied exactly from `docs/design.md`. A plain test fails when a quoted sentence is no longer in that file. A behavior with no sentence to quote is not built.
 
-Status of this list: read and accepted by a person on 2026-11-21, in one sitting. Later that day the same person agreed to two repairs, because a quote must not come from an example of the design: one row of behavior now quotes the rule it follows, and one row of prose was deleted. The same day the person renamed the folder concept from exploration to initiative and chose that a change with no initiative adds its leftover rows to an open initiative where the work belongs; the rows follow both. The person also agreed to one added row of prose, on what the word names, and to a reworded row that no longer calls the map one table. Last, two rows of prose: a name that no initiative used before, and the hand over done again after the person changes the initiative.
+Status of this list: read and accepted by a person on 2026-11-21, in one sitting. Later that day the same person agreed to two repairs, because a quote must not come from an example of the design: one row of behavior now quotes the rule it follows, and one row of prose was deleted. The same day the person renamed the folder concept from exploration to initiative and chose that a change with no initiative adds its leftover rows to an open initiative where the work belongs; the rows follow both. The person also agreed to one added row of prose, on what the word names, and to a reworded row that no longer calls the map one table. Last, two rows of prose: a name that no initiative used before, and the hand over done again after the person changes the initiative. Later that day the person agreed that three rows quote the design's new sentences on a third skill, for exploring; what the rows say did not change.
 
 ## `azimuth skills install`
 
 | Behavior | Quote from the design |
 | --- | --- |
 | For either harness the command writes the text of the initiative skill to `.agents/skills/azimuth-initiative/SKILL.md` | Its text is always in `.agents/skills/azimuth-initiative/SKILL.md` |
-| For either harness the command still writes the change skill to `.agents/skills/azimuth-change/SKILL.md` | **`azimuth skills install <harness>` installs two skills, one for a change and one for an initiative.** |
+| For either harness the command still writes the change skill to `.agents/skills/azimuth-change/SKILL.md` | **`azimuth skills install <harness>` installs three skills: one for a change, one for the form of an initiative, and one for exploring an initiative.** |
 | For `claude` it adds a link at `.claude/skills/azimuth-initiative` | for `claude` the command adds a link at `.claude/skills/azimuth-initiative` |
 | The link is relative, and the skill is still found through it after the clone is moved | The link is relative, so it survives a move of the clone. |
 | The last line of the initiative skill file is its own digest line, `<!-- azimuth text-1:<hex> -->` over the file's text without that line | Each file carries its own digest line |
 | Run again, the command replaces an initiative skill file that carries a correct digest line of another text | so an upgrade replaces each one only when it was not edited |
 | Run again, it leaves an edited initiative skill file alone and names it, and still replaces an unedited change skill | so an upgrade replaces each one only when it was not edited |
 | Run again, it leaves an edited change skill file alone and names it, and still replaces an unedited initiative skill | so an upgrade replaces each one only when it was not edited |
-| In a repository that has only the change skill of the version before, the command writes the initiative skill and its link, and replaces the change skill | **`azimuth skills install <harness>` installs two skills, one for a change and one for an initiative.** |
+| In a repository that has only the change skill of the version before, the command writes the initiative skill and its link, and replaces the change skill | **`azimuth skills install <harness>` installs three skills: one for a change, one for the form of an initiative, and one for exploring an initiative.** |
 | `azimuth status` says that the process here differs from the default when only the initiative skill was edited | Status then says "the process here differs from the default" |
 | A change that edits `.agents/skills/azimuth-initiative/SKILL.md` is of class D in `azimuth change diff` | **A change to an installed skill file is class D.** |
 | A change that touches the link `.claude/skills/azimuth-initiative` is of class D in `azimuth change diff` | **A change to an installed skill file is class D.** |
@@ -40,7 +40,7 @@ Rows of prose: a person reads the text, and one test compares the whole text wit
 | Behavior | Quote from the design |
 | --- | --- |
 | The description of the skill says that it is for the form of an initiative: which files it leaves, where they stand, and what a row of the map and a decision note hold | An initiative gets a skill of its own for its form: which files it leaves, where they stand, and what a row of the map and a decision note hold. |
-| The text says nothing about how to explore | How to explore is not decided yet, and that skill says nothing about it. |
+| The text says nothing about how to explore | How to explore is a skill of its own, and the skill for the form says nothing about it. |
 | It says that the word names the work and not the talk, and that exploring is how a person and an agent work an initiative out | The word names the work, not the talk. |
 | It says that only work of several changes needs an initiative | only the largest needs an initiative |
 | It says that a change belongs to an initiative only when a map lists its name, and the proposal does not have to say anything | A change belongs to an initiative when a map lists its name. The proposal does not have to say anything. |

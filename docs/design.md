@@ -217,7 +217,7 @@ Example: a change adds the Check `other-header-names-say-nothing`. At the stop o
 
 **A skill says the route and where to stop. It never restates a rule that the CLI checks.** A lint finding itself says what is wrong and what to do. A rule written in two places goes stale in one of them.
 
-Each later increment adds to this skill or adds one more: reviews and work records in increment 4, Challenges in increment 7. An initiative gets a skill of its own for its form: which files it leaves, where they stand, and what a row of the map and a decision note hold. The skill for a change reads that form, so the form cannot stay a habit. How to explore is not decided yet, and that skill says nothing about it.
+Each later increment adds to this skill or adds one more: reviews and work records in increment 4, Challenges in increment 7. An initiative gets a skill of its own for its form: which files it leaves, where they stand, and what a row of the map and a decision note hold. The skill for a change reads that form, so the form cannot stay a habit. How to explore is a skill of its own, and the skill for the form says nothing about it.
 
 The cost. There is no separate reviewing agent in increment 1. Between the second stop and the hand over the agent works alone, and the person is the only reader of what it built. That lasts until increment 4.
 
@@ -237,11 +237,11 @@ The command is `azimuth skills install <harness>`, and the first increment knows
 
 The cost. Another harness gets nothing until it is added to the CLI.
 
-**`azimuth skills install <harness>` installs two skills, one for a change and one for an initiative.** The skill for an initiative is `azimuth-initiative`. Its text is always in `.agents/skills/azimuth-initiative/SKILL.md`, and for `claude` the command adds a link at `.claude/skills/azimuth-initiative`. Each file carries its own digest line, so an upgrade replaces each one only when it was not edited.
+**`azimuth skills install <harness>` installs three skills: one for a change, one for the form of an initiative, and one for exploring an initiative.** The skill for an initiative is `azimuth-initiative`. Its text is always in `.agents/skills/azimuth-initiative/SKILL.md`, and for `claude` the command adds a link at `.claude/skills/azimuth-initiative`. The skill for exploring is `azimuth-exploration`, in `.agents/skills/azimuth-exploration/SKILL.md`, with the same kind of link for `claude`. Each file carries its own digest line, so an upgrade replaces each one only when it was not edited.
 
-The cost. The command offers no choice of skills. A team that never makes an initiative still gets its skill, which costs one more folder.
+The cost. The command offers no choice of skills. A team that never makes an initiative still gets both of its skills, which costs two more folders.
 
-Example: a repository on the version before installs again with the new CLI. The command writes `.agents/skills/azimuth-initiative/SKILL.md` and its link, and replaces the change skill when nobody edited it.
+Example: a repository on the version before installs again with the new CLI. The command writes `.agents/skills/azimuth-initiative/SKILL.md`, `.agents/skills/azimuth-exploration/SKILL.md` and their links, and replaces the change skill when nobody edited it.
 
 **A change to an installed skill file is class D.** The skill decides where an agent stops for a person, and an agent that edits it could remove its own stops.
 
