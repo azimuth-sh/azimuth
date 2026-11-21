@@ -33,12 +33,34 @@ fi
 
 If the command prints nothing, stop and tell the person; never type a date.
 
+Before you write the proposal, move every exploration whose rows are all finished or deleted
+into `azimuth/explorations/finished/<date>-<name>`.
+A row is finished when the folder of its change stands on the target branch, in
+`azimuth/changes/` or in `azimuth/changes/finished/`.
+The date is the day the exploration folder arrived on the target branch.
+After a fast-forward, use the day of the commit that first brought the folder.
+For each exploration folder, substitute its name for `<name>` below.
+Read the date from git in UTC with this command, run from the root of the repository;
+do not type the date:
+
+```sh
+if git cat-file -e '<target-branch>:azimuth/explorations/<name>' 2>/dev/null; then
+  TZ=UTC git log --first-parent --diff-merges=first-parent --no-renames --diff-filter=A --reverse \
+    --format=%cd --date=format-local:%Y-%m-%d '<target-branch>' -- 'azimuth/explorations/<name>/' |
+    head -n 1
+fi
+```
+
+If the command prints nothing, stop and tell the person; never type a date.
+
 From here on, `<name>` means the name of this change, rather than the name of an old folder.
 An exploration is a folder for work that needs several changes. A change belongs to it when
 its map has a row with the change's name. For a change of an exploration, read its row in
 `azimuth/explorations/<exploration>/map.md`, take the name from the row, and look at the rows
 it names as to be finished first. For another change, take the request of the person and propose
 a name. In both cases, use a name that no change used before.
+
+The skill `azimuth-exploration` says what a row of the map holds.
 
 Read what the row names, not the whole folder. For a change with no exploration, read the request
 of the person and `sources/` in the change's own folder when it has one. Ask the person for what
@@ -170,5 +192,12 @@ Name every proposed decision the finished code does not follow, and say why.
 Name every proposed decision for a Requirement with no `Realization:`; these stay archived with the plan.
 Name what `azimuth status` still names.
 Tell the person that a declared review is still owed and is done outside Azimuth.
+
+Ask what the change leaves undone.
+Add a row to the map for each leftover.
+If a change with no exploration leaves something, create one with this change as its first row.
+Propose a name for the work that the map holds, not for the change.
+Name the new exploration at the hand over.
+The person may rename it before the merge.
 
 Stop. The person merges. The agent merges nothing.
