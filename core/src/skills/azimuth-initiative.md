@@ -11,7 +11,7 @@ Only work of several changes needs an initiative.
 A change belongs to an initiative only when its map lists the change's name.
 The proposal does not have to say anything about that membership.
 An initiative can be born late.
-Its first row is then a change that is already finished.
+Its first row is then the change that created it.
 Initiatives live in the repository that holds the model.
 
 ## The folder

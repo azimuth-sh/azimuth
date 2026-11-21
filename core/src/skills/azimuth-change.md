@@ -87,19 +87,11 @@ The proposal is not edited after approval, whether at the proposal stop or the I
 For a change of an initiative whose row turns out to have two outcomes, or whose proposal
 will not fit on one page, propose how to cut the row again before the Intent step.
 The exploration opens again for that one row.
-The first of the new rows waits for no row that is not finished.
 Before the person agrees, have a fresh reader read the new rows as `azimuth-exploration` says.
-When no new row can be first, say so together with the findings and the new cut,
-and ask the person to decide at this stop whether this change waits or ends.
 Stop. The person reads the findings together with the new cut.
-When the person agrees, change the map.
-If the change ends, delete its folder. The person merges its branch with nothing but the change
-to the map, so its new rows stay for changes of their own. End here.
-If the change waits, keep everything and wait here until the row it waits for is finished.
-Then go on from its proposal.
-If the change neither waits nor ends, go on with the first of the new rows,
-under this change's own name. Read that row, the rows it needs finished first and what it names,
-and copy the files it names as above before writing its proposal.
+When the person agrees, change the map. The change ends: delete its folder.
+The person merges its branch with nothing but what it changed in the initiative,
+so the new rows wait in the map for changes of their own. End here.
 
 A change of an initiative has no proposal stop. Write its proposal from the row and go on
 to the Intent step.
