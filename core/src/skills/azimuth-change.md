@@ -82,24 +82,29 @@ Write `azimuth/changes/<name>/proposal.md`. It is one page with five parts:
 
 The proposal holds no Scenarios, no plan and no completion conditions.
 A proposal that does not fit on one page, or has two outcomes, is several changes.
+The proposal is not edited after approval, whether at the proposal stop or the Intent stop.
 
 For a change of an initiative whose row turns out to have two outcomes, or whose proposal
 will not fit on one page, propose how to cut the row again before the Intent step.
 The exploration opens again for that one row.
-Stop. When the person agrees, change the map and go on with the first of the new rows,
-under this change's own name.
+Before the person agrees, have a fresh reader read the new rows as `azimuth-exploration` says.
+Stop. The person reads the findings together with the new cut.
+When the person agrees, change the map and go on with the first of the new rows,
+under this change's own name. Read that row, the rows it needs finished first and what it names,
+and copy the files it names as above before writing its proposal.
 
 A change of an initiative has no proposal stop. Write its proposal from the row and go on
 to the Intent step.
 
 For a change with no initiative:
-Stop. The person reads and approves the proposal.
-At this stop, when the proposal would not fit on one page or has two outcomes, say so and ask:
+Show the proposal. When it would not fit on one page or has two outcomes,
+include that fact and this question in what you show at the stop:
 one change, or an initiative. Do not stop earlier for it or write one long proposal.
-When the person chooses an initiative, delete the change folder with its proposal.
+Stop. The person reads and approves the proposal, or chooses an initiative.
+When the person chooses an initiative, move the change folder's sources into the initiative's
+`sources/`, then delete the change folder with its proposal.
 The initiative starts from the request. Go on with `azimuth-exploration`.
 If the person asks for a change to the proposal, make it and stop again.
-The proposal is not edited after approval.
 
 ## 2. Intent
 
@@ -166,12 +171,14 @@ their shell profile lacks the line `export PATH="$HOME/.azimuth/bin:$PATH"`.
 Print `azimuth change diff` beside the model files and the plan when there is one.
 It prints ids and classes, not the prose, and does not replace reading the files.
 
-Stop. Before any code exists, the person reads `azimuth change diff`, the Scenarios in
+Before any code exists, show `azimuth change diff`, the Scenarios in
 `specification.md`, the Checks in `verification.md` and, where needed,
-`azimuth/changes/<name>/plan.md`, and approves. If the person asks for a change, make it,
+`azimuth/changes/<name>/plan.md`. For a change of an initiative, include the proposal
+beside the Scenarios in what the person reads at this stop.
+A change that joins an initiative after its proposal stop keeps the approval it got there.
+Only a proposal not already approved is approved at this stop.
+Stop. The person reads and approves. If the person asks for a change, make it,
 bring the plan in step when there is one, and stop again.
-For a change of an initiative, the person reads and approves the proposal at this stop too,
-beside the Scenarios.
 
 ## 3. Build
 
@@ -236,7 +243,8 @@ Name every proposed decision for a Requirement with no `Realization:`; these sta
 Name what `azimuth status` still names.
 Tell the person that a declared review is still owed and is done outside Azimuth.
 
-At this stop, if you added rows to a map, name that map's initiative.
+At this stop, name the initiative you chose for a decision note or for leftovers,
+including one you created during the change.
 The person may choose another initiative or rename the new one before the merge.
 If the person does so, make the change and do this hand over again.
 
