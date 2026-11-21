@@ -2830,7 +2830,7 @@ Example: a plan for grants named the unique index that decides between two admin
 
 - A change belongs to an initiative when a map lists its name. The proposal does not have to say anything.
 - A proposal names the copies it took from the initiative's sources. That is a reference to a text, not a membership.
-- An initiative can be born late. Its first row is then a change that is already finished.
+- An initiative can be born late. Its first row is then the change that created it.
 
 **The cost.** Whether one change is too big and should have been an initiative stays a judgment. The one-page rule for a proposal, below, is the only signal.
 
