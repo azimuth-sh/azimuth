@@ -4,7 +4,7 @@ This is the list of behaviors for a short pass between the second and the third 
 
 A row is of one of two kinds. A row of behavior is one observable fact, and a test shows it. A row of prose says what a text tells its reader; its section begins with the words "Rows of prose", and no test reads the words of the text for it. Each row is one observable fact. The second cell is copied exactly from `docs/design.md`. A plain test fails when a quoted sentence is no longer in that file. A behavior with no sentence to quote is not built.
 
-Status of this list: read and accepted by a person on 2026-11-20, in eight sittings. The last one changed one row and added two after an independent reading of the skill text against this list.
+Status of this list: read and accepted by a person on 2026-11-20, in eight sittings. The last one changed one row and added two after an independent reading of the skill text against this list. On 2026-11-21 the person agreed that one row quotes the reworded sentence on approving proposals; what the row says did not change.
 
 ## The skill: finished folders
 
