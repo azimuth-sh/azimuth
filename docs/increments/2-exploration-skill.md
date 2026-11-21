@@ -4,7 +4,7 @@ This is the list of behaviors for a short pass between the second and the third 
 
 A row is of one of two kinds. A row of behavior is one observable fact, and a test shows it. A row of prose says what a text tells its reader; its section begins with the words "Rows of prose", and no test reads the words of the text for it. Each row is one observable fact. The second cell is copied exactly from `docs/design.md`. A plain test fails when a quoted sentence is no longer in that file. A behavior with no sentence to quote is not built.
 
-Status of this list: read and accepted by a person on 2026-11-21, in one sitting.
+Status of this list: read and accepted by a person on 2026-11-21, in one sitting. Later that day the same person agreed to two repairs, because a quote must not come from an example of the design: one row of behavior now quotes the rule it follows, and one row of prose was deleted.
 
 ## `azimuth skills install`
 
@@ -18,7 +18,7 @@ Status of this list: read and accepted by a person on 2026-11-21, in one sitting
 | Run again, the command replaces an exploration skill file that carries a correct digest line of another text | so an upgrade replaces each one only when it was not edited |
 | Run again, it leaves an edited exploration skill file alone and names it, and still replaces an unedited change skill | so an upgrade replaces each one only when it was not edited |
 | Run again, it leaves an edited change skill file alone and names it, and still replaces an unedited exploration skill | so an upgrade replaces each one only when it was not edited |
-| In a repository that has only the change skill of the version before, the command writes the exploration skill and its link, and replaces the change skill | The command writes `.agents/skills/azimuth-exploration/SKILL.md` and its link, and replaces the change skill when nobody edited it. |
+| In a repository that has only the change skill of the version before, the command writes the exploration skill and its link, and replaces the change skill | **`azimuth skills install <harness>` installs two skills, one for a change and one for an exploration.** |
 | `azimuth status` says that the process here differs from the default when only the exploration skill was edited | Status then says "the process here differs from the default" |
 | A change that edits `.agents/skills/azimuth-exploration/SKILL.md` is of class D in `azimuth change diff` | **A change to an installed skill file is class D.** |
 | A change that touches the link `.claude/skills/azimuth-exploration` is of class D in `azimuth change diff` | **A change to an installed skill file is class D.** |
@@ -93,7 +93,6 @@ Rows of prose: a person reads the text, and one test compares the whole text wit
 | It says how the agent reads the state of a row: finished when the folder of its change stands on the target branch, in `changes/` or in `changes/finished/` | A row is finished when the folder of its change stands there, in `changes/` or in `changes/finished/`. |
 | It says that "After" names the rows that must be finished first, and that it is the only ordering | "After" names rows that must be finished first |
 | It says that the map is edited freely, in ordinary commits | The map is edited freely, in ordinary commits |
-| It says that a row that is split becomes two rows in the table | the row becomes two rows |
 | It says that an exploration is never approved, and a person approves each proposal when it is written | An exploration is never approved |
 | It says that a row may exist with no change behind it for as long as needed | A row may exist with no change behind it for as long as needed |
 | It says that a row cites a decision note by its short name alone | A row of the map cites the note by the short name alone |
