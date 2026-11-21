@@ -33,8 +33,8 @@ fi
 
 If the command prints nothing, stop and tell the person; never type a date.
 
-Before you write the proposal, move every initiative whose rows are all finished or deleted
-into `azimuth/initiatives/finished/<date>-<name>`.
+Before you write the proposal, move every initiative folder that stands on the target branch
+and whose rows are all finished or deleted into `azimuth/initiatives/finished/<date>-<name>`.
 A row is finished when the folder of its change stands on the target branch, in
 `azimuth/changes/` or in `azimuth/changes/finished/`.
 The date is the day the initiative folder arrived on the target branch.
@@ -174,15 +174,16 @@ This step does not stop for a person.
 
 ## 4. Hand over
 
-Ask yourself what the change leaves undone, and whether the map already names it.
+Ask yourself what the change leaves undone.
 Evidence that is weak or owed is not a leftover; status already shows it.
 The skill `azimuth-initiative` says what each kind of leftover becomes.
-Add a row only for a leftover that the map does not already name.
-For a change with no initiative that leaves something, add the rows to an open initiative
+If the change leaves something, choose the map before adding rows. For a change of an initiative,
+use that initiative's map. For a change with no initiative, use the map of an open initiative
 that the work belongs to. Only when none fits, propose a name for the work that the map
 will hold, not for the change, and use a name that no initiative used before. In that case,
 create `azimuth/initiatives/<name>/map.md`, using that initiative name for `<name>`, with
-this change as the first row, then add the rows for the leftovers that the map does not already name.
+this change as the first row.
+Then add a row for each leftover that the map does not already name.
 
 Run `azimuth run --lane commit`. The commit lane lints first, reads no stored result, runs every
 Check, and fails on any Check that is owed.
@@ -200,7 +201,7 @@ Name every proposed decision for a Requirement with no `Realization:`; these sta
 Name what `azimuth status` still names.
 Tell the person that a declared review is still owed and is done outside Azimuth.
 
-At this stop, name the initiative that you chose.
+At this stop, if you added rows to a map, name that map's initiative.
 The person may choose another initiative or rename the new one before the merge.
 If the person does so, make the change and do this hand over again.
 
