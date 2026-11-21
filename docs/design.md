@@ -2990,6 +2990,20 @@ The cost. The talk takes more turns than a round of many questions. A person who
 
 Example: for the gift cards the agent asks what should happen to the money on a card that expires. The person answers "It goes to the balance." The agent then tries a card bought by someone with no account. The answer does not cover it, so that becomes the next question. The note quotes "It goes to the balance" as the person's, and marks the rule for a buyer with no account as the agent's wording, agreed.
 
+**The agent cuts the work into rows, each one change: one outcome, and a proposal that will fit on one page.**
+
+**A row is cut by what somebody can do after it, not by layer.** A row for one layer is allowed when it can be deployed alone and is useful alone. Its decision note then says what nobody can do between it and the row that completes it.
+
+**What is not understood yet stays uncut.** The map names it in one line in a part "Not cut yet", and the agent cuts it only when a question about it can be stated precisely.
+
+**The cut gives no order.** Which rows come first is decided when the work is scheduled.
+
+**Before the work is scheduled, the person reads the cut: whether each row is one outcome, and whether anything is missing or doubled.**
+
+The cost. A row cut by what somebody can do often touches every layer, so rows are larger. The uncut part can stay uncut for a long time, and nothing reminds anyone of it.
+
+Example: the gift-card initiative is cut into `gift-card-sale`, `gift-card-payment` and `store-balance`. Card expiry is not understood yet, so it stands under "Not cut yet" in one line. A row `gift-card-tables` for the database alone is not cut, because nobody can do anything after it.
+
 ### Sources
 
 **A source says what was asked for.** It is written before the work, by an analyst, a product owner or whoever asked, in whatever form they use. The model says what is built, and it is written increment by increment. The proposal names its sources.
