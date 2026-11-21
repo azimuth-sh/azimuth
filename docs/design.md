@@ -197,6 +197,12 @@ The cost. Through increments 1 to 3 no Requirement is reviewed by anything but t
 
 **Where the change needs a plan, the Intent stop shows the plan too.** The part "The implementation plan" says when a change needs one. The number of stops stays the same.
 
+**A change of an initiative has no proposal stop.** Its row was agreed in the exploration, so the agent writes the proposal from the row and goes on to the Intent step. The person reads the proposal at the Intent stop, beside the Scenarios. A change with no initiative keeps the stop, because nobody has yet seen that the agent understood the request.
+
+The cost. A proposal that misreads its row is found one step later, after its Scenarios are written.
+
+Example: the row `gift-card-payment` of a web shop's initiative names the pricing page. The agent writes the proposal from the row, then the Scenarios, and the person reads both at the Intent stop.
+
 **The Build ends when a run can settle nothing more.** `azimuth status` may then still name what this machine cannot settle: a review, which this version does not record, a Check that runs only in CI, or a Check that cannot run here. A note that blocks nothing, such as an edited process, may stay too. The agent names what is left at the hand over. A Check that a run here could settle is work of the Build.
 
 On a machine where a Check cannot run, the commit lane fails at the hand over. The agent names that Check and says that the commit lane of CI decides. It repairs nothing for it.
@@ -2940,6 +2946,16 @@ Example, with a supposed change: a change with no initiative adds a second flag 
 **The cost.** An agent that edits code in another repository must also have the model repository checked out, because the proposal, the plan and the sources are there. A change merges in more than one place, and the merges are not atomic.
 
 Example: the change `cli-login` has its folder in drim-dev at `azimuth/changes/cli-login/`. It adds Scenarios in drim-dev and Rust code in the repository `drim`. There are two branches and two pull requests, and one change page.
+
+### Exploring
+
+**An exploration starts when a person asks for one, or when the person chooses it at the proposal stop of a change with no initiative.** When a proposal would not fit on one page or has two outcomes, the agent says so at that stop and asks: one change, or an initiative. It does not stop earlier for it.
+
+**The first source is the request in the person's own words.** The agent writes it as a source in the repository before it asks anything, and takes a snapshot of every page that the request names. Later, only what stands in a source written by the person, or in a note that the person approved, counts as the person's.
+
+The cost. A proposal for work that turns out to be an initiative is written and then set aside. Writing the request down first slows the opening of the talk.
+
+Example: a person asks a web shop's agent for gift cards and for a store balance that refunds go to. The proposal has two outcomes: a customer can pay with a gift card, and a customer keeps a balance. At the stop the agent says so, and the person chooses an initiative. Its first file is `sources/request.md` with the person's message, then the snapshot of the pricing page that the message links.
 
 ### Sources
 
