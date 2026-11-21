@@ -2868,12 +2868,15 @@ The table shows the form only. It is not a split of any real work.
 | The map is edited freely, in ordinary commits | a plan for work not yet started is wrong by design |
 | An exploration is never approved | a person approves each proposal when it is written, and that is the only decision |
 | A row may exist with no change behind it for as long as needed | that is how deferred work stays visible |
+| Whoever writes a decision note adds its short name to every row it bears on, in the same commit | the agent of a row reads what the row names and not the whole folder, so a note that no row names never reaches a change |
 
 **Why the map may change and a proposal may not.** A proposal records what was understood when one change started. A map is a plan for work not yet started.
 
-**The cost.** The map is free text that nothing verifies. A row that was split or dropped without an edit misleads the next agent. The only guard is the computed state, which shows a row whose change never appeared.
+**The cost.** The map is free text that nothing verifies. A row that was split or dropped without an edit misleads the next agent. The only guard is the computed state, which shows a row whose change never appeared. Whether a note bears on a row is a judgment. A note left out of a row stays unseen by that row's change, which may then decide again what was decided.
 
 Example: an exploration in drim-dev lists eight candidates with a column for dependencies. When one candidate was split, a section was added under the table to explain it. Under these rules the table itself is edited: the row becomes two rows, and git keeps the earlier version.
+
+Example: in drim-dev the note `admin-pages-are-their-own-row` was written in the same commit that added it to two rows, `lab-access` and `lab-access-admin`.
 
 **Every leftover of a change is a row in the map. The model never holds a promise.**
 
