@@ -197,7 +197,7 @@ The cost. Through increments 1 to 3 no Requirement is reviewed by anything but t
 
 **Where the change needs a plan, the Intent stop shows the plan too.** The part "The implementation plan" says when a change needs one. The number of stops stays the same.
 
-**A change of an initiative has no proposal stop.** Its row was agreed in the exploration, so the agent writes the proposal from the row and goes on to the Intent step. The person reads the proposal at the Intent stop, beside the Scenarios. A change with no initiative keeps the stop, because nobody has yet seen that the agent understood the request.
+**A change of an initiative has no proposal stop.** Its row was agreed in the exploration, so the agent writes the proposal from the row and goes on to the Intent step. The person reads the proposal at the Intent stop, beside the Scenarios. A change with no initiative keeps the stop, because nobody has yet seen that the agent understood the request. A change that joins an initiative after its proposal stop keeps the approval it got there.
 
 The cost. A proposal that misreads its row is found one step later, after its Scenarios are written.
 
