@@ -13,7 +13,7 @@ struct Skill {
 
 const SKILLS: [Skill; 2] = [
     Skill { name: "azimuth-change", text: include_str!("skills/azimuth-change.md") },
-    Skill { name: "azimuth-exploration", text: include_str!("skills/azimuth-exploration.md") },
+    Skill { name: "azimuth-initiative", text: include_str!("skills/azimuth-initiative.md") },
 ];
 
 impl Skill {
