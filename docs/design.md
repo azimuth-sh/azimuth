@@ -2910,10 +2910,13 @@ Example: if the row `further-stacks` of drim-dev were dropped, the same commit w
 - A change that leaves something adds its row before it merges. The reviewing agent of the default process asks at the end: what does this change leave undone, and does the map say so?
 - An exploration ends when every row is finished or deleted. The next change then moves its folder to `explorations/finished/`, the same way as a change folder, with the date of the folder's arrival in front of its name.
 - A change with no exploration that leaves something creates one at that moment, with itself as the first row.
+- The agent proposes a name for the work that the map holds, not for the change, and names the new exploration at the hand over. The person may rename it before the merge.
 
-**The cost.** The core computes none of this. A forgotten toggle stays forgotten if nobody wrote the row.
+**The cost.** The core computes none of this. A forgotten toggle stays forgotten if nobody wrote the row. The person reads one more name at the hand over.
 
 Example: `FeatureFlagsOptions` in drim-dev has the flags `Labs` and `CliAuth`, and the project's rules say that deleting a flag is part of "done". The map of the lab engine gets a row such as `remove-cli-auth-flag`, with "After" naming the change that ships CLI access. The flag is then visible work with a name, and its state is computed like any other row.
+
+Example: the change that renames the learner routes from `…/runs` to `…/executions` keeps the old routes for one release. It creates the exploration `learner-routes` with two rows: itself, and `remove-old-learner-routes`.
 
 **Change folders and explorations live in the repository that holds the model.** A change is a change of intent, and intent lives in the model. A repository without Requirements has nothing to propose.
 
