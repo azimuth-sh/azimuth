@@ -3010,9 +3010,9 @@ Example: for the gift cards the agent asks what should happen to the money on a 
 
 **What is not understood yet stays uncut.** The map names it in one line in a part "Not cut yet", and the agent cuts it only when a question about it can be stated precisely.
 
-**The cut gives no order.** Which rows come first is decided when the work is scheduled.
+**The cut names its order in the map's column "After".** A row waits only for the rows that it really needs.
 
-**Before the work is scheduled, the person reads the cut: whether each row is one outcome, and whether anything is missing or doubled.**
+**Before the first row starts, the person reads the cut: whether each row is one outcome, whether anything is missing or doubled, and whether "After" is right.**
 
 The cost. A row cut by what somebody can do often touches every layer, so rows are larger. The uncut part can stay uncut for a long time, and nothing reminds anyone of it.
 
@@ -3033,6 +3033,10 @@ Example: the reader takes the row `gift-card-payment` and the files it names. Th
 The cost. The change waits for the person's decision. A row that the decision changes may already be running in another change.
 
 Example: while it builds `gift-card-sale`, the agent finds that the shop must keep the buyer's country for every card. That holds for the payment and the balance too. The agent asks, writes the note `a-card-keeps-its-country`, and adds that name to the rows `gift-card-payment` and `store-balance`.
+
+**Later, at the server rung: scheduling becomes an act of a person recorded on the server, and the column "After" leaves the map.** A scheduling record names a row of a map on the target branch, the row's owner and approver, and the changes it waits for. Coordinators then take the ready changes of several initiatives in the order they were scheduled, each in its own worktree, and never more at once than one approver may hold. The agent's questions and the person's answers become records on the change, each keyed by the content it covered, as an approval of Scenarios is. The change folder and the initiative become content, so a person with no checkout reads them on the pages.
+
+The cost. Until then a developer picks the next ready row, nothing but a pushed branch shows that it is taken, and the order lives in a column that nothing verifies.
 
 ### Sources
 
