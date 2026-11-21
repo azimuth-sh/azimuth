@@ -1,6 +1,6 @@
 ---
 name: azimuth-change
-description: Make one change to a project that Azimuth tracks, from the proposal to the hand over. Use for a change of intent: one that adds, changes or removes a Requirement or a Scenario.
+description: "Make one change to a project that Azimuth tracks, from the proposal to the hand over. Use for a change of intent: one that adds, changes or removes a Requirement or a Scenario."
 ---
 
 # One change with Azimuth
@@ -33,39 +33,36 @@ fi
 
 If the command prints nothing, stop and tell the person; never type a date.
 
-Before you write the proposal, move every exploration whose rows are all finished or deleted
-into `azimuth/explorations/finished/<date>-<name>`.
+Before you write the proposal, move every initiative whose rows are all finished or deleted
+into `azimuth/initiatives/finished/<date>-<name>`.
 A row is finished when the folder of its change stands on the target branch, in
 `azimuth/changes/` or in `azimuth/changes/finished/`.
-The date is the day the exploration folder arrived on the target branch.
+The date is the day the initiative folder arrived on the target branch.
 After a fast-forward, use the day of the commit that first brought the folder.
-For each exploration folder, substitute its name for `<name>` below.
+For each initiative folder, substitute its name for `<name>` below.
 Read the date from git in UTC with this command, run from the root of the repository;
 do not type the date:
 
 ```sh
-if git cat-file -e '<target-branch>:azimuth/explorations/<name>' 2>/dev/null; then
+if git cat-file -e '<target-branch>:azimuth/initiatives/<name>' 2>/dev/null; then
   TZ=UTC git log --first-parent --diff-merges=first-parent --no-renames --diff-filter=A --reverse \
-    --format=%cd --date=format-local:%Y-%m-%d '<target-branch>' -- 'azimuth/explorations/<name>/' |
+    --format=%cd --date=format-local:%Y-%m-%d '<target-branch>' -- 'azimuth/initiatives/<name>/' |
     head -n 1
 fi
 ```
 
-If the command prints nothing, stop and tell the person; never type a date.
-
 From here on, `<name>` means the name of this change, rather than the name of an old folder.
-An exploration is a folder for work that needs several changes. A change belongs to it when
-its map has a row with the change's name. For a change of an exploration, read its row in
-`azimuth/explorations/<exploration>/map.md`, take the name from the row, and look at the rows
+The skill `azimuth-initiative` says what a row of the map holds.
+An initiative is a folder for work that needs several changes. A change belongs to it when
+its map has a row with the change's name. For a change of an initiative, read its row in
+`azimuth/initiatives/<initiative>/map.md`, take the name from the row, and look at the rows
 it names as to be finished first. For another change, take the request of the person and propose
 a name. In both cases, use a name that no change used before.
 
-The skill `azimuth-exploration` says what a row of the map holds.
-
-Read what the row names, not the whole folder. For a change with no exploration, read the request
+Read what the row names, not the whole folder. For a change with no initiative, read the request
 of the person and `sources/` in the change's own folder when it has one. Ask the person for what
-you cannot find there; do not invent it. For a change of an exploration, copy the files the row
-names from `azimuth/explorations/<exploration>/sources/` into `azimuth/changes/<name>/sources/`.
+you cannot find there; do not invent it. For a change of an initiative, copy the files the row
+names from `azimuth/initiatives/<initiative>/sources/` into `azimuth/changes/<name>/sources/`.
 A copy is the whole file, unchanged, under the same path inside `sources/`.
 A source says what was asked for and comes from the person or from a snapshot.
 Put a source that only this change needs in its `sources/` and nowhere else.
@@ -77,7 +74,7 @@ Write `azimuth/changes/<name>/proposal.md`. It is one page with five parts:
 - Outcome: what somebody can do or observe after the change that they cannot now, in their words.
 - Sources: the sources and decision notes the proposal relies on, each named by its path from the
   change folder (for example `sources/decisions/<file>.md`), and which part of each it takes.
-  For a source taken from an exploration, name the copy in the change folder.
+  For a source taken from an initiative, name the copy in the change folder.
 - Boundary: what the change leaves out, each item with the name of its map row.
 - Decisions: what this change settles, each with the alternative it rejects, one line each.
 - Approver: who is expected to approve the Scenarios.
@@ -177,6 +174,16 @@ This step does not stop for a person.
 
 ## 4. Hand over
 
+Ask yourself what the change leaves undone, and whether the map already names it.
+Evidence that is weak or owed is not a leftover; status already shows it.
+The skill `azimuth-initiative` says what each kind of leftover becomes.
+Add a row only for a leftover that the map does not already name.
+For a change with no initiative that leaves something, add the rows to an open initiative
+that the work belongs to. Only when none fits, propose a name for the work that the map
+will hold, not for the change, and use a name that no initiative used before. In that case,
+create `azimuth/initiatives/<name>/map.md`, using that initiative name for `<name>`, with
+this change as the first row, then add the rows for the leftovers that the map does not already name.
+
 Run `azimuth run --lane commit`. The commit lane lints first, reads no stored result, runs every
 Check, and fails on any Check that is owed.
 If it fails, look at why. After exit status 1 from a failed Check or a lint finding, repair what is wrong
@@ -193,11 +200,8 @@ Name every proposed decision for a Requirement with no `Realization:`; these sta
 Name what `azimuth status` still names.
 Tell the person that a declared review is still owed and is done outside Azimuth.
 
-Ask what the change leaves undone.
-Add a row to the map for each leftover.
-If a change with no exploration leaves something, create one with this change as its first row.
-Propose a name for the work that the map holds, not for the change.
-Name the new exploration at the hand over.
-The person may rename it before the merge.
+At this stop, name the initiative that you chose.
+The person may choose another initiative or rename the new one before the merge.
+If the person does so, make the change and do this hand over again.
 
 Stop. The person merges. The agent merges nothing.
