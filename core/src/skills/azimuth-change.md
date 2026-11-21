@@ -87,8 +87,11 @@ The proposal is not edited after approval, whether at the proposal stop or the I
 For a change of an initiative whose row turns out to have two outcomes, or whose proposal
 will not fit on one page, propose how to cut the row again before the Intent step.
 The exploration opens again for that one row.
+The first of the new rows waits for no row that is not finished.
 Before the person agrees, have a fresh reader read the new rows as `azimuth-exploration` says.
 Stop. The person reads the findings together with the new cut.
+When no new row can be first, say so and stop for the person to decide whether this change
+waits or ends.
 When the person agrees, change the map and go on with the first of the new rows,
 under this change's own name. Read that row, the rows it needs finished first and what it names,
 and copy the files it names as above before writing its proposal.
@@ -101,6 +104,7 @@ Show the proposal. When it would not fit on one page or has two outcomes,
 include that fact and this question in what you show at the stop:
 one change, or an initiative. Do not stop earlier for it or write one long proposal.
 Stop. The person reads and approves the proposal, or chooses an initiative.
+When the person chooses one change, that answer approves the proposal as it is.
 When the person chooses an initiative, move the change folder's sources into the initiative's
 `sources/`, then delete the change folder with its proposal.
 The initiative starts from the request. Go on with `azimuth-exploration`.
@@ -243,7 +247,9 @@ Name every proposed decision for a Requirement with no `Realization:`; these sta
 Name what `azimuth status` still names.
 Tell the person that a declared review is still owed and is done outside Azimuth.
 
-At this stop, name the initiative you chose for a decision note or for leftovers,
+At this stop, if you added rows to a map, name that map's initiative.
+This includes rows added by cutting this change's own row again.
+Also name the initiative you chose for a decision note or for leftovers,
 including one you created during the change.
 The person may choose another initiative or rename the new one before the merge.
 If the person does so, make the change and do this hand over again.
