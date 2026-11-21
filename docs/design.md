@@ -203,7 +203,7 @@ The cost. A proposal that misreads its row is found one step later, after its Sc
 
 Example: the row `gift-card-payment` of a web shop's initiative names the pricing page. The agent writes the proposal from the row, then the Scenarios, and the person reads both at the Intent stop.
 
-**A change of an initiative whose row turns out to have two outcomes, or a proposal that will not fit on one page, stops before the Intent step.** The agent proposes how to cut the row again, and the exploration opens again for that one row. Before the person agrees, a fresh reader reads the new rows, as after any cut. When the person agrees, the change ends: the agent deletes its folder, and its branch merges with nothing but what it changed in the initiative, so the new rows wait in the map for changes of their own.
+**A change of an initiative whose row turns out to have two outcomes, or a proposal that will not fit on one page, stops before the Intent step.** The agent proposes how to cut the row again, and the exploration opens again for that one row. Before the person agrees, a fresh reader reads the new rows, as after any cut. When the person agrees, the change ends: the agent deletes its folder, and its branch merges without it, so the new rows wait in the map for changes of their own.
 
 The cost. The one stop that a change of an initiative saves comes back for a row that was cut badly.
 
