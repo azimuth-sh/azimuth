@@ -2920,7 +2920,7 @@ Example: if the row `further-stacks` of drim-dev were dropped, the same commit w
 
 - The model says only what is built. A Requirement appears with the change that builds it, so no Requirement on the target branch ever waits for code.
 - A change that leaves something adds its row before it merges. The reviewing agent of the default process asks at the end: what does this change leave undone, and does the map say so?
-- An initiative ends when every row is finished or deleted. The next change then moves its folder to `initiatives/finished/`, the same way as a change folder, with the date of the folder's arrival in front of its name.
+- An initiative ends when every row is finished or deleted. A line under "Not cut yet" keeps it open, until the line is cut into rows or dropped with a decision note that says why. The next change then moves its folder to `initiatives/finished/`, the same way as a change folder, with the date of the folder's arrival in front of its name.
 - Later: lint reports an initiative in `initiatives/finished/` whose map has a row with no change folder in the tree.
 - A change with no initiative that leaves something adds its rows to an open initiative that the work belongs to. Only when none fits does it create one, with itself as the first row.
 - At the hand over the agent names the initiative that it chose. For a new one it proposes a name for the work that the map holds, not for the change. The person may choose another or rename it before the merge.

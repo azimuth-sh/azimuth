@@ -4,7 +4,7 @@ This is the list of behaviors for a short pass after the skill for the form of a
 
 A row is of one of two kinds. A row of behavior is one observable fact, and a test shows it. A row of prose says what a text tells its reader; its section begins with the words "Rows of prose", and no test reads the words of the text for it. Each row is one observable fact. The second cell is copied exactly from `docs/design.md`. A plain test fails when a quoted sentence is no longer in that file. A behavior with no sentence to quote is not built.
 
-Status of this list: read and accepted by a person on 2026-11-21, in one sitting.
+Status of this list: read and accepted by a person on 2026-11-21, in one sitting. Later that day, after an independent reading of the texts, the person agreed to two added rows of prose: a line under "Not cut yet" keeps an initiative open, in the initiative skill and in step 1 of the change skill.
 
 ## `azimuth skills install`
 
@@ -125,6 +125,14 @@ Rows of prose: a person reads the text, and one test compares the whole text wit
 | It says that a row that the decision makes wrong is changed or deleted in the same commit | A row that the decision makes wrong is changed or deleted in the same commit. |
 | It says that a finished row is not opened again, and what the decision asks of it becomes a new row | **A finished row is not opened again.** What the decision asks of it becomes a new row. |
 
+## The change skill: a finished initiative
+
+Rows of prose: a person reads the text, and one test compares the whole text with what that person accepted.
+
+| Behavior | Quote from the design |
+| --- | --- |
+| Step 1 moves an initiative to `azimuth/initiatives/finished/` only when nothing stands under "Not cut yet" in its map | A line under "Not cut yet" keeps it open, until the line is cut into rows or dropped with a decision note that says why. |
+
 ## The initiative skill: what is not cut yet
 
 Rows of prose: a person reads the text, and one test compares the whole text with what that person accepted.
@@ -132,6 +140,7 @@ Rows of prose: a person reads the text, and one test compares the whole text wit
 | Behavior | Quote from the design |
 | --- | --- |
 | It says that the map has a part "Not cut yet", which names in one line each piece of the work that is not understood yet | The map names it in one line in a part "Not cut yet" |
+| It says that a line under "Not cut yet" keeps the initiative open, until the line is cut into rows or dropped with a decision note that says why | A line under "Not cut yet" keeps it open, until the line is cut into rows or dropped with a decision note that says why. |
 
 ## Not in this pass
 
