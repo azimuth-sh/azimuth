@@ -203,7 +203,7 @@ The cost. A proposal that misreads its row is found one step later, after its Sc
 
 Example: the row `gift-card-payment` of a web shop's initiative names the pricing page. The agent writes the proposal from the row, then the Scenarios, and the person reads both at the Intent stop.
 
-**A change of an initiative whose row turns out to have two outcomes, or a proposal that will not fit on one page, stops before the Intent step.** The agent proposes how to cut the row again, and the exploration opens again for that one row. When the person agrees, the map changes in the same commit, and the change goes on with the first of the new rows, under its own name.
+**A change of an initiative whose row turns out to have two outcomes, or a proposal that will not fit on one page, stops before the Intent step.** The agent proposes how to cut the row again, and the exploration opens again for that one row. When the person agrees, the map changes, and the change goes on with the first of the new rows, under its own name.
 
 The cost. The one stop that a change of an initiative saves comes back for a row that was cut badly.
 
@@ -2967,7 +2967,7 @@ Example: the change `cli-login` has its folder in drim-dev at `azimuth/changes/c
 
 ### Exploring
 
-**An exploration starts when a person asks for one, or when the person chooses it at the proposal stop of a change with no initiative.** When a proposal would not fit on one page or has two outcomes, the agent says so at that stop and asks: one change, or an initiative. It does not stop earlier for it.
+**An exploration starts when a person asks for one, or when the person chooses it at the proposal stop of a change with no initiative.** When a proposal would not fit on one page or has two outcomes, the agent says so at that stop and asks: one change, or an initiative. It does not stop earlier for it. When the person chooses an initiative, the agent deletes the change folder with its proposal, and the initiative starts from the request.
 
 **The first source is the request in the person's own words.** The agent writes it as a source in the repository before it asks anything, and takes a snapshot of every page that the request names. Later, only what stands in a source written by the person, or in a note that the person approved, counts as the person's.
 
