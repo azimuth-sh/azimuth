@@ -4,7 +4,7 @@ This is the list of behaviors for a short pass between the second and the third 
 
 A row is of one of two kinds. A row of behavior is one observable fact, and a test shows it. A row of prose says what a text tells its reader; its section begins with the words "Rows of prose", and no test reads the words of the text for it. Each row is one observable fact. The second cell is copied exactly from `docs/design.md`. A plain test fails when a quoted sentence is no longer in that file. A behavior with no sentence to quote is not built.
 
-Status of this list: read and accepted by a person on 2026-11-21, in one sitting. Later that day the same person agreed to two repairs, because a quote must not come from an example of the design: one row of behavior now quotes the rule it follows, and one row of prose was deleted. The same day the person renamed the folder concept from exploration to initiative and chose that a change with no initiative adds its leftover rows to an open initiative where the work belongs; the rows follow both.
+Status of this list: read and accepted by a person on 2026-11-21, in one sitting. Later that day the same person agreed to two repairs, because a quote must not come from an example of the design: one row of behavior now quotes the rule it follows, and one row of prose was deleted. The same day the person renamed the folder concept from exploration to initiative and chose that a change with no initiative adds its leftover rows to an open initiative where the work belongs; the rows follow both. The person also agreed to one added row of prose, on what the word names, and to a reworded row that no longer calls the map one table.
 
 ## `azimuth skills install`
 
