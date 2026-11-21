@@ -23,6 +23,8 @@ Use `azimuth-change` for writing a proposal and copying its sources into the cha
 A source that only one change needs is written in that change's folder and nowhere else.
 
 An initiative ends when every row is finished or deleted.
+A line under "Not cut yet" keeps it open, until the line is cut into rows or dropped
+with a decision note that says why.
 The next change moves its folder to `azimuth/initiatives/finished/<date>-<name>/`.
 The date is the day the initiative folder arrived on the target branch.
 Use `azimuth-change` for that move and for reading the date from git.
@@ -76,7 +78,8 @@ It is the only ordering.
 
 The map is edited freely, in ordinary commits.
 An initiative is never approved.
-A person approves each proposal when it is written.
+A person approves each proposal at its own stop or, for a change of an initiative,
+at the Intent stop.
 A row may exist with no change behind it for as long as needed.
 
 The map has a part "Not cut yet", which names in one line each piece of the work

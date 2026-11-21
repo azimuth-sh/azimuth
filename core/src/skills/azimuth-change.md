@@ -34,7 +34,8 @@ fi
 If the command prints nothing, stop and tell the person; never type a date.
 
 Before you write the proposal, move every initiative folder that stands on the target branch
-and whose rows are all finished or deleted into `azimuth/initiatives/finished/<date>-<name>`.
+and whose rows are all finished or deleted into `azimuth/initiatives/finished/<date>-<name>`,
+provided nothing stands under "Not cut yet" in its map.
 A row is finished when the folder of its change stands on the target branch, in
 `azimuth/changes/` or in `azimuth/changes/finished/`.
 The date is the day the initiative folder arrived on the target branch.
@@ -82,13 +83,21 @@ Write `azimuth/changes/<name>/proposal.md`. It is one page with five parts:
 The proposal holds no Scenarios, no plan and no completion conditions.
 A proposal that does not fit on one page, or has two outcomes, is several changes.
 
+For a change of an initiative whose row turns out to have two outcomes, or whose proposal
+will not fit on one page, propose how to cut the row again before the Intent step.
+The exploration opens again for that one row.
+Stop. When the person agrees, change the map and go on with the first of the new rows,
+under this change's own name.
+
 A change of an initiative has no proposal stop. Write its proposal from the row and go on
 to the Intent step.
 
-For a change with no initiative, stop for the person to read and approve the proposal.
+For a change with no initiative:
+Stop. The person reads and approves the proposal.
 At this stop, when the proposal would not fit on one page or has two outcomes, say so and ask:
 one change, or an initiative. Do not stop earlier for it or write one long proposal.
-When the person chooses an initiative, go on with `azimuth-exploration`.
+When the person chooses an initiative, delete the change folder with its proposal.
+The initiative starts from the request. Go on with `azimuth-exploration`.
 If the person asks for a change to the proposal, make it and stop again.
 The proposal is not edited after approval.
 
@@ -139,6 +148,8 @@ leaves no line.
 
 When a change finds that a decision holds for several changes, the exploration opens again
 for that one decision. Ask it as `azimuth-exploration` says.
+For a change with no initiative, choose an open initiative that the work belongs to.
+Only when none fits, create one with this change as its first row, as step 4 says for leftovers.
 Write the note in the initiative's `sources/decisions/` and add its name to every row it bears on.
 A row that the decision makes wrong is changed or deleted in the same commit.
 A finished row is not opened again. What the decision asks of it becomes a new row.
@@ -159,7 +170,8 @@ Stop. Before any code exists, the person reads `azimuth change diff`, the Scenar
 `specification.md`, the Checks in `verification.md` and, where needed,
 `azimuth/changes/<name>/plan.md`, and approves. If the person asks for a change, make it,
 bring the plan in step when there is one, and stop again.
-For a change of an initiative, the person reads the proposal at this stop too, beside the Scenarios.
+For a change of an initiative, the person reads and approves the proposal at this stop too,
+beside the Scenarios.
 
 ## 3. Build
 

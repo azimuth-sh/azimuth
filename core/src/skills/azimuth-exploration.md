@@ -30,7 +30,7 @@ Ask the person only what neither answers.
 | In which languages, and for which countries? | text and formats that only one market can read |
 | What exists today that it replaces, changes or must leave as it is? | a row that breaks a promise of the running product |
 | What happens when two people act on the same thing at once? | a rule that only one of them can win |
-| How does it reach production: behind a release toggle, or with data that must move first? | a toggle or the second half of a migration with no row |
+| How does it reach production? | a toggle or the second half of a migration with no row |
 
 A question with an answer becomes a decision note or a row.
 A question that does not apply leaves nothing.
@@ -40,17 +40,17 @@ Options come after the answer, not before it.
 
 ## Decisions
 
-For a decision, lay out three real approaches and recommend one.
-When only two are real, show two and say why there is no third.
-Show the exact words of the note, its cost and one example.
-Stop. Write the note only after the person agrees to those words.
-
 Before showing a decision, try it on cases you invent: the edge of a rule, two rules at once,
 a thing that changes while it is in use.
 A case that the decision does not answer becomes a question.
 
 A note says whose words it holds.
-Quote the person's own words, and mark the agent's words that the person agreed to as the agent's.
+In the draft, quote the person's own words and mark the agent's words as the agent's.
+
+For a decision, lay out three real approaches and recommend one.
+When only two are real, show two and say why there is no third.
+Show the exact words of the note, its cost and one example.
+Stop. Write the note only after the person agrees to those words.
 
 ## The cut
 
@@ -65,9 +65,6 @@ Cut it only when a question about it can be stated precisely.
 Name the cut's order in the map's column "After".
 A row waits only for the rows that it really needs.
 
-Before the first row starts, stop for the person to read the cut: whether each row is one
-outcome, whether anything is missing or doubled, and whether "After" is right.
-
 ## The fresh reader
 
 After the cut, and before the person reads it, a session that took no part in the talk reads
@@ -75,5 +72,7 @@ each row as its change will: the row and what it names, not the whole folder.
 It reports only where an agent writing that proposal would have to guess, and where a wrong
 guess would matter.
 
-The person reads the findings together with the cut.
+Before the first row starts, stop for the person to read the findings together with the cut:
+whether each row is one outcome, whether anything is missing or doubled, and whether "After"
+is right.
 Repair a finding in the map or in a new decision note, never in the talk alone.
