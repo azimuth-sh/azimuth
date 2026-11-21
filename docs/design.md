@@ -2927,6 +2927,20 @@ Example: if the row `further-stacks` of drim-dev were dropped, the same commit w
 
 **The cost.** The core computes none of this. A forgotten toggle stays forgotten if nobody wrote the row. The person reads one more name at the hand over. The agent judges where the work belongs. A wrong choice ties unrelated work together until the person corrects it at the hand over.
 
+**What a change finds is repaired inside it or becomes a row, by one test: does it make a Scenario of this change untrue?**
+
+| Found during a change | Where it goes |
+| --- | --- |
+| A fault that makes an approved Scenario of this change untrue | repaired inside the change |
+| A fault older than the change, outside what the change promises | a row in the map |
+| A repair that no test can reach, or half of a wider repair | a limit named at the hand over, and a row |
+
+The person may choose otherwise at any stop, and the agent follows the person.
+
+The cost. An older fault that the agent saw stays in the product until its row is done. The test needs a promise to measure against, so a change with vague Scenarios keeps less inside than it should.
+
+Example: while it builds `gift-card-payment`, the agent finds that an order total rounds wrongly in a currency with no cents. The fault is older than the change, and no Scenario of the change speaks of rounding, so it becomes the row `round-totals-without-cents`. The agent also finds that a card is refused when it covers the total exactly. An approved Scenario says that a card can pay a whole order, so that is repaired inside.
+
 Example: `FeatureFlagsOptions` in drim-dev has the flags `Labs` and `CliAuth`, and the project's rules say that deleting a flag is part of "done". The map of the lab engine gets a row such as `remove-cli-auth-flag`, with "After" naming the change that ships CLI access. The flag is then visible work with a name, and its state is computed like any other row.
 
 Example: the change that renames the learner routes from `…/runs` to `…/executions` keeps the old routes for one release. It creates the initiative `learner-routes` with two rows: itself, and `remove-old-learner-routes`.
