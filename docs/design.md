@@ -2976,6 +2976,20 @@ The cost. A fixed list asks some questions that do not apply, and the person ans
 
 Example: for the gift cards the agent asks in which countries the shop sells. The person answers that a card bought in one country cannot be spent in another. That becomes a decision note, and nobody finds the rule only after the payment row is built.
 
+**The agent asks one question at a time.**
+
+**When the person's own view is not known yet, the question is open and carries no example answer.** Options come after the answer, not before it.
+
+**For a decision, the agent lays out three real approaches and recommends one. When only two are real, it shows two and says why there is no third.** It shows the exact words of the note, its cost and one example, and writes the note only after the person agrees to those words.
+
+**Before it shows a decision, the agent tries it on cases that it invents: the edge of a rule, two rules at once, a thing that changes while it is in use.** A case that the decision does not answer becomes a question.
+
+**A note says whose words it holds.** The person's own words are quoted. The agent's words that the person agreed to are marked as the agent's.
+
+The cost. The talk takes more turns than a round of many questions. A person who agrees to the agent's words still holds a decision they did not word, and the mark only shows it.
+
+Example: for the gift cards the agent asks what should happen to the money on a card that expires. The person answers "It goes to the balance." The agent then tries a card bought by someone with no account. The answer does not cover it, so that becomes the next question. The note quotes "It goes to the balance" as the person's, and marks the rule for a buyer with no account as the agent's wording, agreed.
+
 ### Sources
 
 **A source says what was asked for.** It is written before the work, by an analyst, a product owner or whoever asked, in whatever form they use. The model says what is built, and it is written increment by increment. The proposal names its sources.
