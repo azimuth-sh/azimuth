@@ -92,11 +92,12 @@ Before the person agrees, have a fresh reader read the new rows as `azimuth-expl
 When no new row can be first, say so together with the findings and the new cut,
 and ask the person to decide at this stop whether this change waits or ends.
 Stop. The person reads the findings together with the new cut.
-If the change ends, delete its folder, never merge its branch, and leave its new rows in the map
-for changes of their own.
-If the change waits, keep everything and go on from its proposal once the row it waits for
-is finished.
-When the person agrees, change the map and go on with the first of the new rows,
+When the person agrees, change the map.
+If the change ends, delete its folder. The person merges its branch with nothing but the change
+to the map, so its new rows stay for changes of their own. End here.
+If the change waits, keep everything and wait here until the row it waits for is finished.
+Then go on from its proposal.
+If the change neither waits nor ends, go on with the first of the new rows,
 under this change's own name. Read that row, the rows it needs finished first and what it names,
 and copy the files it names as above before writing its proposal.
 
