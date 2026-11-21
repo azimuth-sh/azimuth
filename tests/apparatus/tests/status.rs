@@ -355,6 +355,26 @@ fn only_an_edited_initiative_skill_shows_a_process_of_its_own() {
     assert!(output.stdout.contains("the process here differs from the default"), "{}", output.text());
 }
 
+// behavior-2-exploration-skill: `azimuth status` says that the process here differs from the default when only the exploration skill was edited
+#[test]
+fn only_an_edited_exploration_skill_shows_a_process_of_its_own() {
+    let repo = Repo::sample();
+    repo.azimuth(&["skills", "install", "claude"]).expect_status(0);
+    assert!(repo.path(EXPLORATION_SKILL_FILE).is_file(), "the exploration skill is not installed");
+    let change_text = repo.read(SKILL_FILE);
+    let initiative_text = repo.read(INITIATIVE_SKILL_FILE);
+    let untouched = repo.status_json();
+    assert_eq!(untouched["process"], "default", "{untouched:#}");
+    repo.replace(EXPLORATION_SKILL_FILE, "\n", "\nA team edit to the exploration method.\n");
+    assert_eq!(repo.read(SKILL_FILE), change_text, "the change skill was also edited");
+    assert_eq!(repo.read(INITIATIVE_SKILL_FILE), initiative_text, "the initiative skill was also edited");
+    let status = repo.status_json();
+    assert_eq!(status["process"], "differs", "{status:#}");
+    let output = repo.azimuth(&["status"]);
+    output.expect_status(0);
+    assert!(output.stdout.contains("the process here differs from the default"), "{}", output.text());
+}
+
 // behavior: With `--json`, standard output holds exactly one JSON document and progress goes to standard error
 #[test]
 fn json_output_is_one_document() {

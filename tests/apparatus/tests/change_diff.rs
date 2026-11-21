@@ -481,6 +481,19 @@ fn an_installed_initiative_skill_change_is_class_d() {
     assert_eq!(class(&document), "D", "{document:#}");
 }
 
+// behavior-2-exploration-skill: A change that edits `.agents/skills/azimuth-exploration/SKILL.md` is of class D in `azimuth change diff`
+#[test]
+fn an_installed_exploration_skill_change_is_class_d() {
+    let repo = Repo::sample();
+    repo.azimuth(&["skills", "install", "codex"]).expect_status(0);
+    assert!(repo.path(EXPLORATION_SKILL_FILE).is_file(), "the exploration skill is not installed");
+    repo.commit_all("install the three skills");
+    on_branch(&repo);
+    repo.replace(EXPLORATION_SKILL_FILE, "\n", "\nA team edit to the exploration method.\n");
+    let document = change_diff(&repo, &[]);
+    assert_eq!(class(&document), "D", "{document:#}");
+}
+
 // behavior-2-initiative-skill: A change that touches the link `.claude/skills/azimuth-initiative` is of class D in `azimuth change diff`
 #[test]
 fn an_initiative_skill_link_change_is_class_d() {
@@ -498,6 +511,28 @@ fn an_initiative_skill_link_change_is_class_d() {
             std::os::unix::fs::symlink("../../.agents/skills/azimuth-change", &link).unwrap();
         }
         assert_eq!(repo.read(INITIATIVE_SKILL_FILE), text, "the skill text was also edited");
+        let document = change_diff(&repo, &[]);
+        assert_eq!(class(&document), "D", "retarget={retarget}: {document:#}");
+    }
+}
+
+// behavior-2-exploration-skill: A change that touches the link `.claude/skills/azimuth-exploration` is of class D in `azimuth change diff`
+#[test]
+fn an_exploration_skill_link_change_is_class_d() {
+    for retarget in [false, true] {
+        let repo = Repo::sample();
+        repo.azimuth(&["skills", "install", "claude"]).expect_status(0);
+        assert!(repo.path(EXPLORATION_SKILL_FILE).is_file(), "the exploration skill is not installed");
+        let link = repo.path(CLAUDE_EXPLORATION_SKILL_LINK);
+        assert!(std::fs::symlink_metadata(&link).expect("the exploration skill link").file_type().is_symlink());
+        let text = repo.read(EXPLORATION_SKILL_FILE);
+        repo.commit_all("install the three skills and their links");
+        on_branch(&repo);
+        std::fs::remove_file(&link).unwrap();
+        if retarget {
+            std::os::unix::fs::symlink("../../.agents/skills/azimuth-change", &link).unwrap();
+        }
+        assert_eq!(repo.read(EXPLORATION_SKILL_FILE), text, "the skill text was also edited");
         let document = change_diff(&repo, &[]);
         assert_eq!(class(&document), "D", "retarget={retarget}: {document:#}");
     }
