@@ -20,13 +20,12 @@ pub fn install(harness: &str) -> i32 {
         match installed {
             Installed::Written(path) => println!("wrote {path}"),
             Installed::Unchanged(path) => println!("{path} is already the shipped version"),
-            Installed::Linked(path) => println!("linked {path} to {}", skills::SKILL_FOLDER),
+            Installed::Linked { path, folder } => println!("linked {path} to {folder}"),
             Installed::Kept(path) => println!(
                 "kept {path}: the team edited it, so the shipped text was not written. Merge the new text by hand"
             ),
-            Installed::Blocked(path) => println!(
-                "kept {path}: something other than the link to {} stands there. Remove it and install again",
-                skills::SKILL_FOLDER
+            Installed::Blocked { path, folder } => println!(
+                "kept {path}: something other than the link to {folder} stands there. Remove it and install again"
             ),
         }
     }

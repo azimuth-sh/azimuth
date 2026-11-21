@@ -18,7 +18,8 @@ pub fn run(json: bool) -> i32 {
         Err(message) => return output::could_not(&message),
     };
     let requirements = &workspace.model.requirements;
-    let process = if skills::process_differs(workspace.git.root()) { "differs" } else { "default" };
+    let edited_skills = skills::edited_files(workspace.git.root());
+    let process = if edited_skills.is_empty() { "default" } else { "differs" };
     let skipped = survey.records.skipped;
 
     if json {
@@ -46,8 +47,8 @@ pub fn run(json: bool) -> i32 {
     if skipped > 0 {
         println!("{skipped} stored records were skipped, because this version cannot read them.");
     }
-    if process == "differs" {
-        println!("the process here differs from the default: {} was edited after it was installed.", skills::SKILL_FILE);
+    for path in edited_skills {
+        println!("the process here differs from the default: {path} was edited after it was installed.");
     }
     status::FINE
 }

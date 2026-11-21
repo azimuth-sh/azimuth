@@ -94,7 +94,7 @@ fn rigor_lowered(before: &Model, after: &Model) -> Vec<Lowered> {
 fn file_class(path: &str, marked_files: &BTreeSet<&str>, before: &Side, after: &Side) -> char {
     let in_model = path.starts_with(&format!("{MODEL_FOLDER}/"));
     let name = path.rsplit('/').next().unwrap_or(path);
-    if path == PROJECT_FILE || (in_model && name == "specification.md") || is_installed_skill(path) {
+    if path == PROJECT_FILE || (in_model && name == "specification.md") || skills::is_installed_path(path) {
         return 'D';
     }
     let in_a_suite = [before.project, after.project]
@@ -108,10 +108,6 @@ fn file_class(path: &str, marked_files: &BTreeSet<&str>, before: &Side, after: &
         return 'B';
     }
     'A'
-}
-
-fn is_installed_skill(path: &str) -> bool {
-    skills::INSTALLED_PATHS.iter().any(|installed| path == *installed || path.starts_with(&format!("{installed}/")))
 }
 
 /// Text compared without the blank lines at its ends, which carry no meaning.
