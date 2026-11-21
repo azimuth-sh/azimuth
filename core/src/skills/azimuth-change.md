@@ -90,7 +90,7 @@ The exploration opens again for that one row.
 Before the person agrees, have a fresh reader read the new rows as `azimuth-exploration` says.
 Stop. The person reads the findings together with the new cut.
 When the person agrees, change the map. The change ends: delete its folder.
-The person merges its branch with nothing but what it changed in the initiative,
+The person merges its branch without the change folder,
 so the new rows wait in the map for changes of their own. End here.
 
 A change of an initiative has no proposal stop. Write its proposal from the row and go on
@@ -245,7 +245,6 @@ Name what `azimuth status` still names.
 Tell the person that a declared review is still owed and is done outside Azimuth.
 
 At this stop, if you added rows to a map, name that map's initiative.
-This includes rows added by cutting this change's own row again.
 Also name the initiative you chose for a decision note or for leftovers,
 including one you created during the change.
 The person may choose another initiative or rename the new one before the merge.
