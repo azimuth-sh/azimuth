@@ -43,7 +43,7 @@ Rows of prose: a person reads the text, and one test compares the whole text wit
 | It says that the Sources part names each source by its path from the change folder | the proposal names each source by its path from that folder |
 | It says that a source that only this change needs is written in the folder of this change and nowhere else | A source that only one change needs is written in the folder of that change and nowhere else. |
 | It says that a copy is not touched when a later source replaces it | A copy is not touched when a later source replaces it. |
-| The stop of step 1 and the stop of step 2 each end with the approval of the person, and after a request for a change the agent makes the change and stops again | a person approves each proposal when it is written, and that is the only decision |
+| The stop of step 1 and the stop of step 2 each end with the approval of the person, and after a request for a change the agent makes the change and stops again | a person approves each proposal, at its own stop or, for a change of an initiative, at the Intent stop, and that is the only decision |
 
 ## The skill: Scenarios
 

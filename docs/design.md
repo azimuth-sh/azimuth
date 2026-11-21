@@ -2884,7 +2884,7 @@ The table shows the form only. It is not a split of any real work.
 | A row carries the name its change will get | the state is then computed: not started, open on a branch, or finished on the target branch. Nobody types it |
 | "After" names rows that must be finished first | it is the only ordering. The core does not read it, and the default process does |
 | The map is edited freely, in ordinary commits | a plan for work not yet started is wrong by design |
-| An initiative is never approved | a person approves each proposal when it is written, and that is the only decision |
+| An initiative is never approved | a person approves each proposal, at its own stop or, for a change of an initiative, at the Intent stop, and that is the only decision |
 | A row may exist with no change behind it for as long as needed | that is how deferred work stays visible |
 | Whoever writes a decision note adds its short name to every row it bears on, in the same commit | the agent of a row reads what the row names and not the whole folder, so a note that no row names never reaches a change |
 | After its names, a row may say in one line which part of a source its change takes, or what the work is when no source says it. A decision is never written only in a row | the agent of the row knows what to read and why, and a decision stays in a note that is never edited |
