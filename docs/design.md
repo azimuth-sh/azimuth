@@ -2878,6 +2878,12 @@ The table shows the form only. It is not a split of any real work.
 | After its names, a row may say in one line which part of a source its change takes, or what the work is when no source says it. A decision is never written only in a row | the agent of the row knows what to read and why, and a decision stays in a note that is never edited |
 | A row is deleted only in a commit that adds a decision note saying why | a reader sees why planned work was dropped without reading the history of the map |
 
+**Until a command computes it, the agent reads the state of a row from the target branch.** A row is finished when the folder of its change stands there, in `changes/` or in `changes/finished/`. A deleted row is gone from the map.
+
+The cost. A change that merged with no folder leaves its row looking unfinished. The design gives every change a folder, so only a fix that was wrongly given a row shows this.
+
+Example: in drim-dev the row `lab-access` is finished, because `azimuth/changes/lab-access/` stands on `main`. The exploration `first-lab` has not ended, because `lab-access-admin` has no folder there.
+
 **Why the map may change and a proposal may not.** A proposal records what was understood when one change started. A map is a plan for work not yet started.
 
 **The cost.** The map is free text that nothing verifies. A row that was split or dropped without an edit misleads the next agent. The only guard is the computed state, which shows a row whose change never appeared. Whether a note bears on a row is a judgment. A note left out of a row stays unseen by that row's change, which may then decide again what was decided. A line in a row is a second, shorter wording of a source. Where the two differ, the source holds. A row dropped for a trivial reason costs a note too.
