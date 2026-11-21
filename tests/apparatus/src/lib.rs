@@ -47,6 +47,10 @@ pub const SKILL_FILE: &str = ".agents/skills/azimuth-change/SKILL.md";
 pub const SKILL_FOLDER: &str = ".agents/skills/azimuth-change";
 pub const CLAUDE_SKILL_LINK: &str = ".claude/skills/azimuth-change";
 
+pub const EXPLORATION_SKILL_FILE: &str = ".agents/skills/azimuth-exploration/SKILL.md";
+pub const EXPLORATION_SKILL_FOLDER: &str = ".agents/skills/azimuth-exploration";
+pub const CLAUDE_EXPLORATION_SKILL_LINK: &str = ".claude/skills/azimuth-exploration";
+
 /// The reasons for owed, as the design writes them. A `reason` field holds exactly one of them.
 pub const OWED_REASONS: [&str; 11] = [
     "an input changed",
@@ -913,10 +917,11 @@ pub fn write_record(dir: &Path, value: &Value) -> PathBuf {
 }
 
 /// The lists of behaviors the tests are written from, under `docs/increments/`.
-pub const BEHAVIOR_LISTS: [&str; 4] = [
+pub const BEHAVIOR_LISTS: [&str; 5] = [
     "increments/1.md",
     "increments/2.md",
     "increments/2-follow-up.md",
+    "increments/2-exploration-skill.md",
     "increments/release.md",
 ];
 
