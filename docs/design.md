@@ -3026,6 +3026,14 @@ The cost. One more session per initiative, and its findings add turns before any
 
 Example: the reader takes the row `gift-card-payment` and the files it names. They say that a card pays, but not whether a card and the balance can pay one order together. A wrong guess would change the checkout, so the reader reports it. The person decides it in a new note, and the row then names that note.
 
+**An exploration opens again for one decision when a change finds that a decision holds for several changes.** The agent of the change asks it as the exploration asks: one question at a time, with real approaches, invented cases, and a note that says whose words it holds. It writes the note in the initiative's `sources/decisions/` and adds its name to every row that it bears on. A row that the decision makes wrong is changed or deleted in the same commit.
+
+**A finished row is not opened again.** What the decision asks of it becomes a new row.
+
+The cost. The change waits for the person's decision. A row that the decision changes may already be running in another change.
+
+Example: while it builds `gift-card-sale`, the agent finds that the shop must keep the buyer's country for every card. That holds for the payment and the balance too. The agent asks, writes the note `a-card-keeps-its-country`, and adds that name to the rows `gift-card-payment` and `store-balance`.
+
 ### Sources
 
 **A source says what was asked for.** It is written before the work, by an analyst, a product owner or whoever asked, in whatever form they use. The model says what is built, and it is written increment by increment. The proposal names its sources.
