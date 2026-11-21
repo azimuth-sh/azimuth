@@ -2876,16 +2876,19 @@ The table shows the form only. It is not a split of any real work.
 | A row may exist with no change behind it for as long as needed | that is how deferred work stays visible |
 | Whoever writes a decision note adds its short name to every row it bears on, in the same commit | the agent of a row reads what the row names and not the whole folder, so a note that no row names never reaches a change |
 | After its names, a row may say in one line which part of a source its change takes, or what the work is when no source says it. A decision is never written only in a row | the agent of the row knows what to read and why, and a decision stays in a note that is never edited |
+| A row is deleted only in a commit that adds a decision note saying why | a reader sees why planned work was dropped without reading the history of the map |
 
 **Why the map may change and a proposal may not.** A proposal records what was understood when one change started. A map is a plan for work not yet started.
 
-**The cost.** The map is free text that nothing verifies. A row that was split or dropped without an edit misleads the next agent. The only guard is the computed state, which shows a row whose change never appeared. Whether a note bears on a row is a judgment. A note left out of a row stays unseen by that row's change, which may then decide again what was decided. A line in a row is a second, shorter wording of a source. Where the two differ, the source holds.
+**The cost.** The map is free text that nothing verifies. A row that was split or dropped without an edit misleads the next agent. The only guard is the computed state, which shows a row whose change never appeared. Whether a note bears on a row is a judgment. A note left out of a row stays unseen by that row's change, which may then decide again what was decided. A line in a row is a second, shorter wording of a source. Where the two differ, the source holds. A row dropped for a trivial reason costs a note too.
 
 Example: an exploration in drim-dev lists eight candidates with a column for dependencies. When one candidate was split, a section was added under the table to explain it. Under these rules the table itself is edited: the row becomes two rows, and git keeps the earlier version.
 
 Example: in drim-dev the note `admin-pages-are-their-own-row` was written in the same commit that added it to two rows, `lab-access` and `lab-access-admin`.
 
 Example: in drim-dev the row `certificate-date-by-the-admins-day` names a decision and an inventory, and adds one line: three certificate operations count "today" in UTC, and the admin's date picker counts it in the admin's own time.
+
+Example: if the row `further-stacks` of drim-dev were dropped, the same commit would add a note such as `sources/decisions/<day>-no-further-stacks.md` with the date, who decided, and why.
 
 **Every leftover of a change is a row in the map. The model never holds a promise.**
 
