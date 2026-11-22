@@ -6,20 +6,39 @@ use std::path::Path;
 
 use crate::digest;
 
-/// The one real folder of the skill; every harness sees it there or through a link to it.
-pub const SKILL_FOLDER: &str = ".agents/skills/azimuth-change";
-pub const SKILL_FILE: &str = ".agents/skills/azimuth-change/SKILL.md";
-const CLAUDE_LINK: &str = ".claude/skills/azimuth-change";
-/// The link's target, from the folder that holds the link.
-const CLAUDE_LINK_TARGET: &str = "../../.agents/skills/azimuth-change";
+struct Skill {
+    name: &'static str,
+    text: &'static str,
+}
 
-/// Every path the install writes, as the class of a change sees them.
-pub const INSTALLED_PATHS: [&str; 2] = [SKILL_FOLDER, CLAUDE_LINK];
+const SKILLS: [Skill; 3] = [
+    Skill { name: "azimuth-change", text: include_str!("skills/azimuth-change.md") },
+    Skill { name: "azimuth-initiative", text: include_str!("skills/azimuth-initiative.md") },
+    Skill { name: "azimuth-exploration", text: include_str!("skills/azimuth-exploration.md") },
+];
+
+impl Skill {
+    /// Every harness sees the one real copy here or through a link to it.
+    fn folder(&self) -> String {
+        format!(".agents/skills/{}", self.name)
+    }
+
+    fn file(&self) -> String {
+        format!("{}/SKILL.md", self.folder())
+    }
+
+    fn claude_link(&self) -> String {
+        format!(".claude/skills/{}", self.name)
+    }
+
+    /// The target is relative to the folder that holds the link so a clone can move.
+    fn claude_link_target(&self) -> String {
+        format!("../../{}", self.folder())
+    }
+}
 
 const DIGEST_LINE_START: &str = "<!-- azimuth ";
 const DIGEST_LINE_END: &str = " -->";
-
-const SHIPPED_TEXT: &str = include_str!("skills/azimuth-change.md");
 
 pub enum Harness {
     Claude,
@@ -38,55 +57,71 @@ impl Harness {
 
 /// What an install did to each path, for the person to read.
 pub enum Installed {
-    Written(&'static str),
-    Kept(&'static str),
-    Unchanged(&'static str),
-    Linked(&'static str),
+    Written(String),
+    Kept(String),
+    Unchanged(String),
+    Linked { path: String, folder: String },
     /// Something other than the link stands where the link belongs, so the install leaves it.
-    Blocked(&'static str),
+    Blocked { path: String, folder: String },
 }
 
-/// Whether an installed skill file no longer equals the text it was installed with.
-pub fn process_differs(root: &Path) -> bool {
-    std::fs::read_to_string(root.join(SKILL_FILE)).is_ok_and(|file| !carries_its_own_digest(&file))
+/// The installed skill files that no longer equal the text they were installed with.
+pub fn edited_files(root: &Path) -> Vec<String> {
+    SKILLS.iter().map(Skill::file)
+        .filter(|path| std::fs::read_to_string(root.join(path)).is_ok_and(|file| !carries_its_own_digest(&file)))
+        .collect()
+}
+
+/// Every path the install writes, as the class of a change sees them.
+pub fn is_installed_path(path: &str) -> bool {
+    SKILLS.iter().flat_map(|skill| [skill.folder(), skill.claude_link()])
+        .any(|installed| path == installed || path.starts_with(&format!("{installed}/")))
 }
 
 pub fn install(root: &Path, harness: Harness) -> Result<Vec<Installed>, String> {
-    let mut done = vec![install_text(root)?];
-    if let Harness::Claude = harness {
-        done.push(link_for_claude(root)?);
+    let mut done = Vec::new();
+    for skill in &SKILLS {
+        done.push(install_text(root, skill)?);
+        if let Harness::Claude = harness {
+            done.push(link_for_claude(root, skill)?);
+        }
     }
     Ok(done)
 }
 
 /// A file that still equals the text some version shipped is replaced; a file the team edited
 /// is left alone, and the team merges the new text by hand.
-fn install_text(root: &Path) -> Result<Installed, String> {
-    let path = root.join(SKILL_FILE);
-    let shipped = with_digest_line(SHIPPED_TEXT);
+fn install_text(root: &Path, skill: &Skill) -> Result<Installed, String> {
+    let file_path = skill.file();
+    let folder = skill.folder();
+    let path = root.join(&file_path);
+    let shipped = with_digest_line(skill.text);
     match std::fs::read_to_string(&path) {
-        Ok(file) if file == shipped => Ok(Installed::Unchanged(SKILL_FILE)),
-        Ok(file) if !carries_its_own_digest(&file) => Ok(Installed::Kept(SKILL_FILE)),
+        Ok(file) if file == shipped => Ok(Installed::Unchanged(file_path)),
+        Ok(file) if !carries_its_own_digest(&file) => Ok(Installed::Kept(file_path)),
         _ => {
-            std::fs::create_dir_all(root.join(SKILL_FOLDER)).map_err(|error| format!("create {SKILL_FOLDER}: {error}"))?;
-            std::fs::write(&path, shipped).map_err(|error| format!("write {SKILL_FILE}: {error}"))?;
-            Ok(Installed::Written(SKILL_FILE))
+            std::fs::create_dir_all(root.join(&folder)).map_err(|error| format!("create {folder}: {error}"))?;
+            std::fs::write(&path, shipped).map_err(|error| format!("write {file_path}: {error}"))?;
+            Ok(Installed::Written(file_path))
         }
     }
 }
 
-fn link_for_claude(root: &Path) -> Result<Installed, String> {
-    let link = root.join(CLAUDE_LINK);
+fn link_for_claude(root: &Path, skill: &Skill) -> Result<Installed, String> {
+    let path = skill.claude_link();
+    let folder = skill.folder();
+    let target = skill.claude_link_target();
+    let link = root.join(&path);
     match std::fs::symlink_metadata(&link) {
-        Ok(meta) if meta.file_type().is_symlink() && std::fs::read_link(&link).is_ok_and(|target| target == Path::new(CLAUDE_LINK_TARGET)) => {
-            Ok(Installed::Unchanged(CLAUDE_LINK))
+        Ok(meta) if meta.file_type().is_symlink() && std::fs::read_link(&link).is_ok_and(|existing| existing == Path::new(&target)) => {
+            Ok(Installed::Unchanged(path))
         }
-        Ok(_) => Ok(Installed::Blocked(CLAUDE_LINK)),
+        Ok(_) => Ok(Installed::Blocked { path, folder }),
         Err(_) => {
             let parent = link.parent().expect("the link path has a folder");
             std::fs::create_dir_all(parent).map_err(|error| format!("create {}: {error}", parent.display()))?;
-            make_link(CLAUDE_LINK_TARGET, &link).map_err(|error| format!("link {CLAUDE_LINK}: {error}"))?;
-            Ok(Installed::Linked(CLAUDE_LINK))
+            make_link(&target, &link).map_err(|error| format!("link {path}: {error}"))?;
+            Ok(Installed::Linked { path, folder })
         }
     }
 }

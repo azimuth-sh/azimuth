@@ -1,6 +1,6 @@
 ---
 name: azimuth-change
-description: Make one change to a project that Azimuth tracks, from the proposal to the hand over. Use for a change of intent: one that adds, changes or removes a Requirement or a Scenario.
+description: "Make one change to a project that Azimuth tracks, from the proposal to the hand over. Use for a change of intent: one that adds, changes or removes a Requirement or a Scenario."
 ---
 
 # One change with Azimuth
@@ -33,17 +33,37 @@ fi
 
 If the command prints nothing, stop and tell the person; never type a date.
 
+Before you write the proposal, move every initiative folder that stands on the target branch
+and whose rows are all finished or deleted into `azimuth/initiatives/finished/<date>-<name>`,
+provided nothing stands under "Not cut yet" in its map.
+A row is finished when the folder of its change stands on the target branch, in
+`azimuth/changes/` or in `azimuth/changes/finished/`.
+The date is the day the initiative folder arrived on the target branch.
+After a fast-forward, use the day of the commit that first brought the folder.
+For each initiative folder, substitute its name for `<name>` below.
+Read the date from git in UTC with this command, run from the root of the repository;
+do not type the date:
+
+```sh
+if git cat-file -e '<target-branch>:azimuth/initiatives/<name>' 2>/dev/null; then
+  TZ=UTC git log --first-parent --diff-merges=first-parent --no-renames --diff-filter=A --reverse \
+    --format=%cd --date=format-local:%Y-%m-%d '<target-branch>' -- 'azimuth/initiatives/<name>/' |
+    head -n 1
+fi
+```
+
 From here on, `<name>` means the name of this change, rather than the name of an old folder.
-An exploration is a folder for work that needs several changes. A change belongs to it when
-its map has a row with the change's name. For a change of an exploration, read its row in
-`azimuth/explorations/<exploration>/map.md`, take the name from the row, and look at the rows
+The skill `azimuth-initiative` says what a row of the map holds.
+An initiative is a folder for work that needs several changes. A change belongs to it when
+its map has a row with the change's name. For a change of an initiative, read its row in
+`azimuth/initiatives/<initiative>/map.md`, take the name from the row, and look at the rows
 it names as to be finished first. For another change, take the request of the person and propose
 a name. In both cases, use a name that no change used before.
 
-Read what the row names, not the whole folder. For a change with no exploration, read the request
+Read what the row names, not the whole folder. For a change with no initiative, read the request
 of the person and `sources/` in the change's own folder when it has one. Ask the person for what
-you cannot find there; do not invent it. For a change of an exploration, copy the files the row
-names from `azimuth/explorations/<exploration>/sources/` into `azimuth/changes/<name>/sources/`.
+you cannot find there; do not invent it. For a change of an initiative, copy the files the row
+names from `azimuth/initiatives/<initiative>/sources/` into `azimuth/changes/<name>/sources/`.
 A copy is the whole file, unchanged, under the same path inside `sources/`.
 A source says what was asked for and comes from the person or from a snapshot.
 Put a source that only this change needs in its `sources/` and nowhere else.
@@ -55,17 +75,37 @@ Write `azimuth/changes/<name>/proposal.md`. It is one page with five parts:
 - Outcome: what somebody can do or observe after the change that they cannot now, in their words.
 - Sources: the sources and decision notes the proposal relies on, each named by its path from the
   change folder (for example `sources/decisions/<file>.md`), and which part of each it takes.
-  For a source taken from an exploration, name the copy in the change folder.
+  For a source taken from an initiative, name the copy in the change folder.
 - Boundary: what the change leaves out, each item with the name of its map row.
 - Decisions: what this change settles, each with the alternative it rejects, one line each.
 - Approver: who is expected to approve the Scenarios.
 
 The proposal holds no Scenarios, no plan and no completion conditions.
 A proposal that does not fit on one page, or has two outcomes, is several changes.
-If so, tell the person and do not write one long proposal.
+The proposal is not edited after approval, whether at the proposal stop or the Intent stop.
 
-Stop. The person reads and approves the proposal. If the person asks for a change, make it and
-stop again. The proposal is not edited after approval.
+For a change of an initiative whose row turns out to have two outcomes, or whose proposal
+will not fit on one page, propose how to cut the row again before the Intent step.
+The exploration opens again for that one row.
+Before the person agrees, have a fresh reader read the new rows as `azimuth-exploration` says.
+Stop. The person reads the findings together with the new cut.
+When the person agrees, change the map. The change ends: delete its folder.
+The person merges its branch without the change folder,
+so the new rows wait in the map for changes of their own. End here.
+
+A change of an initiative has no proposal stop. Write its proposal from the row and go on
+to the Intent step.
+
+For a change with no initiative:
+Show the proposal. When it would not fit on one page or has two outcomes,
+include that fact and this question in what you show at the stop:
+one change, or an initiative. Do not stop earlier for it or write one long proposal.
+Stop. The person reads and approves the proposal, or chooses an initiative.
+When the person chooses one change, that answer approves the proposal as it is.
+When the person chooses an initiative, move the change folder's sources into the initiative's
+`sources/`, then delete the change folder with its proposal.
+The initiative starts from the request. Go on with `azimuth-exploration`.
+If the person asks for a change to the proposal, make it and stop again.
 
 ## 2. Intent
 
@@ -112,6 +152,14 @@ What can no longer be deleted?
 A question with an answer becomes a proposed decision in the plan. A question with no answer
 leaves no line.
 
+When a change finds that a decision holds for several changes, the exploration opens again
+for that one decision. Ask it as `azimuth-exploration` says.
+For a change with no initiative, choose an open initiative that the work belongs to.
+Only when none fits, create one with this change as its first row, as step 4 says for leftovers.
+Write the note in the initiative's `sources/decisions/` and add its name to every row it bears on.
+A row that the decision makes wrong is changed or deleted in the same commit.
+A finished row is not opened again. What the decision asks of it becomes a new row.
+
 Only two kinds of finding may remain at this stop, however many of each:
 a Check that this change adds has no marked test, and a marker names a Check that this change
 removes. The added Check's test is written in the Build. In the Build, remove the marker of a
@@ -124,9 +172,13 @@ their shell profile lacks the line `export PATH="$HOME/.azimuth/bin:$PATH"`.
 Print `azimuth change diff` beside the model files and the plan when there is one.
 It prints ids and classes, not the prose, and does not replace reading the files.
 
-Stop. Before any code exists, the person reads `azimuth change diff`, the Scenarios in
+Before any code exists, show `azimuth change diff`, the Scenarios in
 `specification.md`, the Checks in `verification.md` and, where needed,
-`azimuth/changes/<name>/plan.md`, and approves. If the person asks for a change, make it,
+`azimuth/changes/<name>/plan.md`. For a change of an initiative, include the proposal
+beside the Scenarios in what the person reads at this stop.
+A change that joins an initiative after its proposal stop keeps the approval it got there.
+Only a proposal not already approved is approved at this stop.
+Stop. The person reads and approves. If the person asks for a change, make it,
 bring the plan in step when there is one, and stop again.
 
 ## 3. Build
@@ -140,6 +192,16 @@ Write the marked tests through a door from the Scenarios before the code. Then w
 Tests of one part of the system in isolation need that part of the system: write them after it,
 from the Scenario and not from the code.
 
+What a change finds is repaired inside it or becomes a row, by one test:
+does it make a Scenario of this change untrue?
+
+- A fault that makes an approved Scenario of this change untrue is repaired inside the change.
+- A fault older than the change, outside what the change promises, becomes a row in the map.
+- A repair that no test can reach, or half of a wider repair, is a limit named at the hand over
+  and a row.
+
+The person may choose otherwise at any stop. Follow the person.
+
 For a Requirement that declares `Realization:`, move a proposed decision into `realization.md`
 only if the finished code follows it. Write `azimuth/model/<module>/realization.md` beside
 `specification.md` for such Requirements once the code works, and before the last run of the Build.
@@ -151,9 +213,20 @@ could settle.
 Status may still name a review, which this version does not record, a Check that runs only in CI,
 or a Check that cannot run here. A note that blocks nothing, such as "the process here differs
 from the default", may stay too. A Check that a run here could settle is work of the Build.
-This step does not stop for a person.
+This step does not stop for a person unless it opens the exploration again for a decision.
 
 ## 4. Hand over
+
+Ask yourself what the change leaves undone.
+Evidence that is weak or owed is not a leftover; status already shows it.
+The skill `azimuth-initiative` says what each kind of leftover becomes.
+If the change leaves something, choose the map before adding rows. For a change of an initiative,
+use that initiative's map. For a change with no initiative, use the map of an open initiative
+that the work belongs to. Only when none fits, propose a name for the work that the map
+will hold, not for the change, and use a name that no initiative used before. In that case,
+create `azimuth/initiatives/<name>/map.md`, using that initiative name for `<name>`, with
+this change as the first row.
+Then add a row for each leftover that the map does not already name.
 
 Run `azimuth run --lane commit`. The commit lane lints first, reads no stored result, runs every
 Check, and fails on any Check that is owed.
@@ -170,5 +243,11 @@ Name every proposed decision the finished code does not follow, and say why.
 Name every proposed decision for a Requirement with no `Realization:`; these stay archived with the plan.
 Name what `azimuth status` still names.
 Tell the person that a declared review is still owed and is done outside Azimuth.
+
+At this stop, if you added rows to a map, name that map's initiative.
+Also name the initiative you chose for a decision note or for leftovers,
+including one you created during the change.
+The person may choose another initiative or rename the new one before the merge.
+If the person does so, make the change and do this hand over again.
 
 Stop. The person merges. The agent merges nothing.

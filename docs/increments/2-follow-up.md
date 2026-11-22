@@ -4,7 +4,7 @@ This is the list of behaviors for a short pass between the second and the third 
 
 A row is of one of two kinds. A row of behavior is one observable fact, and a test shows it. A row of prose says what a text tells its reader; its section begins with the words "Rows of prose", and no test reads the words of the text for it. Each row is one observable fact. The second cell is copied exactly from `docs/design.md`. A plain test fails when a quoted sentence is no longer in that file. A behavior with no sentence to quote is not built.
 
-Status of this list: read and accepted by a person on 2026-11-20, in eight sittings. The last one changed one row and added two after an independent reading of the skill text against this list.
+Status of this list: read and accepted by a person on 2026-11-20, in eight sittings. The last one changed one row and added two after an independent reading of the skill text against this list. On 2026-11-21 the person agreed that one row quotes the reworded sentence on approving proposals; what the row says did not change.
 
 ## The skill: finished folders
 
@@ -35,15 +35,15 @@ Rows of prose: a person reads the text, and one test compares the whole text wit
 | It says that a proposal holds no Scenarios, no plan and no completion conditions | It holds no Scenarios, no plan and no completion conditions. |
 | It says that a proposal that does not fit on one page, or has two outcomes, is several changes | A proposal that does not fit on one page, or has two outcomes, is several changes. |
 | It says that a proposal is not edited after approval | A proposal is not edited after approval. |
-| It says that a change of an exploration is written from its row of the map, and takes its name from the row | A change of an exploration is written from its row of the map. The row gives the change its name |
-| It says that a change with no exploration is written from the request of the person, and from `sources/` in its own folder when it has one | A change with no exploration is written from the request of the person, and from `sources/` in its own folder when it has one. |
+| It says that a change of an initiative is written from its row of the map, and takes its name from the row | A change of an initiative is written from its row of the map. The row gives the change its name |
+| It says that a change with no initiative is written from the request of the person, and from `sources/` in its own folder when it has one | A change with no initiative is written from the request of the person, and from `sources/` in its own folder when it has one. |
 | It says that the agent asks the person for what it cannot find there, and does not invent it | What the agent cannot find there, it asks the person and does not invent. |
-| It says that a change of an exploration copies the files that its row names into `azimuth/changes/<name>/sources/` | It copies those files into the `sources/` of the change. |
+| It says that a change of an initiative copies the files that its row names into `azimuth/changes/<name>/sources/` | It copies those files into the `sources/` of the change. |
 | It says that a copy is the whole file, unchanged, under the same path inside `sources/` | A copy is the whole file, unchanged, under the same path inside `sources/`. |
 | It says that the Sources part names each source by its path from the change folder | the proposal names each source by its path from that folder |
 | It says that a source that only this change needs is written in the folder of this change and nowhere else | A source that only one change needs is written in the folder of that change and nowhere else. |
 | It says that a copy is not touched when a later source replaces it | A copy is not touched when a later source replaces it. |
-| The stop of step 1 and the stop of step 2 each end with the approval of the person, and after a request for a change the agent makes the change and stops again | a person approves each proposal when it is written, and that is the only decision |
+| The stop of step 1 and the stop of step 2 each end with the approval of the person, and after a request for a change the agent makes the change and stops again | a person approves each proposal, at its own stop or, for a change of an initiative, at the Intent stop, and that is the only decision |
 
 ## The skill: Scenarios
 
