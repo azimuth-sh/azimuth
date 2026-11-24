@@ -13,7 +13,7 @@ public sealed class AzimuthContext
     private readonly bool applying;
     private readonly IReadOnlyList<(string Key, IContextSource Source)> entries;
 
-    internal AzimuthContext(IConfigurationBuilder configuration, string component, Func<bool> applyingWhen, Action<ContextMap> map)
+    internal AzimuthContext(ConfigurationManager configuration, string component, Func<bool> applyingWhen, Action<ContextMap> map)
     {
         ArgumentException.ThrowIfNullOrEmpty(component);
         ArgumentNullException.ThrowIfNull(applyingWhen);
@@ -24,10 +24,8 @@ public sealed class AzimuthContext
         var launch = applying ? ReadLaunch() : new Dictionary<string, string>();
 
         var source = new AppliedValuesSource();
-        configuration.Add(source);
-        var root = configuration as IConfigurationRoot;
-        var mapping = new ContextMap(path => new ConfigurationValueSource(
-            () => root ?? configuration.Build(), source.Provider, path));
+        ((IConfigurationBuilder)configuration).Add(source);
+        var mapping = new ContextMap(path => new ConfigurationValueSource(configuration, source.Provider, path));
         map(mapping);
         entries = mapping.Entries.ToList();
 
@@ -117,7 +115,7 @@ public static class AzimuthContextRegistration
     /// applies the values <c>AZIMUTH_CONTEXT</c> names for the mapped keys.
     /// </summary>
     public static AzimuthContext AddAzimuthContext(
-        this IConfigurationBuilder configuration,
+        this ConfigurationManager configuration,
         string name,
         Func<bool> applyingWhen,
         Action<ContextMap> map) => new(configuration, name, applyingWhen, map);

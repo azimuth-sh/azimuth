@@ -7,11 +7,11 @@ namespace Azimuth.Context;
 // provider's position whether Azimuth's value would win, is the applied value, or is overridden.
 internal sealed class ConfigurationValueSource : IContextSource
 {
-    private readonly Func<IConfigurationRoot> root;
+    private readonly IConfigurationRoot root;
     private readonly AppliedValuesProvider applied;
     private readonly string path;
 
-    public ConfigurationValueSource(Func<IConfigurationRoot> root, AppliedValuesProvider applied, string path)
+    public ConfigurationValueSource(IConfigurationRoot root, AppliedValuesProvider applied, string path)
     {
         this.root = root;
         this.applied = applied;
@@ -20,7 +20,7 @@ internal sealed class ConfigurationValueSource : IContextSource
 
     public ContextRead Read()
     {
-        var providers = root().Providers.ToList();
+        var providers = root.Providers.ToList();
         var appliedAt = providers.IndexOf(applied);
         for (var at = providers.Count - 1; at >= 0; at--)
         {
