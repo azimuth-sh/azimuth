@@ -1,0 +1,14 @@
+{
+  "name": "@azimuth-sh/context",
+  "version": "0.0.0",
+  "description": "Applies the values of an Azimuth launch to a Node component and gives the component's report.",
+  "type": "module",
+  "main": "./index.js",
+  "exports": "./index.js",
+  "files": [
+    "index.js"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}
