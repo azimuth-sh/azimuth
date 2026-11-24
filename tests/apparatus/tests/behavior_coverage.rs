@@ -6,6 +6,7 @@
 //! `// behavior-2-exploration-skill:` for the same reason.
 //! Keys in the model use `// behavior-contexts-keys:` for their accepted list.
 //! Conditions in the model use `// behavior-contexts-conditions:` for theirs.
+//! Started components in the model use `// behavior-contexts-components:` for theirs.
 //! Rows of prose need no annotation, and an annotation naming one is an error.
 
 use std::collections::BTreeSet;
@@ -36,6 +37,7 @@ fn every_behavior_of_the_increment_has_a_test() {
                     || line.trim_start().starts_with("// behavior-2-exploration-skill:")
                     || line.trim_start().starts_with("// behavior-contexts-keys:")
                     || line.trim_start().starts_with("// behavior-contexts-conditions:")
+                    || line.trim_start().starts_with("// behavior-contexts-components:")
                 {
                     let mut next = index + 1;
                     while next < lines.len()
@@ -55,7 +57,10 @@ fn every_behavior_of_the_increment_has_a_test() {
                                 .starts_with("// behavior-contexts-keys:")
                             || lines[next]
                                 .trim_start()
-                                .starts_with("// behavior-contexts-conditions:"))
+                                .starts_with("// behavior-contexts-conditions:")
+                            || lines[next]
+                                .trim_start()
+                                .starts_with("// behavior-contexts-components:"))
                     {
                         next += 1;
                     }
@@ -82,7 +87,13 @@ fn every_behavior_of_the_increment_has_a_test() {
                         index + 1
                     );
                 }
-                if let Some(behavior) = line.trim_start().strip_prefix("// behavior-contexts-conditions: ")
+                if let Some(behavior) = line.trim_start().strip_prefix("// behavior-contexts-components: ")
+                {
+                    named.insert((
+                        "increments/contexts-components.md".to_string(),
+                        behavior.trim_end().to_string(),
+                    ));
+                } else if let Some(behavior) = line.trim_start().strip_prefix("// behavior-contexts-conditions: ")
                 {
                     named.insert((
                         "increments/contexts-conditions.md".to_string(),

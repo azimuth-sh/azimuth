@@ -48,6 +48,16 @@ fn init_leaves_key_declarations_for_the_product_to_declare() {
     }
 }
 
+// behavior-contexts-components: `azimuth init` writes no component
+#[test]
+fn init_writes_no_component() {
+    let repo = fresh("main");
+    init(&repo);
+    let project = project(&repo);
+    assert!(!project.contains_key("component"), "{project:#?}");
+    assert!(!repo.read(PROJECT_FILE).contains("component"), "{}", repo.read(PROJECT_FILE));
+}
+
 // behavior: The project file has the keys `cli`, `repository`, `area`, `suite` and `facility`
 #[test]
 fn the_project_file_knows_its_five_keys() {

@@ -2,6 +2,10 @@
 
 use azimuth_tests::*;
 
+#[path = "support/contexts_conditions.rs"]
+mod contexts_conditions;
+use contexts_conditions::{component_table, declare_payout_components, start_components, API, WEBSITE};
+
 fn change_diff(repo: &Repo, args: &[&str]) -> serde_json::Value {
     let mut all = vec!["change", "diff", "--json"];
     all.extend_from_slice(args);
@@ -80,6 +84,77 @@ fn the_key_file_is_named_as_the_reason_for_the_change_class() {
     output.expect_status(0);
     // The design supplies the path, but neither a sentence template nor a JSON reason field.
     assert!(output.text().contains("azimuth/execution-context.toml"), "{}", output.text());
+}
+
+// behavior-contexts-components: A change to a suite's `starts` is class D
+#[test]
+fn every_kind_of_starts_change_is_class_d() {
+    for (before, after) in [
+        (None, Some(vec![API])),
+        (None, Some(vec![])),
+        (Some(vec![API]), Some(vec![API, WEBSITE])),
+        (Some(vec![API, WEBSITE]), Some(vec![WEBSITE])),
+        (Some(vec![API]), Some(vec![])),
+        (Some(vec![API]), None),
+    ] {
+        let repo = Repo::sample();
+        declare_payout_components(&repo);
+        if let Some(names) = &before {
+            start_components(&repo, names);
+        }
+        repo.commit_all("declare the components before the change");
+        on_branch(&repo);
+        match &after {
+            Some(names) => start_components(&repo, names),
+            None => contexts_conditions::omit_starts(&repo),
+        }
+        repo.commit_all("change what the suite starts");
+        let document = change_diff(&repo, &[]);
+        assert_eq!(class(&document), "D", "{before:?} -> {after:?}: {document:#}");
+    }
+}
+
+// behavior-contexts-components: The reason for a change to `starts` names the project file
+#[test]
+fn the_project_file_is_named_as_the_reason_for_a_starts_change() {
+    let repo = Repo::sample();
+    declare_payout_components(&repo);
+    repo.commit_all("declare the components");
+    on_branch(&repo);
+    start_components(&repo, &[API]);
+    repo.commit_all("start a component");
+    let output = repo.azimuth(&["change", "diff"]);
+    output.expect_status(0);
+    // The design supplies the path, but neither a sentence template nor a JSON reason field.
+    assert!(output.text().contains("azimuth/project.toml"), "{}", output.text());
+}
+
+// behavior-contexts-components: A change to a component declaration is class D
+#[test]
+fn every_kind_of_component_declaration_change_is_class_d() {
+    let declared = Repo::sample();
+    declare_payout_components(&declared);
+    let text = declared.read(PROJECT_FILE);
+    let moved = text.replace("\"/internal/azimuth\"", "\"/internal/report\"");
+    let renamed = text.replace("name = \"api\"", "name = \"api-server\"");
+    let without_website = text.replace(&component_table(WEBSITE, &["all"], "/internal/azimuth"), "");
+    let sample = Repo::sample().read(PROJECT_FILE);
+    for (before, after) in [
+        (sample.as_str(), text.as_str()),
+        (text.as_str(), moved.as_str()),
+        (text.as_str(), renamed.as_str()),
+        (text.as_str(), without_website.as_str()),
+        (text.as_str(), sample.as_str()),
+    ] {
+        let repo = Repo::sample();
+        repo.write(PROJECT_FILE, before);
+        repo.commit_all("declare components before the change");
+        on_branch(&repo);
+        repo.write(PROJECT_FILE, after);
+        repo.commit_all("change a component declaration");
+        let document = change_diff(&repo, &[]);
+        assert_eq!(class(&document), "D", "{document:#}");
+    }
 }
 
 /// Declares a new Check under an existing Scenario and marks a new test for it.

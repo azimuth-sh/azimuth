@@ -1734,6 +1734,8 @@ The adapter's command in the example is a placeholder.
 | `[[component]]` | `name`, unique in the project; `areas`, the names of the areas it is built from; `report`, the absolute path under its existing door where its report is exposed |
 | `starts` on `[[suite]]` | the names of the real components it starts, including hosts inside the test process. Omitted means `[]` |
 
+A component with an empty `areas` is a reading error.
+
 Example: a payouts project adds these tables and this suite field:
 
 ```toml
