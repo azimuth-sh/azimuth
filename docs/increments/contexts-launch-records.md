@@ -20,7 +20,6 @@ Status of this list: a draft, not yet read by a person.
 | The text shows the suite, condition, duration and requested Checks for each launch | Text shows the suite, condition, duration and requested Checks for each launch, including a launch that failed before the next one ran. |
 | The text shows a launch that failed before the next one ran | including a launch that failed before the next one ran. |
 | The start and end lines of a launch name its condition | The start and end lines name the condition too. |
-| `suites` lists only the suites whose adapter the core started or tried to start | only the suites whose adapter the core started or tried to start. |
 
 ## What a result keeps of its launch
 
