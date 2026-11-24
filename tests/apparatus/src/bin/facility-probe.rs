@@ -23,6 +23,7 @@ fn main() {
             "args": args,
             "cwd": std::env::current_dir().map(|dir| dir.display().to_string()).unwrap_or_default(),
             "mark": std::env::var("APPARATUS_MARK").ok(),
+            "azimuth_context": std::env::var("AZIMUTH_CONTEXT").ok(),
         });
         writeln!(file, "{entry}").expect("the apparatus log entry is written");
     }

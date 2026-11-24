@@ -10,6 +10,9 @@ use azimuth_tests::*;
 #[path = "support/contexts_conditions.rs"]
 mod contexts_conditions;
 use contexts_conditions::*;
+#[path = "support/contexts_launches.rs"]
+mod contexts_launches;
+use contexts_launches::{all_launch_checks, applied, conditions_of, four_launches, instant_true_with, launches, proven, INSTANT_CHECK};
 
 fn ids(list: &[&str]) -> BTreeSet<String> {
     list.iter().map(|id| id.to_string()).collect()
@@ -1340,4 +1343,52 @@ fn the_local_lane_ends_with_status_one_for_a_condition_not_applied() {
     assert_eq!(document["outcome"], "success", "{document:#}");
     // `check run` of the Check ends the same way.
     repo.azimuth(&["check", "run", REACHES_THE_CARD]).expect_status(1);
+}
+
+// Launches on the sample: `docs/increments/contexts-launches.md`.
+
+// behavior-contexts-launches: `azimuth run` makes one launch per group
+#[test]
+fn run_makes_one_launch_per_group() {
+    let repo = four_launches();
+    applied(&repo);
+    let document = repo.run_json(&[], 0);
+    let all = launches(&repo);
+    assert_eq!(all.len(), 4, "{all:#?}");
+    let conditions = conditions_of(&all);
+    for expected in [json!({}), json!({"payouts.instant": "true"}), json!({"payouts.instant": "false"}), json!({"payouts.instant": "true", "payouts.region": "se"})] {
+        assert_eq!(conditions.iter().filter(|condition| **condition == expected).count(), 1, "{expected}: {all:#?}");
+    }
+    let requested: Vec<String> = all.iter().flat_map(|launch| launch.checks()).collect();
+    assert_eq!(requested.len(), 7, "a Check was requested in two launches or none: {requested:?}");
+    for check in all_launch_checks() {
+        proven(&repo, &document, check);
+    }
+}
+
+// behavior-contexts-launches: The local lane ends with status 1
+#[test]
+fn the_local_lane_ends_with_status_one_when_a_context_was_not_applied() {
+    let repo = instant_true_with(&["component api both source payouts.instant before-azimuth configuration"]);
+    repo.azimuth(&["run"]).expect_status(1);
+    repo.azimuth(&["check", "run", INSTANT_CHECK]).expect_status(1);
+    // Nothing else is wrong: the reports of the same launch, applied, end with status 0.
+    instant_true_with(&[]).azimuth(&["run"]).expect_status(0);
+}
+
+// behavior-contexts-launches: The run ends with failure while a Check is owed because its launch gave no result
+#[test]
+fn the_run_ends_with_failure_while_a_check_is_owed_because_its_launch_gave_no_result() {
+    let repo = instant_true_with(&["component api both source payouts.instant before-azimuth configuration"]);
+    let document = repo.run_json(&[], 1);
+    assert_eq!(document["outcome"], "failure", "{document:#}");
+    owed_not_applied(&repo, &document, INSTANT_CHECK);
+    for check in ALL_CHECKS {
+        assert_eq!(state_of(&document, check), "passed", "{check}: {document:#}");
+    }
+    let crashed = instant_true_with(&["when payouts.instant=true crash"]);
+    let document = crashed.run_json(&[], 1);
+    assert_eq!(document["outcome"], "failure", "{document:#}");
+    let control = instant_true_with(&[]);
+    assert_eq!(control.run_json(&[], 0)["outcome"], "success");
 }

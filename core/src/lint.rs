@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 
 use crate::markers::{self, Marker};
 use crate::project::{Project, PROJECT_FILE};
-use crate::model::{ContextLine, Key, KeyType, Model, Requirement, Literal, KEY_FILE};
+use crate::model::{Check, ContextLine, Key, KeyType, Literal, Model, Requirement, Scenario, KEY_FILE};
 use unicode_normalization::UnicodeNormalization;
 use crate::output;
 use crate::store::WORKTREE_FOLDER;
@@ -222,26 +222,48 @@ fn condition_findings(model: &Model, findings: &mut Vec<Finding>) {
         for scenario in &requirement.scenarios {
             heading_findings(model, requirement, &scenario.context, "Scenario", &scenario.id, findings);
             for line in &scenario.context {
-                let inherited = requirement.context.iter().find(|inherited| inherited.key == line.key);
-                if let Some(inherited) = inherited.filter(|inherited| inherited.value.normalized() != line.value.normalized()) {
-                    findings.push(condition_finding(
-                        "condition overrides inherited key",
-                        requirement,
-                        line,
-                        format!(
-                            "the Scenario `{}` gives `{}` the value {}, and its Requirement `{}` states {} on line {}. A Scenario keeps an inherited key's value; give the behavior its own Scenario under a Requirement that does not state the key",
-                            scenario.id,
-                            line.key,
-                            line.value.normalized(),
-                            requirement.id,
-                            inherited.value.normalized(),
-                            inherited.line
-                        ),
-                    ));
-                }
+                findings.extend(override_finding(requirement, scenario, line));
             }
         }
     }
+}
+
+/// What makes the condition of a Check faulty, as lint words it. A Check whose condition is
+/// faulty is not run under it, because no launch can be said to apply it.
+pub fn condition_faults(model: &Model, check: &Check) -> Vec<String> {
+    let Some(requirement) = model.requirement(&check.requirement) else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+    heading_findings(model, requirement, &requirement.context, "Requirement", &requirement.id, &mut found);
+    if let Some(scenario) = requirement.scenarios.iter().find(|scenario| scenario.id == check.scenario) {
+        heading_findings(model, requirement, &scenario.context, "Scenario", &scenario.id, &mut found);
+        for line in &scenario.context {
+            found.extend(override_finding(requirement, scenario, line));
+        }
+    }
+    found.into_iter().map(|finding| finding.message).collect()
+}
+
+fn override_finding(requirement: &Requirement, scenario: &Scenario, line: &ContextLine) -> Option<Finding> {
+    let inherited = requirement.context.iter().find(|inherited| inherited.key == line.key)?;
+    if inherited.value.normalized() == line.value.normalized() {
+        return None;
+    }
+    Some(condition_finding(
+        "condition overrides inherited key",
+        requirement,
+        line,
+        format!(
+            "the Scenario `{}` gives `{}` the value {}, and its Requirement `{}` states {} on line {}. A Scenario keeps an inherited key's value; give the behavior its own Scenario under a Requirement that does not state the key",
+            scenario.id,
+            line.key,
+            line.value.normalized(),
+            requirement.id,
+            inherited.value.normalized(),
+            inherited.line
+        ),
+    ))
 }
 
 /// The lines of one heading against the key declarations and against each other.

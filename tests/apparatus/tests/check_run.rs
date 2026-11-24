@@ -5,6 +5,9 @@ use azimuth_tests::*;
 #[path = "support/contexts_conditions.rs"]
 mod contexts_conditions;
 use contexts_conditions::*;
+#[path = "support/contexts_launches.rs"]
+mod contexts_launches;
+use contexts_launches::{applied, four_launches, ids, launches, proven, INSTANT_CHECK};
 
 // behavior: `azimuth check run <id>` runs one named Check, also when its result is kept
 #[test]
@@ -134,4 +137,27 @@ fn check_run_still_runs_a_named_check_without_the_faulty_condition() {
             assert_eq!(repo.results_of(check).len(), 1, "{check} has no result");
         }
     }
+}
+
+// Launches on the sample: `docs/increments/contexts-launches.md`.
+
+// behavior-contexts-launches: `azimuth check run` makes one launch per group of the Checks it was asked to run
+#[test]
+fn check_run_makes_one_launch_per_group_of_the_checks_it_was_asked_to_run() {
+    let repo = four_launches();
+    applied(&repo);
+    let output = repo.azimuth(&["check", "run", INSTANT_CHECK, "--json"]);
+    output.expect_status(0);
+    proven(&repo, &output.json(), INSTANT_CHECK);
+    let all = launches(&repo);
+    assert_eq!(all.len(), 1, "{all:#?}");
+    assert_eq!(*all[0].condition(), json!({"payouts.instant": "true"}));
+    assert_eq!(all[0].checks(), ids(&[INSTANT_CHECK]));
+    repo.clear_log();
+    let free = repo.azimuth(&["check", "run", SIXTH_LOAN, "--json"]);
+    free.expect_status(0);
+    let all = launches(&repo);
+    assert_eq!(all.len(), 1, "{all:#?}");
+    assert_eq!(*all[0].condition(), json!({}));
+    assert_eq!(all[0].checks(), ids(&[SIXTH_LOAN]));
 }
