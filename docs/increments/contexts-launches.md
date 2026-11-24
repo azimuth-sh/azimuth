@@ -16,7 +16,7 @@ Status of this list: read and accepted by a person on 2026-11-24.
 | Each launch of a suite has its own facility proof | Launches of one suite run one after another, each with its own facility proof and time limit. |
 | A facility proof runs before each launch | run by the core before each launch |
 | Each launch of a suite has its own time limit | Launches of one suite run one after another, each with its own facility proof and time limit. |
-| A launch that timed out gives no result for its Checks, and the next launch of the suite still runs | A build failure, crash, missing facility or context not applied stops only that launch; the next condition of the same suite still runs. A launch that timed out gives no result for any of its Checks, also for tests that had finished, as for a launch that crashed. |
+| A launch that timed out gives no result for its Checks, and the next launch of the suite still runs | A launch that timed out gives no result for any of its Checks, also for tests that had finished, as for a launch that crashed. |
 | `azimuth run` makes one launch per group | The core groups the requested Checks of a suite by their effective condition and makes one launch per group. |
 | `azimuth check run` makes one launch per group of the Checks it was asked to run | The core groups the requested Checks of a suite by their effective condition and makes one launch per group. |
 
@@ -119,7 +119,7 @@ Status of this list: read and accepted by a person on 2026-11-24.
 | A Check whose launch gave no result for this cause is `owed` in `run-1`, with the reason `context not applied` | in `run-1` the state is `owed`, the reason is `context not applied` for that case and `no result` for other launch faults, and `detail` names the cause |
 | A launch with no result stores no result record | A launch with no result still stores no result record. |
 | A later `azimuth status` shows the reason the Check had before the run | A launch with no result stores nothing, so a later `azimuth status` shows such a Check with the reason it had before the run. |
-| The local lane ends with status 1 | The local lane ends with status 1, as for a crash. Context not applied adds one more case. |
+| The local lane ends with status 1 | The local lane ends with status 1, as for a crash. |
 | The run ends with failure while a Check is owed because its launch gave no result | any Check is failed on the current content, whether it ran now or is a known fail, or is still owed because its launch gave no result |
 | Example: `api` reports `payouts.instant=true` where the launch states `false`, and the Checks are owed with "context not applied: api, the context never reached the component; payouts.instant stated false, reported true" | The Checks are owed with "context not applied: api, the context never reached the component; payouts.instant stated false, reported true". |
 
@@ -129,7 +129,7 @@ Status of this list: read and accepted by a person on 2026-11-24.
 | --- | --- |
 | A launch with a failed Check does not stop the next launch of its suite | It runs everything the lane planned and then reports every Check with its state. |
 | A launch whose context was not applied does not stop the next launch of its suite | A later launch of the same suite still runs. |
-| A launch that crashes gives no results and does not stop the next launch of its suite | A launch that crashes gives no results. A build failure, crash, missing facility or context not applied stops only that launch; the next condition of the same suite still runs. |
+| A launch that crashes gives no results and does not stop the next launch of its suite | A build failure, crash, missing facility or context not applied stops only that launch; the next condition of the same suite still runs. |
 | A launch whose build failed does not stop the next launch of its suite | A build failure, crash, missing facility or context not applied stops only that launch; the next condition of the same suite still runs. |
 
 ## Proof on the sample
