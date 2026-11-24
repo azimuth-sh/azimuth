@@ -2398,6 +2398,19 @@ The cost. Each component carries the library in production too, and settings rea
 
 Example: `api` maps `payouts.instant` to `Features:Payouts:Instant`; `website` maps it to `FEATURE_INSTANT_PAYOUTS`. Applying is possible only under each component's own explicit condition. The launch's value reaches both settings. A key served by a flag service instead uses the team's source, with both read and apply operations.
 
+```csharp
+var context = builder.Configuration.AddAzimuthContext(
+    "api",
+    applyingWhen: () => Environment.GetEnvironmentVariable("PAYOUTS_TEST_STACK") == "1",
+    map => map
+        .Key("payouts.instant", "Features:Payouts:Instant")
+        .Key("payouts.region", new RegionFlagSource(flags)));
+
+app.MapGet("/internal/azimuth", () => Results.Text(context.Report(), "application/json"));
+```
+
+`AddAzimuthContext` registers the component and adds the source that applies Azimuth's values last among the configuration's sources. `Key` with a configuration path uses the shipped source; `Key` with an `IContextSource` uses a team's source, which has `Read()`, giving the current text and its source, and `Apply(text)`. `Report()` returns the report as JSON text.
+
 **The report of a component has format `1` and reports exactly its mapped keys.** It carries `component`, `applying` and `context`. It carries no identity of its instance and no mark of a launch. A new part is added under the same path; a change to an existing part raises the format version.
 
 | Field | Holds |
