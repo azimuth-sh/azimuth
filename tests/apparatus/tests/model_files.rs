@@ -760,9 +760,7 @@ fn key_segments_use_the_ascii_letter_digit_hyphen_grammar() {
 #[test]
 fn payouts_in_a_key_name_does_not_declare_or_require_a_component() {
     let repo = Repo::sample();
-    declare_components(&repo);
     repo.write(KEY_FILE, INSTANT);
-    // Only api and website exist; payouts is a product key segment.
     lint_is_clean(&repo);
     status(&repo);
 }
@@ -803,7 +801,6 @@ fn one_of_values_are_strings_in_the_key_table() {
 #[test]
 fn components_are_an_explicit_list_on_the_key() {
     let repo = Repo::sample();
-    declare_components(&repo);
     repo.write(KEY_FILE, INSTANT);
     lint_is_clean(&repo);
     repo.replace(KEY_FILE, "[\"api\", \"website\"]", "[\"website\"]");

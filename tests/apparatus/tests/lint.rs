@@ -354,7 +354,6 @@ fn lint_ends_with_status_one_on_a_finding() {
 fn key_finding_repo(overlap: bool) -> Repo {
     let repo = Repo::sample();
     let declarations = if overlap {
-        declare_components(&repo);
         format!("[payouts]\ntype = \"boolean\"\ncomponents = [\"api\"]\n\n{INSTANT}")
     } else {
         INSTANT.replace("[\"api\", \"website\"]", "[]")
@@ -378,7 +377,6 @@ fn key_findings_are_reported(findings: &[serde_json::Value]) {
 #[test]
 fn lint_reports_segment_boundary_prefixes_but_not_plain_text_prefixes() {
     let repo = Repo::sample();
-    declare_components(&repo);
     repo.write(KEY_FILE, &format!("{INSTANT}\n[payouts.instantly]\ntype = \"boolean\"\ncomponents = [\"api\"]\n"));
     assert!(repo.lint_findings(0).is_empty());
     repo.append(KEY_FILE, "\n[payouts]\ntype = \"boolean\"\ncomponents = [\"api\"]\n");
