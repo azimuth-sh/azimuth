@@ -2,6 +2,10 @@
 
 use azimuth_tests::*;
 
+#[path = "support/contexts_keys.rs"]
+mod contexts_keys;
+use contexts_keys::*;
+
 fn status(repo: &Repo) -> serde_json::Value {
     let output = repo.azimuth(&["status", "--json"]);
     output.expect_status(0);
@@ -680,4 +684,305 @@ fn moving_a_module_keeps_ids_and_claim_digests() {
 
     let check = repo.check_show(LATE_RETURN);
     assert_eq!(parts_changed(&check), vec!["files"], "the move changed only files: {check:#}");
+}
+
+fn key_declaration(name: &str, fields: &str) -> String {
+    format!("[{name}]\n{fields}\n")
+}
+
+fn key_reading_error(text: &str) {
+    let repo = Repo::sample();
+    repo.write(KEY_FILE, text);
+    // The design gives no wording or exact source line for these diagnostics.
+    repo.expect_reading_error(Some(KEY_FILE), None);
+}
+
+fn readable_key_with_control(text: &str, table: &str) {
+    let repo = Repo::sample();
+    repo.write(KEY_FILE, text);
+    status(&repo);
+    // There is no declaration-list output. An invalid field in this very table proves the
+    // reader did not accept the valid form merely by ignoring the whole file.
+    repo.replace(KEY_FILE, table, &format!("{table}\nunknown = true"));
+    repo.expect_reading_error(Some(KEY_FILE), None);
+}
+
+// behavior-contexts-keys: The reader reads key declarations from `azimuth/execution-context.toml`, beside the project file
+#[test]
+fn key_declarations_are_read_beside_the_project_file() {
+    let repo = Repo::sample();
+    repo.write("execution-context.toml", "this is not TOML");
+    repo.write(KEY_FILE, INSTANT);
+    status(&repo);
+    repo.write(KEY_FILE, "this is not TOML");
+    repo.expect_reading_error(Some(KEY_FILE), None);
+}
+
+// behavior-contexts-keys: Each key is a table at its dotted name
+#[test]
+fn dotted_tables_declare_independent_keys() {
+    let text = format!("[payouts]\n\n{INSTANT}\n[payouts.region]\ntype = \"one of\"\nvalues = [\"no\", \"se\"]\ncomponents = [\"api\"]\n");
+    for table in ["[payouts.instant]", "[payouts.region]"] {
+        readable_key_with_control(&text, table);
+    }
+}
+
+// behavior-contexts-keys: A key name is lowercase segments joined by dots
+#[test]
+fn key_names_are_lowercase_dotted_segments() {
+    readable_key_with_control(
+        &key_declaration("payouts.region.enabled", "type = \"boolean\"\ncomponents = [\"api\"]"),
+        "[payouts.region.enabled]",
+    );
+    for name in ["Payouts.instant", "payouts.Instant", "payouts_instant"] {
+        key_reading_error(&key_declaration(name, "type = \"boolean\"\ncomponents = [\"api\"]"));
+    }
+}
+
+// behavior-contexts-keys: A segment starts with an ASCII lowercase letter and continues with ASCII lowercase letters, digits or hyphens
+#[test]
+fn key_segments_use_the_ascii_letter_digit_hyphen_grammar() {
+    for name in ["payouts.a", "payouts.instant2", "payouts.instant-mode", "payouts.a-"] {
+        readable_key_with_control(
+            &key_declaration(name, "type = \"boolean\"\ncomponents = [\"api\"]"),
+            &format!("[{name}]"),
+        );
+    }
+    for segment in ["2instant", "-instant", "instant_mode", "Instant", "é", "aé", "а", "a２"] {
+        key_reading_error(&key_declaration(
+            &format!("payouts.\"{segment}\""),
+            "type = \"boolean\"\ncomponents = [\"api\"]",
+        ));
+    }
+}
+
+// behavior-contexts-keys: The reader reads no component from a key's name
+#[test]
+fn payouts_in_a_key_name_does_not_declare_or_require_a_component() {
+    let repo = Repo::sample();
+    declare_components(&repo);
+    repo.write(KEY_FILE, INSTANT);
+    // Only api and website exist; payouts is a product key segment.
+    lint_is_clean(&repo);
+    status(&repo);
+}
+
+// behavior-contexts-keys: A key's `type` may be `boolean`
+#[test]
+fn a_boolean_key_is_read() {
+    readable_key_with_control(INSTANT, "[payouts.instant]");
+}
+
+// behavior-contexts-keys: A key's `type` may be `one of`
+#[test]
+fn a_one_of_key_is_read() {
+    readable_key_with_control(
+        "[payouts.region]\ntype = \"one of\"\nvalues = [\"no\", \"se\"]\ncomponents = [\"api\"]\n",
+        "[payouts.region]",
+    );
+}
+
+// behavior-contexts-keys: A key's `type` may be `number`
+#[test]
+fn a_number_key_is_read() {
+    readable_key_with_control(&INSTANT.replace("boolean", "number"), "[payouts.instant]");
+}
+
+// behavior-contexts-keys: A one-of key's `values` declares its allowed strings
+#[test]
+fn one_of_values_are_strings_in_the_key_table() {
+    let repo = Repo::sample();
+    repo.write(KEY_FILE, "[payouts.region]\ntype = \"one of\"\nvalues = [\"no\", \"se\", \"\", \"é\", \"É\"]\ncomponents = [\"api\"]\n");
+    status(&repo);
+    // Conditions belong to the next list. Here the observable is reading the string list.
+    repo.replace(KEY_FILE, "\"se\"", "42");
+    repo.expect_reading_error(Some(KEY_FILE), None);
+}
+
+// behavior-contexts-keys: A key's `components` lists the components that must read it
+#[test]
+fn components_are_an_explicit_list_on_the_key() {
+    let repo = Repo::sample();
+    declare_components(&repo);
+    repo.write(KEY_FILE, INSTANT);
+    lint_is_clean(&repo);
+    repo.replace(KEY_FILE, "[\"api\", \"website\"]", "[\"website\"]");
+    lint_is_clean(&repo);
+    repo.replace(KEY_FILE, "[\"website\"]", "\"website\"");
+    repo.expect_reading_error(Some(KEY_FILE), None);
+}
+
+// behavior-contexts-keys: An absent `execution-context.toml` declares no keys
+#[test]
+fn absent_key_declarations_need_no_components() {
+    let repo = Repo::sample();
+    assert!(!repo.path(KEY_FILE).exists());
+    assert!(!parse_toml(&repo.read(PROJECT_FILE)).contains_key("component"));
+    lint_is_clean(&repo);
+    status(&repo);
+}
+
+// behavior-contexts-keys: An empty `execution-context.toml` declares no keys
+#[test]
+fn empty_key_declarations_are_the_same_answer_as_absent_declarations() {
+    let repo = Repo::sample();
+    let absent = status(&repo);
+    repo.write(KEY_FILE, "");
+    lint_is_clean(&repo);
+    assert_eq!(status(&repo), absent);
+}
+
+// behavior-contexts-keys: Malformed TOML in `execution-context.toml` is a reading error
+#[test]
+fn malformed_key_toml_is_a_reading_error() {
+    key_reading_error("[payouts.instant\ntype = \"boolean\"\ncomponents = [\"api\"]\n");
+}
+
+// behavior-contexts-keys: An unknown field in a key table is a reading error
+#[test]
+fn an_unknown_key_table_field_is_a_reading_error() {
+    key_reading_error(&format!("{INSTANT}setting = \"instant\"\n"));
+}
+
+// behavior-contexts-keys: An invalid dotted key is a reading error
+#[test]
+fn empty_key_segments_are_reading_errors() {
+    for name in ["\"\"", "payouts.\"\"", "\"\".instant", "payouts.\"\".instant"] {
+        key_reading_error(&key_declaration(name, "type = \"boolean\"\ncomponents = [\"api\"]"));
+    }
+}
+
+// behavior-contexts-keys: A key table with no `type` is a reading error
+#[test]
+fn a_key_without_type_is_a_reading_error() {
+    key_reading_error("[payouts.instant]\ncomponents = [\"api\"]\n");
+}
+
+// behavior-contexts-keys: A key table with no `components` is a reading error
+#[test]
+fn a_key_without_components_is_a_reading_error() {
+    key_reading_error("[payouts.instant]\ntype = \"boolean\"\n");
+}
+
+// behavior-contexts-keys: An unknown `type` is a reading error
+#[test]
+fn an_unknown_key_type_is_a_reading_error() {
+    for kind in ["string", "Boolean", "one-of", ""] {
+        key_reading_error(&INSTANT.replace("boolean", kind));
+    }
+}
+
+// behavior-contexts-keys: A one-of key with no `values` is a reading error
+#[test]
+fn a_one_of_key_without_values_is_a_reading_error() {
+    key_reading_error("[payouts.region]\ntype = \"one of\"\ncomponents = [\"api\"]\n");
+}
+
+// behavior-contexts-keys: A boolean or number key with `values` is a reading error
+#[test]
+fn values_on_boolean_and_number_keys_are_reading_errors() {
+    for kind in ["boolean", "number"] {
+        key_reading_error(&format!("{}values = [\"no\", \"se\"]\n", INSTANT.replace("boolean", kind)));
+    }
+}
+
+// behavior-contexts-keys: An empty one-of list is a reading error
+#[test]
+fn an_empty_one_of_list_is_a_reading_error() {
+    key_reading_error("[payouts.region]\ntype = \"one of\"\nvalues = []\ncomponents = [\"api\"]\n");
+}
+
+// behavior-contexts-keys: A one-of list with a repeated value after NFC normalization is a reading error
+#[test]
+fn repeated_one_of_values_include_nfc_equivalents() {
+    for values in ["[\"no\", \"no\"]", "[\"caf\u{e9}\", \"cafe\u{301}\"]"] {
+        key_reading_error(&format!("[payouts.region]\ntype = \"one of\"\nvalues = {values}\ncomponents = [\"api\"]\n"));
+    }
+}
+
+// behavior-contexts-keys: A field of the wrong TOML type is a reading error
+#[test]
+fn key_fields_reject_wrong_toml_types() {
+    for fields in [
+        "type = true\ncomponents = [\"api\"]",
+        "type = 1\ncomponents = [\"api\"]",
+        "type = [\"boolean\"]\ncomponents = [\"api\"]",
+        "type = { name = \"boolean\" }\ncomponents = [\"api\"]",
+        "type = \"boolean\"\ncomponents = \"api\"",
+        "type = \"boolean\"\ncomponents = [1]",
+        "type = \"boolean\"\ncomponents = [\"api\", false]",
+        "type = \"one of\"\nvalues = \"no\"\ncomponents = [\"api\"]",
+        "type = \"one of\"\nvalues = [\"no\", 1]\ncomponents = [\"api\"]",
+    ] {
+        key_reading_error(&key_declaration("payouts.region", fields));
+    }
+}
+
+// behavior-contexts-keys: An intermediate table holding anything but nested key tables is a reading error
+#[test]
+fn intermediate_key_tables_reject_scalar_and_list_fields() {
+    for field in ["note = \"product\"", "enabled = true", "names = [\"instant\"]"] {
+        key_reading_error(&format!("[payouts]\n{field}\n\n{INSTANT}"));
+    }
+}
+
+fn broken_key_declaration() -> Repo {
+    let repo = Repo::sample();
+    repo.write(KEY_FILE, "[payouts.instant]\ntype = \"unknown\"\ncomponents = [\"api\"]\n");
+    repo
+}
+
+// behavior-contexts-keys: A key-declaration reading error has the same words in every command
+#[test]
+fn key_reading_errors_have_the_same_words_in_each_command() {
+    let repo = broken_key_declaration();
+    let expected = repo.expect_reading_error(Some(KEY_FILE), None)["errors"].clone();
+    let mut commands = COMMANDS_THAT_READ.to_vec();
+    commands.push(&["run", "--lane", "commit", "--json"]);
+    for args in commands {
+        let output = repo.azimuth(args);
+        output.expect_status(2);
+        assert_eq!(output.json()["errors"], expected, "{args:?}");
+        let plain: Vec<_> = args.iter().copied().filter(|arg| *arg != "--json").collect();
+        let output = repo.azimuth(&plain);
+        output.expect_status(2);
+        for error in expected.as_array().unwrap() {
+            let message = error["message"].as_str().unwrap();
+            assert!(output.text().contains(message), "{plain:?} omits {message:?}: {}", output.text());
+        }
+    }
+}
+
+// behavior-contexts-keys: On a key-declaration reading error, `azimuth run`, `azimuth check run` and the reading commands do nothing else
+#[test]
+fn key_reading_errors_stop_commands_before_any_other_work() {
+    let repo = broken_key_declaration();
+    repo.need_facility("present");
+    let before = repo.snapshot();
+    for args in COMMANDS_THAT_READ {
+        let output = repo.azimuth(args);
+        assert_ne!(output.status, 0, "{args:?} succeeded");
+        let document = output.json();
+        assert_eq!(document["format"], "error-1", "{args:?}: {document:#}");
+        assert!(!document["errors"].as_array().unwrap().is_empty(), "{document:#}");
+        for field in ["requirements", "checks", "suites", "class", "findings"] {
+            assert!(document.get(field).is_none(), "{args:?} answered despite the error: {document:#}");
+        }
+        assert_eq!(repo.snapshot(), before, "{args:?} changed the worktree");
+        assert!(repo.adapter_starts().is_empty(), "{args:?} started an adapter");
+        assert!(repo.probe_starts().is_empty(), "{args:?} proved a facility");
+        assert!(repo.store_files().is_empty(), "{args:?} wrote the store");
+        assert!(repo.outbox_files().is_empty(), "{args:?} wrote the outbox");
+    }
+}
+
+// behavior-contexts-keys: On a key-declaration reading error, commands end with status 2
+#[test]
+fn key_reading_errors_end_with_status_two() {
+    let repo = broken_key_declaration();
+    let mut commands = COMMANDS_THAT_READ.to_vec();
+    commands.push(&["run", "--lane", "commit", "--json"]);
+    for args in commands {
+        repo.azimuth(args).expect_status(2);
+    }
 }

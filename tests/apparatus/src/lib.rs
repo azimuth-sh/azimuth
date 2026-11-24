@@ -921,13 +921,14 @@ pub fn write_record(dir: &Path, value: &Value) -> PathBuf {
 }
 
 /// The lists of behaviors the tests are written from, under `docs/increments/`.
-pub const BEHAVIOR_LISTS: [&str; 6] = [
+pub const BEHAVIOR_LISTS: [&str; 7] = [
     "increments/1.md",
     "increments/2.md",
     "increments/2-follow-up.md",
     "increments/2-initiative-skill.md",
     "increments/2-exploration-skill.md",
     "increments/release.md",
+    "increments/contexts-keys.md",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

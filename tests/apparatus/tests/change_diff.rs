@@ -36,6 +36,52 @@ fn on_branch(repo: &Repo) {
     repo.git(&["checkout", "--quiet", "-b", "change"]);
 }
 
+// behavior-contexts-keys: A change to `azimuth/execution-context.toml` is class D
+#[test]
+fn every_kind_of_key_file_change_is_class_d() {
+    let file = "azimuth/execution-context.toml";
+    // Empty components is a finding, so the reader and diff still work without topology.
+    let declaration = "[payouts.instant]\ntype = \"boolean\"\ncomponents = []\n";
+    let numbered = declaration.replace("boolean", "number");
+    let commented = format!("{declaration}\n# The product owns this key.\n");
+    for (before, after) in [
+        (None, Some(declaration)),
+        (Some(declaration), Some(numbered.as_str())),
+        (Some(declaration), Some(commented.as_str())),
+        (Some(declaration), None),
+        (None, Some("")),
+        (Some(""), None),
+    ] {
+        let repo = Repo::sample();
+        if let Some(text) = before {
+            repo.write(file, text);
+            repo.commit_all("declare a product key before the change");
+        }
+        on_branch(&repo);
+        if let Some(text) = after {
+            repo.write(file, text);
+        } else {
+            repo.remove(file);
+        }
+        repo.commit_all("change the product key file");
+        let document = change_diff(&repo, &[]);
+        assert_eq!(class(&document), "D", "{before:?} -> {after:?}: {document:#}");
+    }
+}
+
+// behavior-contexts-keys: The reason names `azimuth/execution-context.toml`
+#[test]
+fn the_key_file_is_named_as_the_reason_for_the_change_class() {
+    let repo = Repo::sample();
+    on_branch(&repo);
+    repo.write("azimuth/execution-context.toml", "[payouts.instant]\ntype = \"boolean\"\ncomponents = []\n");
+    repo.commit_all("declare a product key");
+    let output = repo.azimuth(&["change", "diff"]);
+    output.expect_status(0);
+    // The design supplies the path, but neither a sentence template nor a JSON reason field.
+    assert!(output.text().contains("azimuth/execution-context.toml"), "{}", output.text());
+}
+
 /// Declares a new Check under an existing Scenario and marks a new test for it.
 fn add_check(repo: &Repo, id: &str) {
     repo.replace(

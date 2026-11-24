@@ -2,6 +2,10 @@
 
 use azimuth_tests::*;
 
+#[path = "support/contexts_keys.rs"]
+mod contexts_keys;
+use contexts_keys::*;
+
 fn unknown_marker(repo: &Repo) -> u64 {
     repo.replace(
         LOAN_LIMIT_TESTS,
@@ -345,4 +349,101 @@ fn lint_ends_with_status_one_on_a_finding() {
     let output = repo.azimuth(&["lint"]);
     output.expect_status(1);
     assert!(output.text().contains(LATE_RETURN), "{}", output.text());
+}
+
+fn key_finding_repo(overlap: bool) -> Repo {
+    let repo = Repo::sample();
+    let declarations = if overlap {
+        declare_components(&repo);
+        format!("[payouts]\ntype = \"boolean\"\ncomponents = [\"api\"]\n\n{INSTANT}")
+    } else {
+        INSTANT.replace("[\"api\", \"website\"]", "[]")
+    };
+    repo.write(KEY_FILE, &declarations);
+    repo
+}
+
+fn key_findings_are_reported(findings: &[serde_json::Value]) {
+    assert!(
+        !findings_at(findings, KEY_FILE, None).is_empty(),
+        "no finding names the key file: {findings:#?}"
+    );
+    // No diagnostic kind, exact message, or exact line is specified for key findings.
+    for finding in findings {
+        entry_has_kind_file_line_message(finding);
+    }
+}
+
+// behavior-contexts-keys: Lint reports a key that begins another at a segment boundary
+#[test]
+fn lint_reports_segment_boundary_prefixes_but_not_plain_text_prefixes() {
+    let repo = Repo::sample();
+    declare_components(&repo);
+    repo.write(KEY_FILE, &format!("{INSTANT}\n[payouts.instantly]\ntype = \"boolean\"\ncomponents = [\"api\"]\n"));
+    assert!(repo.lint_findings(0).is_empty());
+    repo.append(KEY_FILE, "\n[payouts]\ntype = \"boolean\"\ncomponents = [\"api\"]\n");
+    key_findings_are_reported(&repo.lint_findings(1));
+}
+
+// behavior-contexts-keys: Lint reports a key whose `components` list is empty
+#[test]
+fn lint_reports_a_key_listed_for_no_component() {
+    let repo = Repo::sample();
+    assert!(repo.lint_findings(0).is_empty());
+    repo.write(KEY_FILE, &INSTANT.replace("[\"api\", \"website\"]", "[]"));
+    key_findings_are_reported(&repo.lint_findings(1));
+}
+
+// behavior-contexts-keys: A key-declaration finding fails lint
+#[test]
+fn either_key_declaration_finding_fails_lint_with_status_one() {
+    for overlap in [false, true] {
+        let repo = key_finding_repo(overlap);
+        key_findings_are_reported(&repo.lint_findings(1));
+        repo.azimuth(&["lint"]).expect_status(1);
+    }
+}
+
+// behavior-contexts-keys: A key-declaration finding fails the commit lane
+#[test]
+fn key_findings_fail_the_commit_lane_even_when_every_check_passes() {
+    for overlap in [false, true] {
+        let repo = key_finding_repo(overlap);
+        let document = repo.run_json(&["--lane", "commit"], 1);
+        assert_eq!(document["outcome"], "failure", "{document:#}");
+        key_findings_are_reported(document["findings"].as_array().unwrap());
+        for check in ALL_CHECKS {
+            assert_eq!(state_of(&document, check), "passed", "{document:#}");
+            assert!(repo.requested_checks().contains(check), "the lane skipped {check}");
+        }
+    }
+}
+
+// behavior-contexts-keys: A key-declaration finding does not stop the reading commands
+#[test]
+fn reading_commands_still_answer_with_either_key_finding() {
+    for overlap in [false, true] {
+        let repo = key_finding_repo(overlap);
+        key_findings_are_reported(&repo.lint_findings(1));
+        for (args, format) in [
+            (vec!["status", "--json"], "status-1"),
+            (vec!["requirement", "show", LOAN_LIMIT, "--json"], "requirement-1"),
+            (vec!["check", "show", SIXTH_LOAN, "--json"], "check-1"),
+            (vec!["change", "diff", "--json"], "change-1"),
+        ] {
+            let output = repo.azimuth(&args);
+            output.expect_status(0);
+            let document = output.json();
+            assert_eq!(document["format"], format, "{document:#}");
+            if format == "status-1" {
+                for check in ALL_CHECKS {
+                    assert_eq!(status_checks(&document)[check]["state"], "owed", "{document:#}");
+                }
+            } else if format == "check-1" {
+                assert_eq!(document["state"], "owed", "{document:#}");
+            }
+        }
+        assert!(repo.adapter_starts().is_empty());
+        assert!(repo.probe_starts().is_empty());
+    }
 }
