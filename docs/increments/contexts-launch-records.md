@@ -2,7 +2,7 @@
 
 A row is of one of two kinds. A row of behavior is one observable fact, and a test shows it. A row of prose says what a text tells its reader; its section begins with the words "Rows of prose", and no test reads the words of the text for it. The second cell is copied exactly from `docs/design.md`. A plain test fails when a quoted sentence is no longer in that file. A behavior with no sentence to quote is not built. This list is built after the list of started components in the model (`contexts-components.md`, on its own branch), because a launch expects the components its suite starts. It is built after `contexts-launches.md`, because it records the launches that list builds.
 
-Status of this list: a draft, not yet read by a person.
+Status of this list: read and accepted by a person on 2026-11-24.
 
 ## `run-1` and the text of a run
 
