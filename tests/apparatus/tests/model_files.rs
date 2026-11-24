@@ -1248,6 +1248,15 @@ fn a_context_with_a_malformed_number_is_a_reading_error() {
     condition_is_readable("Context: payouts.limit=1.5");
 }
 
+// behavior-contexts-conditions: A `Context:` number that would need more than 1000 added zeros without an exponent is a reading error
+#[test]
+fn a_context_number_with_more_than_a_thousand_added_zeros_is_a_reading_error() {
+    condition_is_readable("Context: payouts.limit=1e1000");
+    condition_reading_error("Context: payouts.limit=1e1001");
+    condition_is_readable("Context: payouts.limit=1e-1001");
+    condition_reading_error("Context: payouts.limit=1e-1002");
+}
+
 fn with_condition_reading_error() -> Repo {
     let repo = payouts();
     on_requirement(&repo, &["Context: payouts.instant=true payouts.region=\"no\""]);

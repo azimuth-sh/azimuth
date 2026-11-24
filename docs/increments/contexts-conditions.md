@@ -58,6 +58,7 @@ Status of this list: read and accepted by a person on 2026-11-24.
 | A `Context:` with an invalid key spelling is a reading error | `Context:` without exactly one `key=value` assignment, an invalid key spelling, an unfinished JSON string or malformed number is a reading error. |
 | A `Context:` with an unfinished JSON string is a reading error | `Context:` without exactly one `key=value` assignment, an invalid key spelling, an unfinished JSON string or malformed number is a reading error. |
 | A `Context:` with a malformed number is a reading error | `Context:` without exactly one `key=value` assignment, an invalid key spelling, an unfinished JSON string or malformed number is a reading error. |
+| A `Context:` number that would need more than 1000 added zeros without an exponent is a reading error | A number that would need more than 1000 added zeros to be written without an exponent is a reading error. |
 
 ## What commands do on a reading error
 
