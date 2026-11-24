@@ -2411,6 +2411,22 @@ app.MapGet("/internal/azimuth", () => Results.Text(context.Report(), "applicatio
 
 `AddAzimuthContext` registers the component and adds the source that applies Azimuth's values last among the configuration's sources. `Key` with a configuration path uses the shipped source; `Key` with an `IContextSource` uses a team's source, which has `Read()`, giving the current text and its source, and `Apply(text)`. `Report()` returns the report as JSON text.
 
+```js
+import { registerAzimuthContext } from "@azimuth-sh/context";
+
+const context = registerAzimuthContext("website", {
+  applyingWhen: () => process.env.PAYOUTS_TEST_STACK === "1",
+  map: {
+    "payouts.instant": "FEATURE_INSTANT_PAYOUTS",
+    "payouts.region": regionFlagSource(flags),
+  },
+});
+
+app.get("/internal/azimuth", (req, res) => res.type("application/json").send(context.report()));
+```
+
+`registerAzimuthContext` registers the component and, when its condition holds, applies each stated value by writing its mapped name to `process.env`. A key mapped to a name uses the shipped source; a key mapped to an object with `read()`, giving the current text and its source, and `apply(text)` uses a team's source. `report()` returns the report as JSON text.
+
 **The report of a component has format `1` and reports exactly its mapped keys.** It carries `component`, `applying` and `context`. It carries no identity of its instance and no mark of a launch. A new part is added under the same path; a change to an existing part raises the format version.
 
 | Field | Holds |
