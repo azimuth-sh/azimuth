@@ -45,6 +45,7 @@ Status of this list: a draft, not yet read by a person.
 | At start, when its condition holds, the library reads `AZIMUTH_CONTEXT` | At start, when its condition holds, it reads `AZIMUTH_CONTEXT` and applies the value of each mapped key the variable names. |
 | The library applies the value of each mapped key that `AZIMUTH_CONTEXT` names, and no other key | At start, when its condition holds, it reads `AZIMUTH_CONTEXT` and applies the value of each mapped key the variable names. |
 | Without `AZIMUTH_CONTEXT` the library applies nothing | Without the variable it applies nothing. |
+| An `AZIMUTH_CONTEXT` that is not one JSON object of text values stops the start with an error that names the variable | A variable that is not one JSON object of text values stops the start with an error that names it. |
 | Applying is possible only under the component's own explicit condition | Applying is possible only under each component's own explicit condition. |
 | The values to apply come from `AZIMUTH_CONTEXT`, one JSON object of product keys to text values | Each launch gets `AZIMUTH_CONTEXT` as one JSON object of product keys to normalized text values. |
 | The launch's value reaches each mapped setting when applying is possible | The launch's value reaches both settings. |
