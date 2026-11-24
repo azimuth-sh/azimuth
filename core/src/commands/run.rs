@@ -293,7 +293,7 @@ pub fn run(selection: Selection, json: bool) -> i32 {
 fn lint_step(survey: &Survey, json: bool) -> Result<Vec<Finding>, String> {
     let git = &survey.workspace.git;
     let tracked = git.tracked_under(WORKTREE_FOLDER)?;
-    let findings = lint::findings(&survey.workspace.model, &survey.markers, &tracked);
+    let findings = lint::findings(&survey.workspace.model, &survey.workspace.project, &survey.markers, &tracked);
     let mut lines = vec![match findings.len() {
         0 => "lint: no finding".to_string(),
         1 => "lint: 1 finding".to_string(),
