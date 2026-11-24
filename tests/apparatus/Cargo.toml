@@ -37,6 +37,11 @@ path = "tests/dotnet_adapter.rs"
 required-features = ["dotnet"]
 
 [[test]]
+name = "context_library_dotnet"
+path = "tests/context_library_dotnet.rs"
+required-features = ["dotnet"]
+
+[[test]]
 name = "default_launch_limit"
 path = "tests/default_launch_limit.rs"
 required-features = ["long-timeout"]
