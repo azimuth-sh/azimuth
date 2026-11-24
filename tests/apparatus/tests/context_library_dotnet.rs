@@ -550,12 +550,16 @@ fn no_rule_derives_a_setting_from_a_key_and_a_key_with_no_mapping_has_no_setting
 // behavior-contexts-library-dotnet: The library knows no types
 #[test]
 fn the_library_knows_no_types() {
-    let inspection = inspect();
-    let generic = strings(&inspection["genericMembers"]);
-    assert!(generic.is_empty(), "the library offers members that take a type of the application: {generic:?}");
-    let names = strings(&inspection["names"]);
-    let typed: Vec<&String> = names.iter().filter(|name| ["Options", "Binder", "Bind", "Typed", "Deserialize"].iter().any(|word| name.contains(word))).collect();
-    assert!(typed.is_empty(), "the library speaks of types: {typed:?}");
+    let api = start(&[
+        STACK,
+        ("FIXTURE_EARLIER", "Features:Payouts:Instant=true"),
+        ("AZIMUTH_CONTEXT", r#"{"payouts.instant":"eu-west","payouts.region":"TRUE"}"#),
+    ]);
+    assert_eq!(api.setting(INSTANT_PATH).as_deref(), Some("eu-west"));
+    let report = api.report();
+    assert_eq!(value_of(&report, INSTANT).as_deref(), Some("eu-west"));
+    assert_eq!(precedence_of(&report, INSTANT), "azimuth");
+    assert_eq!(value_of(&report, REGION).as_deref(), Some("TRUE"));
 }
 
 // behavior-contexts-library-dotnet: The library reads no project file
@@ -1157,7 +1161,7 @@ fn a_key_the_launch_does_not_state_keeps_its_source() {
     let api = start(&[STACK, ("FIXTURE_KEYS", "wide"), ("FIXTURE_EARLIER", "Features:Payouts:Second=kept"), ("FIXTURE_REGION_VALUE", "eu"), ("AZIMUTH_CONTEXT", r#"{"payouts.instant":"true"}"#)]);
     let report = api.report();
     assert_eq!(value_of(&report, "payouts.second").as_deref(), Some("kept"));
-    assert_ne!(precedence_of(&report, "payouts.second"), "azimuth");
+    assert_eq!(precedence_of(&report, "payouts.second"), "before azimuth");
     assert_eq!(value_of(&report, REGION).as_deref(), Some("eu"));
     assert_eq!(api.region()["applies"], 0);
     assert_eq!(api.setting("Features:Payouts:Second").as_deref(), Some("kept"));

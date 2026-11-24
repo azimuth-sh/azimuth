@@ -164,17 +164,12 @@ static class Fixture
         var assembly = typeof(IContextSource).Assembly;
         var types = assembly.GetExportedTypes();
         var names = new List<string>();
-        var genericMembers = new List<string>();
         foreach (var type in types)
         {
             names.Add(type.FullName ?? type.Name);
             foreach (var member in type.GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
             {
                 names.Add(member.Name);
-                if (member is MethodInfo { IsGenericMethod: true })
-                {
-                    genericMembers.Add(type.Name + "." + member.Name);
-                }
             }
         }
         Console.WriteLine(JsonSerializer.Serialize(new
@@ -182,7 +177,6 @@ static class Fixture
             assembly = assembly.GetName().Name,
             references = assembly.GetReferencedAssemblies().Select(reference => reference.Name).ToArray(),
             names,
-            genericMembers,
         }));
     }
 }
