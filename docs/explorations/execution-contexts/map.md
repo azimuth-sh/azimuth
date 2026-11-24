@@ -8,8 +8,11 @@ Asked which real work should be the first to use execution contexts, the maintai
 admin pages change?". About the two libraries it needs, the maintainer said: "And we need to
 publish them", and about the order: "We should postpont the current increment and build
 execution contexts before it. Right now". So the rows up to `first-real-use` come before
-increment 3, whose list was accepted on 2026-11-21 and waits on the branch `increment-3`. The
-rows `kubernetes-observation` and `status-from-observations` are built with the server rung.
+increment 3, whose list was accepted on 2026-11-21 and waits on the branch `increment-3`. Asked
+where `contexts-in-process` stands, the maintainer said: "Before increment 3, built beside
+first-real-use", so it comes before increment 3 too and is not a row `first-real-use` waits
+for. The rows `kubernetes-observation` and `status-from-observations` are built with the server
+rung.
 
 ## Rows
 
