@@ -154,6 +154,7 @@ The cost. Until an input provider is added, almost any edit makes every Check ow
 | --- | --- | --- |
 | 1 | the model, markers, one test adapter, the coarse fingerprint (the claim plus every file of the repository), owed and kept results, facilities, the local lane and a CI job that fails on a failed or owed Check, the class of a change, `Reuse:`, `azimuth lint`, `azimuth run`, the four reading commands, the local store | it is enough for one Requirement, and it already runs the real mechanism in its simplest form. A result cannot exist without a fingerprint, so only the precision waits. Almost any edit makes every Check owed, which is coarse and correct. A second run on an unchanged tree is kept, and going back to earlier content brings the pass back |
 | 2 | a second test adapter, for Playwright; time limits for a launch | the next real work needs a browser test. A second runner tests the adapter contract before anything else changes it |
+| Before 3: execution contexts | conditions in the model, declared keys and started components, both context libraries and their publication, launches on the sample and through Playwright, and reports from hosts inside the test process | the next real work needs Checks with a flag off and Checks with it on. The accepted list of increment 3 waits |
 | 3 | the step library with controls and the outcome "inconclusive" | it changes the adapter's report, so it comes once and for both adapters |
 | 4 | work records, authorship, `azimuth work`, local reviews with their issues and remarks | a Verification Review judges whether controls are adequate, so it needs steps. The first change that edits working code gives a review something to find |
 | 5 | the first input provider, the build closure, together with isolation | a second module exists, so change tracking has something to tell apart. The increment changes one thing, the list of files, so a fault in it is easy to see. Closure cannot see a file read at run time, and isolation is the mechanical test that the list is complete |
@@ -161,6 +162,12 @@ The cost. Until an input provider is added, almost any edit makes every Check ow
 | 7 | Challenges | they are the most expensive part |
 
 **An increment changes one thing, and one named piece of real work pulls it.** The order puts trust before speed. Increments 2 to 4 change what Azimuth can prove and who looked at it. Increments 5 and 6 change only how much runs again, and the coarse fingerprint is already correct.
+
+**Execution contexts are built and put to use before increment 3.** Its list is accepted and waits. Conditions and started components in the model, the libraries for .NET and Node, their release, launches on Azimuth's sample and through Playwright, and the first real use come first. Reports from hosts inside the test process are built beside that first use, before increment 3 too; the first use does not wait for them. It proves one Check with a flag off and one with it on, through the real website and API, using the published libraries and adapter, with both components reporting the value applied by Azimuth. Deployment observations and status come with the server rung. Runs that vary unstated keys to find a missing condition come with Challenges; their rules are still open.
+
+The cost. Increment 3 waits although its list was already accepted. A context needs code in the product before its Checks can give results.
+
+Example: the payouts product needs its operator pages to show both an instant payout and one waiting for review. Their Scenarios state opposite values of `payouts.instant`, and execution contexts serve this work before the step library is built.
 
 **The server rung is built after increment 4.** A provider only changes which files are on a list, and the server stores fingerprints and never computes them, so it does not need increments 5 and 6. The adoption ladder stays as it is: Challenges remain part of the core rung, and only the build order of the rewrite changes.
 
@@ -348,6 +355,14 @@ The cost. The sums file sits beside the binaries. It catches a broken download a
 
 **A place that cannot stage is pushed last, and its push can be repeated.** That push is the point of no return. When the place refuses it, a person deletes the draft and rejects the staged version, and nothing was published. A push that is run again skips a version that is already there, so a release that failed half way is run again from the failed job and not abandoned.
 
+**The same release path packs and publishes both context libraries with the release's version.** `Azimuth.Context` goes to NuGet beside the .NET adapter and step library. `@azimuth-sh/context` goes to npm beside the Playwright package. Every npm package is staged in step 1 with `latest` and awaits its own approval at npm. Every NuGet package is pushed in step 3, before the draft is published. The workflow keeps its staging-only identity at npm, its one job after GitHub approval, and the rule that a tag is never moved.
+
+**Retries are per package.** At NuGet the retry skips each version already present and pushes each missing package. At npm it keeps a matching staged or published version and stages each missing one; a different packed file under the same name and version stops the release. It does not replace a staged version or publish it itself. A person makes the first publication of `@azimuth-sh/context` at npm, then binds trusted publishing to that existing package, as for every new package under the scope.
+
+The cost. The registries can hold only some packages of a version while a retry or an approval waits. The first npm publication is one more act of the maintainer.
+
+Example: NuGet takes `Azimuth.Context` and refuses the step library. The retry skips the context library and pushes the missing package. The two npm packages keep their staged versions and still wait for approval at npm.
+
 **A fault in the workflow of the tagged commit costs the number.** The workflow is read from the tagged commit, so a job that is run again repeats the fault. A pushed tag is never moved, because git does not update a tag that somebody already fetched. The correction gets the next version, the tag stays without a release, and a person deletes its draft.
 
 Example: the tag `v0.2.0-alpha.3` has no release. Its staging job could not install its npm, and the release is `0.2.0-alpha.4`.
@@ -488,7 +503,17 @@ Example: a test of "a second run on unchanged content runs nothing" copies the s
 | Scenario | One concrete case of a Requirement |
 | Check | A claim about a Scenario, verified by enrolled tests |
 
-A Requirement or Scenario may carry `Context:` conditions. They say under which configuration of a running component it applies.
+**A Requirement or Scenario may carry `Context:` conditions.** They say under which values of the product's keys it is promised. On a Scenario the condition is one of its givens, and its Checks run under it. A Check states no condition of its own.
+
+**A Scenario takes its Requirement's condition and may add its own.** Repeating the same value changes nothing. Giving an inherited key another value is a lint finding. A Scenario with no `Context:` of its own keeps its Requirement's condition. A Requirement with none, and a Scenario of it with none, are promised everywhere. A behavior promised in several conditions has one Scenario per condition; a condition with no Scenario is a missing case.
+
+**One `Context:` line states one key and one exact value, as `Context: <key>=<value>`.** Spaces and tabs around `=` are ignored. Several keys use several lines under the same heading in `specification.md`. A repeated key with the same normalized value changes nothing. Contradicting lines on one heading are a lint finding, and the affected Checks give no result, "context not applied", until the contradiction is gone. A one-of value is a JSON string, so spaces and `=` inside its quotes are values, not separators. Booleans and numbers are unquoted.
+
+**Conditions compare normalized values of their declared type.** Boolean text is `true` or `false`, without regard to ASCII case, and normalizes to lowercase. A one-of value is decoded from its JSON string, normalized to NFC and compared with the declared strings in NFC, with no case folding. A number uses the JSON decimal notation and is compared as an exact decimal, not a floating-point approximation. Its normalized text has no exponent, no unnecessary leading or fractional trailing zeros, and no decimal point for a whole number; negative zero is `0`. No condition states a range. A report's value is text read by the same type rules; a one-of report value is already decoded text.
+
+The cost. A behavior promised with a flag both on and off needs two Scenarios. A Check whose condition leaves out a key it depends on can keep applying after that key changes; only a review catches the missing line until Challenges exist.
+
+Example: the Requirement `payout-is-sent-at-once` carries `Context: payouts.instant=true`. Its Scenario `payout-reaches-the-card` adds `Context: payouts.region="no"`. All its Checks run with both values. Another Scenario with no line of its own still runs with `payouts.instant=true`.
 
 **A Requirement describes what the system does for somebody outside it, as a whole. It is not cut by component.**
 
@@ -774,7 +799,7 @@ Example: `Catalog_routes_are_absent_when_labs_are_off` measures that three route
 
 ### The Check rule
 
-The core applies this rule to the marked tests of a Check.
+**The core first checks that the launch applied the Check's condition.** If it did not, the Check has no result, with the reason "context not applied", whatever its tests did. Only then does the core apply this rule to the marked tests of a Check.
 
 | Marked tests | Result |
 | --- | --- |
@@ -802,7 +827,13 @@ The core applies this rule to the marked tests of a Check.
 
 **Evidence from two suites means two Checks under one Scenario.** The Scenario is covered when both have valid results.
 
-**Different configuration chosen in test code means different Checks.** All marked tests of one Check must report the same configuration values. If they do not, it is a finding and the Check is split.
+**A suite declares no default context.** Azimuth applies only the keys in the Scenario's condition. Every unstated key keeps the value of the component's own sources in the test setup. Differences in unstated keys do not split a Check or decide whether its result applies.
+
+**A suite names under `starts` the real components its tests run against.** A component in its own process and a host built inside the test process both count. A stand-in does not. The core expects the components the condition needs from this declaration, even when the runner's configuration forgets one. Lint names a Check whose condition states a key that no component its suite starts is listed for.
+
+The cost. A suite can prove a condition through a stand-in for another component; the fidelity of the stand-in stays the suite's concern. The names in `starts` are also in the runner's configuration, and a difference shows only at launch.
+
+Example: `website-tests` starts `website` and uses a stand-in for `api`. For `payouts.instant`, listed for both components, it must report only `website`. A suite that starts neither cannot prove that condition.
 
 Example: `contract-subset-cases-agree-in-both-implementations` is marked in `DrimDev.Api.Tests` and in `DrimDev.LabRelease.Tests`. It becomes two Checks. Both read the same case file, so nothing is lost.
 
@@ -885,12 +916,11 @@ An input is anything that can change a Check's result.
 
 | Kind | Examples |
 | --- | --- |
-| Claim | The Check's claim text |
+| Claim | The Check's claim text and its effective condition |
 | Source | Test files, product code, configuration and data files |
 | Environment | The machine image and tool versions of the run |
 | Artifact digest | A built thing the tests start or read: a container image, a package, a binary |
 | Versioned outside knowledge | The version of a vulnerability database |
-| Launch values | The values of a variant. Later |
 | Uncontrolled | Time, a live outside service. These cannot be named, so `Reuse:` handles them |
 
 **The suite's list is the outer boundary.** It is the build closure plus runtime files listed by hand.
@@ -915,7 +945,7 @@ A fingerprint answers one question for one Check: is everything that could chang
 
 | Part | Without a provider | With providers |
 | --- | --- | --- |
-| Claim | the Check's claim text, normalized | the same |
+| Claim | the Check's claim text followed by its effective condition, normalized | the same |
 | Files | one part for every file of the repository. The tree is stored as a commit's tree id plus the entries that differ from it | split into tests, private unit, helpers, start-up and other files |
 | Environment | one fixed value on a developer's machine. No fact is measured | the name of the reference environment |
 | Method | the scheme names and the object format of the repository | plus providers, profile and packages |
@@ -1010,7 +1040,13 @@ A digest is written with its scheme, as in `text-1:9f3a`, and two digests of dif
 | The method part | the line `method`, then `schemes` with the scheme names sorted and separated by one space, then `object_format` with the format of the repository |
 | The fingerprint | four lines in the order `claim`, `files`, `environment`, `method`. Each holds the name, one space and the digest of that part |
 
-The claim part is the `text-1` digest of the claim. Lines are separated by LF, and only the four lines of the fingerprint each end with one.
+**The claim part is the `text-1` digest of the claim text followed by its effective condition.** Normalize the claim text as model text. When the condition is nonempty, append LF and then one line `Context: <key>=<normalized value>` per key, sorted by key, with no last LF. One-of values use the JSON string spelling of RFC 8785. Inherited and repeated lines contribute each key once. A Check with no condition keeps the digest of its claim text alone. Lines are separated by LF, and only the four lines of the fingerprint each end with one.
+
+A changed condition makes the Check owed with "claim changed", also when a provider has removed the specification file from its files. The approval of the claim becomes stale too. No extra fingerprint part holds context; reported values of unstated keys are not fingerprint inputs of their own.
+
+The cost. The reason says "claim changed" and does not name the changed condition line.
+
+Example: changing `Context: payouts.region="no"` to `Context: payouts.region="se"` makes the Checks of `payout-is-sent-at-once` owed even when no code changed.
 
 The adapter's name and version are written in the record and are not in the method part. The file that pins the adapter is a file of the tree, so raising the pin moves the files part.
 
@@ -1156,9 +1192,17 @@ A result counts only if the core produced it in one launch, from start to end.
 | Launch | Computed. One start of a suite's process for any subset of its tests |
 | Adapter | The link to one test runner |
 
-**The adapter sees tests only.** It builds the suite, lists its tests, starts the runner and reports what happened.
+**The adapter builds the suite, lists its tests, starts the runner and collects the reports of its components.** It reports what happened and judges neither a Check nor a condition.
 
 **The core owns everything else.** It starts the adapter, applies the Check rule and writes results.
+
+**The core groups the requested Checks of a suite by their effective condition and makes one launch per group.** Only the stated keys count. Launches of one suite run one after another, each with its own facility proof and time limit. A test marked for Checks in different groups runs in each group's launch. Its outcome counts only for the Check ids requested in that launch.
+
+**Each launch gets `AZIMUTH_CONTEXT` as one JSON object of product keys to normalized text values.** A launch with no condition gets `{}`, replacing any inherited variable, and expects no component report. The adapter passes the variable to the runner, and the runner's setup passes it to the components it starts. The request carries the same condition. Azimuth sets no unstated key.
+
+The cost. Several conditions start the same stack several times. An unstated key can differ between two machines without changing a fingerprint; the reports keep its value and source visible after the run.
+
+Example: `website-tests` requests `payout-is-sent-at-once` with `payouts.instant=true` and `payout-waits-for-review` with `payouts.instant=false`. It gets two launches. The first receives `AZIMUTH_CONTEXT={"payouts.instant":"true"}`. A journey marked for both Checks runs twice and counts for one Check each time.
 
 ### A launch from start to end
 
@@ -1168,6 +1212,20 @@ A result counts only if the core produced it in one launch, from start to end.
 4. It reads the report and verifies that the tests run equal the tests listed.
 5. It hashes the inputs again.
 6. It applies the Check rule and writes each result with its fingerprint and part digests.
+
+**Before applying the Check rule, the core compares the component reports with the launch's condition.** For each stated key it expects every component that is both in `starts` and listed for that key. Each expected report must give the stated typed value, applied by Azimuth. For a separate process this must hold in both reads. A difference in an unstated key or in a read's time changes nothing. A condition that no started component can apply gives "context not applied" in both `azimuth run` and `azimuth check run`, also in a suite with Checks that have no condition.
+
+**A launch owns the processes it reads.** The suite's runner configuration maps each component in `starts` to its address; `project.toml` gives the report path. Before starting the stack, the adapter looks at every address it knows then. If one answers, it runs no test and records "something else answers there" for that component. An address learned only after the start, such as a free port chosen then, needs no look. A wrong address in the runner configuration is the suite's bug. A stack started outside the launch cannot serve Checks with a condition.
+
+**The adapter reads a separate process's report right after it is up and again just before it stops.** Playwright's adapter wraps the runner's global setup and teardown: it reads after the servers start and before the tests, and after the tests before the servers stop, while preserving the suite's own setup and teardown. It gets component addresses from the runner configuration and names and report paths from the request. A missing address, failed read or missing second read is carried as a cause, not left out.
+
+**For a host inside the test process, the code that builds it calls the report callback right after building it and gives that one report to the adapter with the results.** Every host built under an expected component contributes a report, including several hosts in one suite. Every such report must meet the stated condition. One wrong report leaves every Check of that launch owed, as for a separate process. Ownership of these hosts belongs to the code that builds them; the library knows nothing about collecting reports for tests.
+
+**A context that was not applied gives no result for any Check of that launch.** This comes before a failed test in the Check rule. The state is `owed`, the reason is `context not applied`, and the detail names the component, key, stated and reported values, and cause. Causes include applying being off, the context never reaching the component, an override by a named source, a missing key or value, a value that cannot be read by its type, a wrong component name, an address already answering, a report missing or unreadable, and no started component reading a stated key. A wrong name names both the expected and reported component. Missing reports name their declared place. The local lane ends with status 1, as for a crash.
+
+The cost. One component's wrong report loses every result of its launch, even a Check that states no key of that component. A process restarted inside the same container can escape notice between the reads.
+
+Example: `api` reports `payouts.instant=true` from configuration, although the launch states `false`. Applying is possible, and configuration would lose to Azimuth. The Checks are owed with "context not applied: api, the context never reached the component; payouts.instant stated false, reported true". A later launch of the same suite still runs.
 
 **A result produced this way is called verified.** Nothing written by hand or imported from a test report counts.
 
@@ -1193,7 +1251,7 @@ A result counts only if the core produced it in one launch, from start to end.
 
 A proof is a command, and never a setting. Nothing in the tree and nothing on the command line can say "present". A proof that fails, hangs or is missing means "cannot run here". The core ships no facility, because it knows no tools. `azimuth init` writes none, and a person adds a facility when a suite needs one. Until then the first run on a machine without the facility starts the suite, the launch crashes, and the Checks are owed with the crash as the reason. A change to a definition is class D, because it sits in the project file.
 
-**The core starts a proof or an adapter directly, with no shell.** The command line from the project file is split on spaces. An adapter starts in its suite's folder, and a proof starts at the root of the repository. The environment is passed on unchanged. A proof that runs longer than 10 seconds counts as hung, and the number is fixed in the first increment.
+**The core starts a proof or an adapter directly, with no shell.** The command line from the project file is split on spaces. An adapter starts in its suite's folder, and a proof starts at the root of the repository. A proof gets the environment unchanged; an adapter gets it with `AZIMUTH_CONTEXT` replaced by its launch's condition. A proof that runs longer than 10 seconds counts as hung, and the number is fixed in the first increment.
 
 An adapter starts in its suite's folder so that each stack finds its own pin. A dotnet tool is found by walking up to the tool manifest, and an npm package by walking up to the nearest `package.json`. From the root of the repository an npm adapter installed in an application's folder is not found, and plain `npx` would then turn to the registry for that name. A proof belongs to no suite, so the root is right for it.
 
@@ -1258,6 +1316,7 @@ Open: how to prove that a place called `public` is truly outside.
 | Pass | Kept | Not run |
 | Fail | Owed: failed on these inputs | Skipped locally, run again in CI |
 | Nothing: not reached, crash, inputs changed during the run | Owed | Run |
+| Nothing: context not applied, whatever the tests did | Owed: context not applied | Run after repairing how the condition reaches the components |
 | Nothing: a facility is missing | Owed: cannot run here | Not run on this machine |
 | A pass and a fail | Owed: contradicted | Run again |
 
@@ -1266,18 +1325,6 @@ Open: how to prove that a place called `public` is truly outside.
 **CI runs a known fail again** so that an environment fault does not stick to a commit. Repeated fails on one fingerprint feed the stability figure.
 
 **A fail never erases a pass on other content.**
-
-### Variants
-
-Later.
-
-**A variant is a named set of configuration values that the core passes to a suite at launch.** The values are one more named part of the fingerprint, so results of two variants sit side by side.
-
-**Variants are named after deployments, never after flags.** `production` and `production-next` are variants. Every combination of flags is refused.
-
-**The purpose is the flag flip.** Turning a flag on in production changes no file, so nothing is owed. A variant runs the suite with the configuration about to be deployed, before it is deployed.
-
-**The run records, per test, the values the component reported.** One launch may hold several hosts with different values.
 
 ## Lanes, gates and the referee
 
@@ -1327,11 +1374,11 @@ Example: a project has API Checks and frontend Checks, and a developer edits one
 
 Nothing is detected from the environment. A wrong guess would make a CI job trust the store, silently. The default is the lane for a desk, and the CI job asks for the commit lane. Anyone may run the commit lane on their own machine as a rehearsal of CI, and its results stay local results.
 
-**A run never stops at the first failure.** It runs everything the lane planned and then reports every Check with its state. A suite that does not build, a launch that crashes or a missing facility stops only its own suite.
+**A run never stops at the first failure.** It runs everything the lane planned and then reports every Check with its state. A build failure, crash, missing facility or context not applied stops only that launch; the next condition of the same suite still runs.
 
 **The status follows the state of the tree, never what happened to run this time.** A second run on unchanged content runs nothing, shows the known fail, and ends with failure again.
 
-**In the local lane success is defined, and everything else is a failure.** A Check that is still owed after the run because its launch gave no result ends the run with status 1. That covers six cases: the suite did not build, the launch crashed, the adapter did not start, an input changed during the launch, a marker in source matched no listed test, a marked test was skipped or not run.
+**In the local lane success is defined, and everything else is a failure.** A Check that is still owed after the run because its launch gave no result ends the run with status 1. That covers six cases: the suite did not build, the launch crashed, the adapter did not start, an input changed during the launch, a marker in source matched no listed test, a marked test was skipped or not run. Context not applied adds one more case.
 
 The status is 1 and not 2, because the command did its job: it ran what it could and reported every Check with its state. The tree is what is not fine. A missing adapter is not a missing facility. A facility may truly be absent on a machine, and the adapter is pinned in the repository, so one restore command brings it to any machine.
 
@@ -1451,6 +1498,8 @@ The tool changes something on purpose and sees whether a Check notices. A findin
 | Configuration mutation | Chart values, policies, settings |
 | Unverified code search | Nothing. It lists code in the Check's own private unit that no selected test runs |
 
+**Varying unstated context keys to find a missing condition is left for Challenges.** It gives no ordinary evidence for a Scenario's condition. Open: which deployment observation supplies those values, what counts as a finding, and when this Challenge is owed again.
+
 ### Family B: attack the code
 
 The tool searches for an input or a path that breaks the claim. A finding says the code is wrong and the Checks missed it.
@@ -1529,6 +1578,12 @@ The cost. Each crate is code in the judge that nobody on the team has read, and 
 | `method` | `schemes`, `object_format`, and `adapter` with `name` and `version`. `schemes` holds the schemes that produce the fingerprint, `file-1`, `parts-1` and `text-1`, sorted by name. `record-1` is not among them, because it says how a record is stored |
 | `tests` | every enrolled test with `name`, `outcome` and `duration_ms` |
 | `where`, `commit` | this machine or the reference environment, and the commit |
+
+**A result also keeps its launch's condition and collected component reports.** `result-1` gains `condition` and `components` in its body, with the request's condition and the adapter report's collected reads. `azimuth check show` exposes them as the same added fields of `check-1`; its text lists the mapped values, their sources and read times. This includes unstated keys. `run-1` exposes the reads too, so a launch that gives no result can still be inspected in that command's output. A launch with no result still stores no result record.
+
+The cost. The same launch's reports appear in each of its Check results. A failed application can be inspected after the command only if its output was kept.
+
+Example: the result of `payout-is-sent-at-once` keeps `payouts.instant=true` from Azimuth and the unstated `payouts.region=no` from configuration. Another machine's result can show a different region without a different condition.
 
 `edits` is not the list of input files. The inputs are `base` with `edits` applied, and that list is never stored. Without a provider every file of the repository is an input, so the tree the run saw is the list. A provider later adds a field that names its narrowed list.
 
@@ -1623,6 +1678,7 @@ Measured on 2026-11-15 with Codex CLI 0.167.0: under its workspace sandbox a com
 | Place | Tracked | What is there |
 | --- | --- | --- |
 | `azimuth/project.toml`, the project file, in the model repository | yes | the topology: repositories, areas with mounts, components, reference environments |
+| `azimuth/execution-context.toml`, beside the project file | yes | product keys, their types and the components that must read them; no values |
 | `azimuth/model/<module>/, with README.md, specification.md, realization.md and verification.md` | yes | Requirements, Scenarios, terms, roots, decisions |
 | `azimuth/changes/<name>/` | yes | `proposal.md`, `sources/`, and `plan.md` when the change needs a plan. Finished ones move to `changes/finished/<date>-<name>/` |
 | `azimuth/initiatives/<name>/` | yes | `map.md` and `sources/`, with the decision notes |
@@ -1670,6 +1726,72 @@ proof = "docker info"
 | `facility` | a name and its proof command |
 
 The adapter's command in the example is a placeholder.
+
+**Execution contexts add components to the project file and `starts` to each suite.**
+
+| Table or key | Holds |
+| --- | --- |
+| `[[component]]` | `name`, unique in the project; `areas`, the names of the areas it is built from; `report`, the absolute path under its existing door where its report is exposed |
+| `starts` on `[[suite]]` | the names of the real components it starts, including hosts inside the test process. Omitted means `[]` |
+
+Example: a payouts project adds these tables and this suite field:
+
+```toml
+[[component]]
+name = "api"
+areas = ["api"]
+report = "/internal/azimuth"
+
+[[component]]
+name = "website"
+areas = ["website"]
+report = "/internal/azimuth"
+
+[[suite]]
+name = "website-tests"
+area = "website"
+path = "website/tests"
+adapter = "npx --no @azimuth-sh/playwright"
+marker = "@check:<id>"
+starts = ["api", "website"]
+```
+
+**A key belongs to the product, and `execution-context.toml` declares it without a setting name.** Its name is lowercase segments joined by dots. A segment starts with an ASCII lowercase letter and continues with ASCII lowercase letters, digits or hyphens. Azimuth reads no component in the name. Each key is a table at its dotted name. No key is the beginning of another key at a segment boundary.
+
+| Key in the table | Holds |
+| --- | --- |
+| `type` | `boolean`, `one of`, or `number`. Free text is not a key |
+| `values` | for `one of` only, a nonempty list of distinct strings; a condition must name one of them |
+| `components` | a nonempty list of the components that must read this key |
+
+Example:
+
+```toml
+[payouts.instant]
+type = "boolean"
+components = ["api", "website"]
+
+[payouts.region]
+type = "one of"
+values = ["no", "se"]
+components = ["api"]
+```
+
+**A project with no contexts needs neither this file nor a component declaration.** An absent file and an empty file both declare no keys. `azimuth init` writes no `execution-context.toml` and no components, and leaves `starts` omitted. It cannot guess product keys, mappings or topology from tests.
+
+**Every change to `execution-context.toml` is class D, as is a change to `starts` in the project file.** `azimuth change diff` names the file as the reason. Keys and topology are held together by lint, not by the library reading either file.
+
+The cost. One key needs a declaration here and a mapping in every component that reads it. A feature deliberately switched component by component needs several keys, one for each set switched together.
+
+Example: `payouts.instant` is listed for `api` and `website`. It cannot mean true in one and false in the other. A team that switches its page before its actions declares separate product keys for those two promises.
+
+**A key has one value in a component at a time, for every request it serves.** A value that differs between concurrent requests is not context. Its Scenario arranges the value in its setup, keeps any condition of its Requirement, and has no `Context:` for that value. The change that makes a key vary between requests also retires it.
+
+**A retired key leaves in one change with the conditions that name it and the mappings in the components.** The Scenario for the behavior that stays drops the condition, and its Checks are owed. The Scenario for the behavior that leaves goes with its Checks. Lint holds undeclared keys in `Context:`, undeclared components listed for a key, and keys listed for no component. It cannot see mappings inside code; a mapping left behind reports a key the component is not listed for. A result without the retired key still needs provenance and a fingerprint that apply to the release; retiring a key widens no result to code it did not run on.
+
+The cost. Retiring a widely used key is one large change. Only review catches a value that has begun to vary between requests while its declaration remains.
+
+Example: `payouts.instant` becomes a rollout for one user in ten. The change removes its declaration and mappings. The Scenario of `payout-is-sent-at-once` arranges a user who gets instant payouts in its setup and keeps its Requirement's other conditions. Its Checks run again.
 
 The cost. Later content, such as components and reference environments, nests deeper, and TOML gets wordy there. The form for a project of several repositories, and the format of `azimuth/repository`, are decided by the increment that first reads them.
 
@@ -1842,6 +1964,17 @@ Example: `azimuth status --json` for one Requirement whose Check is kept.
 | `run-1` | `azimuth run` and `azimuth check run` | `lane`, `outcome`, `suites` with `name`, `launch` and `duration_ms`, `checks` with `id`, `state`, `reason`, `detail`, `failing_tests` and `duration_ms`, and `findings` in the commit lane |
 | `error-1` | any command, on a reading error | `errors`, each with `kind`, `file`, `line` and `message` |
 
+**In `run-1`, `suites` has one entry per launch, so a suite's name can occur more than once.** Each entry gains `condition`, `checks`, the ids requested for that launch, and `components`, the collected reads. Its `launch` and `duration_ms` describe that launch. The top-level `checks` still holds each Check's state once. Text shows the suite, condition, duration and requested Checks for each launch, including a launch that failed before the next one ran. The start and end lines name the condition too. These are added fields, and the format keeps its number.
+
+Example: one suite has two launches:
+
+```text
+website-tests  payouts.instant=false  2100 ms  payout-waits-for-review
+website-tests  payouts.instant=true   2300 ms  payout-is-sent-at-once
+```
+
+Their `suites` entries have the same `name` and different `condition`, `duration_ms` and `checks`. A crash of the first does not remove the second from the plan.
+
 Names are lowercase with underscores. Ids and states are this document's own words: `kept`, `owed`, `passed`, `failed`, `proven`.
 
 **A known fail is `owed` with the reason `failed on these inputs`.** Only a Check that ran in this very command is `passed` or `failed`. So `azimuth status`, which runs nothing, never prints those two.
@@ -1851,7 +1984,7 @@ Names are lowercase with underscores. Ids and states are this document's own wor
 | Field | Value |
 | --- | --- |
 | `reason` of a Check | exactly one of the reasons for owed, as written in this document. Anything more is in the text field `detail` |
-| A Check whose launch gave no result | in `run-1` the state is `owed`, the reason is `no result`, and `detail` names the cause |
+| A Check whose launch gave no result | in `run-1` the state is `owed`, the reason is `context not applied` for that case and `no result` for other launch faults, and `detail` names the cause |
 | `contradicted` | a reason. The state is `owed` |
 | A Check with `Reuse: never` on a developer's machine | the state is `owed` and the reason is `runs in CI` |
 | `parts_changed`, `files_changed` | a list of part names, and a list of paths from the repository root. When git no longer has the tree, the second is empty and `detail` says `files changed` |
@@ -1971,26 +2104,34 @@ A release is a declared record of content. A deployment is an observed fact. Req
 
 **Provenance.** The running image was built from the content the Check ran on. The release's commits give the tree, and a reference result with an equal fingerprint applies.
 
-**Execution context.** A running component reports its configuration values. A component declares which values it reports, and declaring a value means "this changes behavior".
+**A result depends only on the keys its Scenario's effective condition states.** In a deployment every declared key is set explicitly. For each stated key every listed component, and every ready instance of each, must report the same typed value, and that value must equal the condition. Other keys do not decide whether the result applies. Provenance and the fingerprint still apply; equal values never make a result apply to code it did not run on.
 
-**A result depends on every declared value of its component.** It applies only if each deployed value equals the value its tests recorded. There is no list per Check.
+**A `Context:` condition that is false makes its Requirement or Scenario "Not applicable here".** No evidence is needed for that case. A Scenario with no condition of its own keeps its Requirement's condition. A mismatch is not owed: running the same tests again cannot change the deployment's value. The fix is a Scenario for that value, a change of the stated value, or a change to the deployment. A flag switch makes the Scenarios for the new value begin to apply and the others become not applicable. Nothing runs again just for the switch. There are no deployment-named variants.
 
-**The execution context is not part of the fingerprint.** In a test run the configuration comes from the test code, which is already an input.
+**A reconciler for each environment reads reports and sends an observation to the server.** It runs where the instances can be reached. The server never calls into the environment, and Azimuth has no discovery interface. Kubernetes comes first. Its reconciler finds workloads by the deployment configuration's mark `azimuth.sh/component`, whose value names the component. That configuration belongs to whichever area holds it; no area is special. A team with another environment writes a reconciler against the observation.
 
-**A mismatch is not "owed".** Running the same tests again cannot fix it. The fix is a variant run, or a change to the deployment.
+**An observation names the deployment and every ready instance.** For each it gives the component named by its mark, the environment's instance identity, its image digest, the time read, and its report or the cause it could not be read. The reconciler tries every ready instance at its own address, never an address that spreads requests, and uses the component's declared report path. It proves that the set of ready instances stayed the same across its reads. An observation is not sent if that set changed. A ready instance tried but unreadable stays in the observation.
 
-**A `Context:` condition that is false makes the Requirement "Not applicable here".** No evidence is needed for it.
+**Disagreeing values withhold every result that depends on that key.** The server shows a deployment finding naming the key, components, instances, values and when it was first seen. An absent declared key or value is a finding and a result stating it does not apply. A deployment report that shows any value applied by Azimuth is a finding and lets no result apply to that deployment.
 
-Example: the lab Checks run with labs enabled. The component `web-api` declares the value `features.labs_enabled`.
+**An unreadable ready instance withholds results that depend on its component's keys.** No answer in time, no report or a report outside its format stays in the observation with its cause. The server shows the instance, component and cause. A later observation that reads it can restore those results. The reconciler still tries every other ready instance.
 
-| Production | Planning | Status |
-| --- | --- | --- |
-| Labs off | Unchanged | Lab Requirements with a `Context:` condition read "Not applicable here" |
-| Labs turned on | Unchanged, nothing runs again | Lab results apply at once. Results of other Checks gathered with labs off need the `production-next` variant |
+**A report whose component name differs from its mark withholds results for both components.** The observation keeps both names and the server shows the finding, including an undeclared reported name. No result depending on a key listed for either component applies until a later observation finds every name agreeing with its mark. Other components' keys are unaffected. The report's name guards a wrong mark or address; instance identity still comes only from the environment.
 
-**One limit.** A value nobody declared is invisible, like an input nobody named.
+The cost. One slow ready instance can withhold every result depending on its component's keys. A wrong name can withhold those of two components. A rolling deployment can report disagreement for minutes. Each new environment needs a whole reconciler, and unreachable instances cannot be observed this way.
 
-Unmeasured: how many of today's Checks mix tests with different reported values.
+Example: Kubernetes has three ready Pods marked `api`. The reconciler reads `/internal/azimuth` at each Pod's address, lists them again, and finds the same set. Two report `payouts.instant=true`, and the third does not answer. The observation includes that cause, so results depending on this key do not apply. Later all three answer `true`, and `website` reports `true` too. The Scenario `payout-is-sent-at-once` begins to apply if its provenance and fingerprint also match; a Scenario for `false` is not applicable.
+
+**Open for deployment observations.** No rule is chosen yet for these cases:
+
+| Question | What remains open |
+| --- | --- |
+| No ready instance of a listed component | Is the component unavailable, is its value unknown, or can any result apply? |
+| A value cannot be read by its declared type | Which finding is shown, and which results are withheld? |
+| The set of ready instances changes across reads | The observation is not sent. When is another read tried, and how is the old observation shown meanwhile? |
+| A component reports a key it is not listed for | It is a finding. Which results, if any, are withheld? |
+
+**One limit.** A value nobody declared is invisible, like an input nobody named. A value that differs between concurrent requests belongs in a Scenario's setup, and an observation cannot say where that given occurs.
 
 ### Checks on a running system
 
@@ -2231,7 +2372,7 @@ Unverified: a .NET tool for the file reference graph. It is likely a small Rosly
 
 ### Stack support
 
-**The core knows no language.** It knows files, hashes, the model and a few report formats. Everything about a stack comes from a command that answers in one of those formats.
+**The core knows no language.** It knows files, hashes, the model and a few report formats. Stack support answers in those formats, through commands or the report callback of a component.
 
 | Contract | Answers | One per |
 | --- | --- | --- |
@@ -2239,8 +2380,52 @@ Unverified: a .NET tool for the file reference graph. It is likely a small Rosly
 | Input provider | Which files a suite depends on | Build tool or language |
 | Structure part of a package | Which units exist, and whether the rules hold | Architecture on a stack |
 | Step library | Which steps a test ran, with their roles | Language |
+| Report of a component | Its name, whether applying is possible, and each mapped key's value, source and time read | Component, through the library of its stack |
 
-**A contract is a command plus a report format, documented and versioned.** It is not a plugin compiled into the core. An implementation can be written in any language.
+**A contract fixes how its report is obtained and its format, documented and versioned.** The adapter, provider and structure contracts use commands; the step library records steps; the report of a component comes from its callback or its declared path. It is not a plugin compiled into the core. An implementation can be written in any language.
+
+**One library per stack applies values and gives the report of a component.** The component registers its name, a condition under which applying is possible, and an explicit mapping of every key it uses to its own setting. The mapping reads and writes that setting. No rule derives a setting from a key, and the library knows no types and reads no project file. The core and server interpret its text values by `execution-context.toml`.
+
+**The library speaks of keys, sources, values, applying and reports, and knows no testing.** It opens no port and makes no connection out. Its callback returns the report; the component exposes it under the rules of a door it already has, at its declared `report` path. The same report is used in a launch and a deployment. The library never guesses applying from an environment name. The component's code gives the condition. It is evaluated before applying at start and at each report read; a later true condition does not itself apply values again.
+
+**A source reads a key's current value and where it came from, and applies a value in this process.** The library applies only when its condition holds. It ships one source over the stack's configuration, used for each key with no other registered source. The source that applies Azimuth's values is added last among the configuration's sources, so its value wins. A later source that wins is reported as an override. The library reads every mapped key again whenever its callback is called, including a value that can change while it runs. A team that reads a flag service, a database or another store registers its own source for those keys. Azimuth ships no flag-service integration and requires no OpenFeature integration.
+
+**The libraries are `Azimuth.Context` for .NET and `@azimuth-sh/context` for Node.** The .NET source reads and writes the mapped configuration path through a configuration provider. The Node source reads the mapped name from `process.env` and applies by writing that name there. It keeps the origin of its applied text; if the current text differs, it reports the environment as a later source. An application's other configuration store needs a registered source of its own. Both packages use the release's version and carry their license, site, source repository and a short readme explaining registration, mapping and reporting.
+
+The cost. Each component carries the library in production too, and settings read before registration need an earlier hook. A custom source can report a value the product code does not read, and only review catches it. For Node, a later writer of the same text cannot be distinguished from the applied value in `process.env`.
+
+Example: `api` maps `payouts.instant` to `Features:Payouts:Instant`; `website` maps it to `FEATURE_INSTANT_PAYOUTS`. Applying is possible only under each component's own explicit condition. The launch's value reaches both settings. A key served by a flag service instead uses the team's source, with both read and apply operations.
+
+**The report of a component has format `1` and reports exactly its mapped keys.** It carries `component`, `applying` and `context`. It carries no identity of its instance and no mark of a launch. A new part is added under the same path; a change to an existing part raises the format version.
+
+| Field | Holds |
+| --- | --- |
+| `format` | `1` |
+| `component` | the name from registration, which the reader compares with the expected component |
+| `applying` | `possible` when the registration's condition holds at the read, otherwise `not possible` |
+| `context` | an object of mapped product keys |
+| Each key | `value`, text or `null` when absent; `source`, or `null` when absent; `read`, the UTC time it was read |
+| `source` | `name`, and `precedence`: `before azimuth`, `azimuth`, or `after azimuth`. These say that Azimuth's value would win, that this is its applied value, or that this source wins over it |
+
+**A launch accepts a stated value only with source precedence `azimuth` and applying `possible`.** If applying is `not possible`, the cause is "applying is off". If possible and the source precedence is `before azimuth`, the cause is "the context never reached the component". If the precedence is `after azimuth`, the cause names the overriding source. A correct value from configuration alone is insufficient. An absent value or source is reported as absent. The report never needs a field saying whether a launch's variable arrived.
+
+**A listed component that reports no value for a key, or reports a key it is not listed for, gives a finding in its report's reader.** In a launch the comparison still covers only stated keys. The library reports its mappings, not what it thinks the declaration ought to hold.
+
+The cost. The name is written in both topology and registration; lint sees only the first. Every reader checks the report's format. A later source must tell its position relative to Azimuth even outside a launch.
+
+Example: the callback of `api`, also exposed at `/internal/azimuth`, returns:
+
+```json
+{ "format": 1, "component": "api", "applying": "possible",
+  "context": {
+    "payouts.instant": { "value": "true",
+      "source": { "name": "azimuth", "precedence": "azimuth" },
+      "read": "2026-11-24T10:15:00Z" },
+    "payouts.region": { "value": "no",
+      "source": { "name": "configuration", "precedence": "before azimuth" },
+      "read": "2026-11-24T10:15:00Z" }
+  } }
+```
 
 **The contract of a test adapter is one document in and one document out.**
 
@@ -2295,9 +2480,25 @@ The request goes through standard input and not through arguments, because a lan
 
 The `discover` request holds `format`, `verb` and `folder`. Its report holds `format`, `adapter`, and `projects`, each with a `path`.
 
+**Contexts add fields to `adapter-request-1` and `adapter-report-1` and keep both numbers.** The run request gains `condition`, the same object of normalized text values as `AZIMUTH_CONTEXT`, and `components`, one entry with `name` and `report` path for each component in `starts`. The report gains `components`, a list with the expected `name` and `reads` for each component collected. Each read has `phase`, one of `start`, `stop` or `built`, and either `report`, the document as read, or `error`, the cause it could not be read. Several hosts may give several `built` reads for one component. A component that answered before start instead has `error: "something else answers there"` and no reads, and the report lists the tests as `not_run`. Only components needed by a nonempty condition are required to have reads.
+
+**A report with no `components` leaves Checks with a condition owed with "context not applied: the adapter reports no components".** Checks with no condition keep their results. The core cannot tell an old adapter from one that forgot the field. A malformed component report is a component read error, not a new outcome of a test.
+
+The cost. The request lists components even when this condition needs none of their keys. Addresses remain in runner configuration, so the request alone cannot prove that a reader used the right one.
+
+Example: a launch of `payout-is-sent-at-once` sends these additional request fields:
+
+```json
+{ "condition": { "payouts.instant": "true" },
+  "components": [ { "name": "api", "report": "/internal/azimuth" },
+                  { "name": "website", "report": "/internal/azimuth" } ] }
+```
+
+Its report's `components` carries the `start` and `stop` reads under each name. An adapter that predates these fields can still prove a launch with `{}` as its condition.
+
 An adapter is then a few lines in any language. Azimuth's own tests use a small script as an adapter, so testing the core needs no test framework of another stack.
 
-The cost. This is the most public promise of the first increment, and it is made after one adapter. The second adapter will show what it lacks, and a change then means a new number and an update of every adapter.
+The cost. This is the most public promise of the first increment, and it is made after one adapter. Added fields keep the contract numbers; removing a field or changing its meaning needs a new number and an update of every adapter.
 
 Example: a run of one Check. The test name is invented.
 
@@ -2334,7 +2535,7 @@ A missing adapter is a named state. `azimuth run` says which command is missing 
 
 The cost. An agent that reads only `run-1` cannot tell a missing adapter from a broken one. It reads standard error, or it runs the restore command of the stack.
 
-Not built: a first question that the core sends to an adapter before a launch, so that no answer means `not started`. It was open for the second increment and was left out there, because it needs a new verb in the contract and one more start of the adapter for each launch. It can come with the third increment, which changes the report and gives the contract a new number.
+Not built: a first question that the core sends to an adapter before a launch, so that no answer means `not started`. It was open for the second increment and was left out there, because it needs a new verb in the contract and one more start of the adapter for each launch. It is not in the accepted list of increment 3, which adds report fields and keeps the contract numbers.
 
 Example: a developer clones drim-dev on a new machine and runs `azimuth run` before `dotnet tool restore`. The .NET suite shows `crashed`, its Checks are owed with `no result`, and dotnet's own message says which command to run.
 
@@ -2407,16 +2608,17 @@ Example: three of drim-dev's API tests carry `[RealBffFact]`, an attribute of th
 
 Open: whether nuget.org reserves the prefix `Azimuth.` for the project. A person asks for it.
 
-**A stack does not need all four.** An adapter alone is enough to start.
+**A stack does not need every contract.** An adapter alone is enough to start without a condition. A Check with a condition also needs component reports from a context library or an implementation of that contract.
 
 | Support | What you get |
 | --- | --- |
-| Adapter only | Everything works. Every file of the repository is an input, so results are rarely kept |
+| Adapter only | Checks with no condition work. Every file of the repository is an input, so results are rarely kept |
 | Plus a build closure provider | Results are kept when a change is outside the suite's build |
 | Plus a reference graph and a profile | Precision per unit |
 | Plus a step library | Controls and three outcomes. Without it a test has only pass and fail |
+| Plus reports of components | Checks under a condition, with the values and sources actually read |
 
-**Correctness never depends on stack tooling. Only precision does.** A new stack starts coarse and right.
+**Missing stack support never makes a result count with weaker proof.** A new stack starts coarse and right. A missing context report leaves a conditioned Check owed.
 
 **Two rules keep the cost per stack low.**
 
@@ -2433,7 +2635,7 @@ Example: drim-dev has three stacks in one project.
 
 ### Teams write their own stack support
 
-**A team may implement all four contracts itself and publish them later.** This is the normal way a stack gets support.
+**A team may implement the stack contracts itself and publish them later.** This is the normal way a stack gets support.
 
 |  | Local | Published |
 | --- | --- | --- |
@@ -2452,6 +2654,12 @@ Example: drim-dev writes the vertical slice structure for ASP.NET Core in its ow
 
 - **A conformance kit per contract.** Small fixture projects with known answers, such as a test that must fail and a marker that must be listed. An implementation that fails the kit cannot produce verified results.
 - **Every result records the name and digest of each implementation that produced it.** A bad implementation found later shows exactly which results to distrust.
+
+**The conformance kit for the report of a component calls its callback through a fixture of the stack.** It proves explicit mappings for read and apply, applying possible and not possible, an absent value, an unstated key keeping its source, a later overriding source, and a changed value read again. It checks the component name and the report format, then exercises the same document through the fixture's declared path. A team's custom source runs these cases too. The library and source code are inputs through the product's pinned dependencies; the adapter collects the reports and does not make the library a command.
+
+The cost. Conformance proves the fixture, not that the product reads the setting its mapping names. The Verification Review compares each stated key's mapping with the setting the code reads. No run flips a key to prove that reading.
+
+Example: a fixture maps `payouts.instant`, applies `true`, then adds a source that gives `false`. The report must give `false` from that named source with precedence `after azimuth`.
 
 **The input provider is the dangerous one.** A lying adapter is caught by controls. A provider that narrows too much is silent, because it only keeps a result that should be owed. Its guards are the roles it declares and the referee.
 
@@ -2487,7 +2695,7 @@ Example: for the ingress suite the named measuring code is `Harnesses/Ingress*.c
 
 **A result names a commit only as far as that commit was the code.** A local run may see paths that are edited, new or deleted, and the record holds them as `edits`. The text then says `commit b8f6d2a with uncommitted edits`, and `edited_paths` in `check-1` is their number. For a run on exactly the commit the number is 0, and the text names the commit alone. The text does not list the paths. The record does.
 
-**Reasons for owed:** an input changed, never run, deferred by the lane, cannot run here, failed on these inputs, inconclusive, contradicted, the start-up guard is owed, expired, no result, runs in CI.
+**Reasons for owed:** an input changed, never run, deferred by the lane, cannot run here, failed on these inputs, inconclusive, contradicted, the start-up guard is owed, expired, no result, context not applied, runs in CI.
 
 **"An input changed" names the part,** using the part digests stored with the result.
 
@@ -3291,6 +3499,17 @@ Example: the planned model of the lab engine has `labs/platform/catalog`, `labs/
 | A Challenge that changes a file no selected Check depends on | The Challenge with the inputs of its Checks |
 | A Check on a running system without `Reuse: for N days` or `never` | The declaration alone |
 | A broken structure rule | The profile's static enforcers with the code |
+| A `Context:` naming an undeclared key, giving a value of the wrong type or outside its one-of list | The condition with `execution-context.toml` |
+| Contradicting `Context:` lines on one heading, or a Scenario contradicting its Requirement | The conditions in `specification.md` |
+| A key that begins another at a segment boundary, or a key listed for no component | `execution-context.toml` alone |
+| An undeclared component in a key's `components` or a suite's `starts` | The declarations with `project.toml` |
+| A Check whose condition has a key that no started component is listed for | The condition, key declaration and suite's `starts` |
+
+**An unreadable condition is a reading error; a readable condition that disagrees with declarations is lint.** `Context:` without exactly one `key=value` assignment, an invalid key spelling, an unfinished JSON string or malformed number is a reading error. An unknown key, a well-formed value of the wrong declared type, a one-of value not listed, and contradicting assignments are findings. Both running commands leave affected Checks owed with "context not applied" until their condition can be applied. Checks without the faulty condition can still run.
+
+The cost. The local lane can start while lint names a contradiction elsewhere, but that contradiction can never produce a result.
+
+Example: `Context: payouts.instant="true"` reads as a string but the key is boolean, so lint names the type mismatch. `Context: payouts.instant=true payouts.region="no"` is a reading error: two assignments need two lines.
 
 **One more finding: a Requirement that declares `Realization:` and has no root.** The author asked for a review and gave the reviewer no place to start. It is compared in the model alone.
 
@@ -3335,6 +3554,8 @@ The cost. One reading error anywhere blinds every command for the whole project,
 | `specification.md` | a review declaration with a value other than `reviewed`. A Scenario heading with no Requirement heading above it. A Scenario id used twice in one Requirement. A Requirement id used twice in the project |
 | `verification.md` | a Check that stands under no Scenario heading. A second `Reuse:` line on one Check. A Check id used twice in the project |
 | The project file | a missing required key. A suite that names an area no entry declares. A marker form that does not hold `<id>` exactly once. Two entries of one table with the same name. A suite path outside the repository |
+| The project file's components and `starts` | a missing component `name`, `areas` or `report`; an undeclared area; a report path that does not start with `/`; a field of the wrong TOML type, including `starts` other than a list of names |
+| `execution-context.toml` | malformed TOML, an unknown field, an invalid dotted key, a missing `type` or `components`, an unknown type, `values` missing for `one of` or present for another type, an empty one-of list or repeated value after NFC normalization, or a field of the wrong TOML type. Intermediate tables hold only nested key tables |
 
 **A declaration that stands where it has no meaning is a reading error.** Each of these lines raises rigor, so ignoring one would lower rigor without a word. The message names the file and the place where the line belongs.
 
@@ -3342,11 +3563,11 @@ The cost. One reading error anywhere blinds every command for the whole project,
 | --- | --- |
 | `Reuse:` | under a Check in `verification.md` |
 | `Verification:`, `Realization:` | under a Requirement in `specification.md` |
-| `Context:` | nowhere until the increment that reads it. Until then the line is a reading error wherever it stands |
+| `Context:` | under a Requirement or Scenario in `specification.md` |
 
 Text above the first Requirement of a file stays prose, whatever it looks like.
 
-The cost. One misplaced line stops every command until it is fixed, and nobody can write `Context:` lines ahead of the increment that reads them.
+The cost. One misplaced line stops every command until it is fixed.
 
 Example: an agent in drim-dev writes `Reuse: never, the probe reads the running cluster` under the Scenario in `specification.md`, and not under the Check. Without the rule lint is clean, the Check passes once on a developer's machine, and from then on it is kept.
 
@@ -3710,6 +3931,7 @@ Example: a grant covers `Features/CliAuth/` in drim-dev with ceiling A. A fix to
 | Changed file | Class | How the core knows |
 | --- | --- | --- |
 | `specification.md`, a rigor declaration, the project file, an installed skill file | D | the path |
+| `azimuth/execution-context.toml` | D | the path |
 | `verification.md`, a file with a marker, any file inside a suite's folder | C | the path, the marker, the suite's declared folder |
 | `realization.md` | B | the path |
 | Everything else | A | it is what remains |
