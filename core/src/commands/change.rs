@@ -105,7 +105,8 @@ fn document(target: &str, base: &str, change: &Change) -> Value {
 fn text(target: &str, base: &str, change: &Change) -> String {
     let mut text = format!("class {}, compared with {target} at {}\n", change.class, &base[..base.len().min(7)]);
     for path in &change.class_reasons {
-        text.push_str(&format!("{path}: every change to this file is class D\n"));
+        let reason = if path == project::PROJECT_FILE { "a change to `starts` or to a component declaration is class D" } else { "every change to this file is class D" };
+        text.push_str(&format!("{path}: {reason}\n"));
     }
     for (noun, lists) in [("Requirements", &change.requirements), ("Scenarios", &change.scenarios), ("Checks", &change.checks)] {
         for (which, ids) in [("added", &lists.added), ("changed", &lists.changed), ("removed", &lists.removed)] {

@@ -25,7 +25,7 @@ pub fn run(json: bool) -> i32 {
         Err(message) => return output::could_not(&message),
     };
     let markers = markers::scan(&Disk { root: git.root() }, &workspace.project, &tree.files);
-    let findings = lint::findings(&workspace.model, &markers, &tracked);
+    let findings = lint::findings(&workspace.model, &workspace.project, &markers, &tracked);
 
     if json {
         output::document(&json!({ "format": "lint-1", "findings": findings.iter().map(Finding::to_json).collect::<Vec<_>>() }));

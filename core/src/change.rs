@@ -63,8 +63,27 @@ pub fn compare(before: &Side, after: &Side) -> Change {
     }
 
     let not_compared = differing.iter().filter(|path| before.files.contains_key(*path) && marked_files.contains(path.as_str())).cloned().collect();
-    let class_reasons = differing.iter().filter(|path| path.as_str() == KEY_FILE).cloned().collect();
+    let class_reasons = differing
+        .iter()
+        .filter(|path| path.as_str() == KEY_FILE || (path.as_str() == PROJECT_FILE && topology_changed(before.project, after.project)))
+        .cloned()
+        .collect();
     Change { class, class_reasons, requirements, scenarios, checks, markers_removed, not_compared, rigor_lowered }
+}
+
+/// Whether the components or the `starts` of the suites differ. A project that cannot be read
+/// counts as one with none.
+fn topology_changed(before: Option<&Project>, after: Option<&Project>) -> bool {
+    type Topology<'p> = (Vec<(&'p String, &'p Vec<String>, &'p String)>, BTreeMap<&'p String, &'p Vec<String>>);
+    fn topology(project: Option<&Project>) -> Topology<'_> {
+        let Some(project) = project else {
+            return Default::default();
+        };
+        let components = project.components.iter().map(|component| (&component.name, &component.areas, &component.report)).collect();
+        let starts = project.suites.iter().map(|suite| (&suite.name, &suite.starts)).collect();
+        (components, starts)
+    }
+    topology(before) != topology(after)
 }
 
 /// The declarations that Requirements and Checks present on both sides lost. A Requirement or a

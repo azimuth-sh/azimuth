@@ -103,6 +103,21 @@ fn init_writes_the_playwright_command_and_marker_from_the_runner_table() {
     }
 }
 
+// behavior-contexts-components: `azimuth init` leaves `starts` omitted
+#[test]
+fn init_leaves_starts_omitted_on_every_suite_it_writes() {
+    let mut repo = fresh();
+    fake_adapter(&mut repo);
+    answers(&repo, ".", &["playwright/loans", "playwright/fines"]);
+    repo.azimuth(&["init"]).expect_status(0);
+    let written = suites(&repo);
+    assert_eq!(written.len(), 2, "{written:#?}");
+    for suite in written {
+        assert!(!suite.as_table().unwrap().contains_key("starts"), "{suite:#?}");
+    }
+    assert!(!repo.read(PROJECT_FILE).contains("starts"), "{}", repo.read(PROJECT_FILE));
+}
+
 // behavior-2: The install line that init and run print is `npm install --save-dev --save-exact @azimuth-sh/playwright@<version>`, with the CLI's version filled in
 // behavior-2: The printed line names the version of the CLI that prints it
 // behavior-2: In a repository with a Playwright stack whose adapter is not installed, init prints the install line and says that this stack's suites are not in the project file

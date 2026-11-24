@@ -757,6 +757,7 @@ fn key_segments_use_the_ascii_letter_digit_hyphen_grammar() {
 #[test]
 fn payouts_in_a_key_name_does_not_declare_or_require_a_component() {
     let repo = Repo::sample();
+    declare_payout_components(&repo);
     repo.write(KEY_FILE, INSTANT);
     lint_is_clean(&repo);
     status(&repo);
@@ -798,6 +799,7 @@ fn one_of_values_are_strings_in_the_key_table() {
 #[test]
 fn components_are_an_explicit_list_on_the_key() {
     let repo = Repo::sample();
+    declare_payout_components(&repo);
     repo.write(KEY_FILE, INSTANT);
     lint_is_clean(&repo);
     repo.replace(KEY_FILE, "[\"api\", \"website\"]", "[\"website\"]");
@@ -986,11 +988,11 @@ fn key_reading_errors_end_with_status_two() {
 /// A `Context:` line stands where it belongs and reads as a condition: the declared key is
 /// accepted, and a key that no declaration holds is found by lint at the same place.
 fn context_is_read_at(place: impl Fn(&Repo, &[&str])) {
-    let repo = payouts();
+    let repo = started_payouts();
     place(&repo, &["Context: payouts.instant=true"]);
     lint_is_clean(&repo);
     status(&repo);
-    let control = payouts();
+    let control = started_payouts();
     place(&control, &["Context: payouts.speed=true"]);
     lint_names_the_specification(&control);
 }
@@ -1065,7 +1067,7 @@ fn a_context_under_a_requirement_or_scenario_in_verification_md_is_a_reading_err
 #[test]
 fn a_context_above_the_first_requirement_stays_prose() {
     let lines = "Context: payouts.instant=true\nContext: payouts.speed=true\nContext: payouts.instant=true payouts.region=\"no\"\nContext:\n\n";
-    let repo = payouts_with_results();
+    let repo = started_payouts_with_results();
     repo.replace(PAYOUTS_SPEC, REQUIREMENT_HEADING, &format!("{lines}{REQUIREMENT_HEADING}"));
     repo.replace(PAYOUTS_VERIFICATION, REQUIREMENT_HEADING, &format!("{lines}{REQUIREMENT_HEADING}"));
     lint_is_clean(&repo);
@@ -1077,13 +1079,13 @@ fn a_context_above_the_first_requirement_stays_prose() {
 // behavior-contexts-conditions: A `Context:` line states one key and one exact value as `Context: <key>=<value>`
 #[test]
 fn a_context_line_states_one_key_and_one_exact_value() {
-    let repo = payouts_with_results();
+    let repo = started_payouts_with_results();
     on_requirement(&repo, &["Context: payouts.instant=true"]);
     lint_is_clean(&repo);
     claim_is(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[("payouts.instant", "true")]);
     claim_is_not(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[("payouts.instant", "false")]);
     claim_is_not(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[]);
-    let region = payouts_with_results();
+    let region = started_payouts_with_results();
     on_requirement(&region, &["Context: payouts.region=\"se\""]);
     claim_is(&region, REACHES_THE_CARD, REACHES_CLAIM, &[("payouts.region", "\"se\"")]);
     claim_is_not(&region, REACHES_THE_CARD, REACHES_CLAIM, &[("payouts.region", "\"no\"")]);
@@ -1100,13 +1102,13 @@ fn spaces_and_tabs_around_the_equals_sign_change_nothing() {
         "Context: payouts.instant\t=\ttrue",
         "Context: payouts.instant \t = \t true",
     ] {
-        let repo = payouts_with_results();
+        let repo = started_payouts_with_results();
         on_requirement(&repo, &[line]);
         lint_is_clean(&repo);
         claim_is(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[("payouts.instant", "true")]);
         claim_is_not(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[("payouts.instant", "false")]);
     }
-    let region = payouts_with_results();
+    let region = started_payouts_with_results();
     on_requirement(&region, &["Context: payouts.region\t= \"se\""]);
     lint_is_clean(&region);
     claim_is(&region, REACHES_THE_CARD, REACHES_CLAIM, &[("payouts.region", "\"se\"")]);
@@ -1115,14 +1117,14 @@ fn spaces_and_tabs_around_the_equals_sign_change_nothing() {
 // behavior-contexts-conditions: Several keys are read from several lines under the same heading
 #[test]
 fn several_keys_are_read_from_several_lines() {
-    let repo = payouts_with_results();
+    let repo = started_payouts_with_results();
     on_requirement(&repo, &["Context: payouts.instant=true", "Context: payouts.region=\"se\"", "Context: payouts.limit=100"]);
     lint_is_clean(&repo);
     let condition = [("payouts.instant", "true"), ("payouts.region", "\"se\""), ("payouts.limit", "100")];
     claim_is(&repo, REACHES_THE_CARD, REACHES_CLAIM, &condition);
     claim_is_not(&repo, REACHES_THE_CARD, REACHES_CLAIM, &condition[..2]);
     claim_is_not(&repo, REACHES_THE_CARD, REACHES_CLAIM, &condition[1..]);
-    let scenario = payouts_with_results();
+    let scenario = started_payouts_with_results();
     on_reaches(&scenario, &["Context: payouts.instant=true", "Context: payouts.region=\"se\""]);
     lint_is_clean(&scenario);
     claim_is(&scenario, REACHES_THE_CARD, REACHES_CLAIM, &condition[..2]);
@@ -1132,7 +1134,7 @@ fn several_keys_are_read_from_several_lines() {
 #[test]
 fn spaces_and_equals_signs_inside_a_one_of_value_belong_to_it() {
     for label in ["a = b", "x=y", "  two  spaces"] {
-        let repo = payouts_with_results();
+        let repo = started_payouts_with_results();
         let value = json_string(label);
         on_requirement(&repo, &[&format!("Context: payouts.label = {value}")]);
         lint_is_clean(&repo);
@@ -1144,11 +1146,11 @@ fn spaces_and_equals_signs_inside_a_one_of_value_belong_to_it() {
 // behavior-contexts-conditions: Boolean values are unquoted
 #[test]
 fn boolean_values_are_unquoted() {
-    let repo = payouts_with_results();
+    let repo = started_payouts_with_results();
     on_requirement(&repo, &["Context: payouts.instant=false"]);
     lint_is_clean(&repo);
     claim_is(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[("payouts.instant", "false")]);
-    let quoted = payouts();
+    let quoted = started_payouts();
     on_requirement(&quoted, &["Context: payouts.instant=\"false\""]);
     status(&quoted);
     lint_names_the_specification(&quoted);
@@ -1157,11 +1159,11 @@ fn boolean_values_are_unquoted() {
 // behavior-contexts-conditions: Number values are unquoted
 #[test]
 fn number_values_are_unquoted() {
-    let repo = payouts_with_results();
+    let repo = started_payouts_with_results();
     on_requirement(&repo, &["Context: payouts.limit=100"]);
     lint_is_clean(&repo);
     claim_is(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[("payouts.limit", "100")]);
-    let quoted = payouts();
+    let quoted = started_payouts();
     on_requirement(&quoted, &["Context: payouts.limit=\"100\""]);
     status(&quoted);
     lint_names_the_specification(&quoted);
@@ -1224,7 +1226,7 @@ fn a_context_with_an_invalid_key_is_a_reading_error() {
         condition_reading_error(&format!("Context: {key}=true"));
     }
     // A key spelled well but declared nowhere is read, and lint finds it.
-    let repo = payouts();
+    let repo = started_payouts();
     on_requirement(&repo, &["Context: payouts.instant-mode=true"]);
     status(&repo);
     lint_names_the_specification(&repo);
@@ -1355,7 +1357,7 @@ fn reading_commands_still_answer_with_a_condition_finding() {
         vec!["Context: payouts.instant=\"true\""],
         vec!["Context: payouts.instant=true", "Context: payouts.instant=false"],
     ] {
-        let repo = payouts();
+        let repo = started_payouts();
         on_requirement(&repo, &lines);
         lint_names_the_specification(&repo);
         for (args, format) in [
@@ -1379,5 +1381,368 @@ fn reading_commands_still_answer_with_a_condition_finding() {
         }
         assert!(repo.adapter_starts().is_empty());
         assert!(repo.probe_starts().is_empty());
+    }
+}
+
+// Started components in the model: `docs/increments/contexts-components.md`. A component is
+// observed through what refers to it by name: lint finds a key's `components` and a suite's
+// `starts` that name no declared component, and a reading error stops every command.
+
+fn lint_finds_an_undeclared_component(repo: &Repo) {
+    lint_names_a_declaration_file(repo);
+}
+
+fn payouts_with_keys() -> Repo {
+    let repo = Repo::sample();
+    repo.write(KEY_FILE, INSTANT);
+    repo
+}
+
+// behavior-contexts-components: The reader reads each `[[component]]` table of the project file
+#[test]
+fn each_component_table_is_read() {
+    let repo = payouts_with_keys();
+    declare_payout_components(&repo);
+    lint_is_clean(&repo);
+    status(&repo);
+    for name in [API, WEBSITE] {
+        let without = payouts_with_keys();
+        declare_payout_components(&without);
+        without.replace(PROJECT_FILE, &component_table(name, &["all"], "/internal/azimuth"), "");
+        status(&without);
+        lint_finds_an_undeclared_component(&without);
+    }
+}
+
+// behavior-contexts-components: A component has a `name`, unique in the project
+#[test]
+fn a_component_is_referred_to_by_its_exact_name() {
+    let repo = payouts_with_keys();
+    declare_payout_components(&repo);
+    lint_is_clean(&repo);
+    repo.replace(PROJECT_FILE, "name = \"api\"", "name = \"API\"");
+    status(&repo);
+    lint_finds_an_undeclared_component(&repo);
+    let renamed = payouts_with_keys();
+    declare_payout_components(&renamed);
+    renamed.replace(PROJECT_FILE, "name = \"api\"", "name = \"api-server\"");
+    status(&renamed);
+    lint_finds_an_undeclared_component(&renamed);
+}
+
+// behavior-contexts-components: A component's `areas` names the areas it is built from
+#[test]
+fn a_components_areas_name_declared_areas() {
+    let repo = payouts_with_keys();
+    split_areas(&repo);
+    repo.append(PROJECT_FILE, &component_table(API, &["api"], "/internal/azimuth"));
+    repo.append(PROJECT_FILE, &component_table(WEBSITE, &["website"], "/internal/azimuth"));
+    status(&repo);
+    lint_is_clean(&repo);
+    repo.replace(PROJECT_FILE, "areas = [\"website\"]", "areas = [\"web\"]");
+    repo.expect_reading_error(Some(PROJECT_FILE), None);
+}
+
+// behavior-contexts-components: A component is made from one area
+#[test]
+fn a_component_is_made_from_one_area() {
+    let repo = payouts_with_keys();
+    declare_payout_components(&repo);
+    status(&repo);
+    lint_is_clean(&repo);
+}
+
+// behavior-contexts-components: A component is made from several areas
+#[test]
+fn a_component_is_made_from_several_areas() {
+    let repo = Repo::sample();
+    split_areas(&repo);
+    repo.write(KEY_FILE, "[payouts.instant]\ntype = \"boolean\"\ncomponents = [\"shop\"]\n");
+    repo.append(PROJECT_FILE, &component_table("shop", &["api", "website"], "/internal/azimuth"));
+    status(&repo);
+    lint_is_clean(&repo);
+}
+
+// behavior-contexts-components: A component's `report` is the absolute path where its report is exposed
+#[test]
+fn a_report_is_an_absolute_path() {
+    for report in ["/internal/azimuth", "/", "/internal/azimuth/report", "/a-b/c_d"] {
+        let repo = payouts_with_keys();
+        repo.append(PROJECT_FILE, &component_table(API, &["all"], report));
+        repo.append(PROJECT_FILE, &component_table(WEBSITE, &["all"], report));
+        status(&repo);
+        lint_is_clean(&repo);
+    }
+}
+
+// behavior-contexts-components: A project file with no component declares none
+#[test]
+fn a_project_with_no_component_declares_none() {
+    let repo = Repo::sample();
+    assert!(!parse_toml(&repo.read(PROJECT_FILE)).contains_key("component"));
+    lint_is_clean(&repo);
+    repo.write(KEY_FILE, INSTANT);
+    status(&repo);
+    lint_finds_an_undeclared_component(&repo);
+}
+
+/// A key's component and a started component that the project declares, with a Check under the
+/// condition: lint is clean exactly while the suite starts a component the key is listed for.
+fn condition_on_instant(starts: &[&str]) -> Repo {
+    let repo = payouts();
+    repo.write(PAYOUT_KEY_FILE, "[payouts.instant]\ntype = \"boolean\"\ncomponents = [\"website\"]\n");
+    declare_payout_components(&repo);
+    on_requirement(&repo, &["Context: payouts.instant=true"]);
+    start_components(&repo, starts);
+    repo
+}
+
+// behavior-contexts-components: A suite's `starts` lists the names of the components it starts
+#[test]
+fn starts_lists_component_names() {
+    lint_is_clean(&condition_on_instant(&[WEBSITE]));
+    lint_is_clean(&condition_on_instant(&[API, WEBSITE]));
+    let other = condition_on_instant(&[API]);
+    status(&other);
+    lint_names_checks(&other, &PAYOUT_CHECKS);
+}
+
+/// A suite in the `api` area, a component of the `website` area and one of the suite's own area.
+fn two_area_payouts(key_components: &str, starts: &[&str]) -> Repo {
+    let repo = payouts();
+    split_areas(&repo);
+    repo.write(PAYOUT_KEY_FILE, &format!("[payouts.instant]\ntype = \"boolean\"\ncomponents = [{key_components}]\n"));
+    repo.append(PROJECT_FILE, &component_table(WEBSITE, &["website"], "/internal/azimuth"));
+    repo.append(PROJECT_FILE, &component_table("desk-host", &["api"], "/internal/azimuth"));
+    on_requirement(&repo, &["Context: payouts.instant=true"]);
+    start_components(&repo, starts);
+    repo
+}
+
+// behavior-contexts-components: A component in its own process counts as started
+#[test]
+fn a_component_in_its_own_process_counts_as_started() {
+    // `website` is built from an area that does not hold the suite.
+    lint_is_clean(&two_area_payouts("\"website\"", &[WEBSITE]));
+    lint_names_checks(&two_area_payouts("\"website\"", &[]), &PAYOUT_CHECKS);
+}
+
+// behavior-contexts-components: A host built inside the test process counts as started
+#[test]
+fn a_host_built_inside_the_test_process_counts_as_started() {
+    // `desk-host` is built from the area that holds the suite itself.
+    lint_is_clean(&two_area_payouts("\"desk-host\"", &["desk-host"]));
+    lint_names_checks(&two_area_payouts("\"desk-host\"", &[]), &PAYOUT_CHECKS);
+}
+
+// behavior-contexts-components: A suite with no `starts` starts no component
+#[test]
+fn a_suite_with_no_starts_starts_no_component() {
+    let repo = condition_on_instant(&[API, WEBSITE]);
+    lint_is_clean(&repo);
+    omit_starts(&repo);
+    status(&repo);
+    lint_names_checks(&repo, &PAYOUT_CHECKS);
+}
+
+// behavior-contexts-components: A suite with `starts = []` starts no component
+#[test]
+fn a_suite_with_empty_starts_starts_no_component() {
+    let repo = condition_on_instant(&[]);
+    assert!(repo.read(PROJECT_FILE).contains("starts = []"));
+    status(&repo);
+    lint_names_checks(&repo, &PAYOUT_CHECKS);
+}
+
+fn broken_project(from: &str, to: &str) -> Repo {
+    let repo = Repo::sample();
+    declare_payout_components(&repo);
+    start_components(&repo, &[API, WEBSITE]);
+    status(&repo);
+    let project = repo.read(PROJECT_FILE);
+    assert!(project.contains(from), "{from:?} is not in the project file:\n{project}");
+    repo.write(PROJECT_FILE, &project.replacen(from, to, 1));
+    repo
+}
+
+fn project_reading_error(from: &str, to: &str) {
+    broken_project(from, to).expect_reading_error(Some(PROJECT_FILE), None);
+}
+
+const NAME: &str = "name = \"api\"";
+const AREAS: &str = "areas = [\"all\"]";
+const REPORT: &str = "report = \"/internal/azimuth\"";
+const STARTS: &str = "starts = [\"api\", \"website\"]";
+
+// behavior-contexts-components: A component with no `name` is a reading error
+#[test]
+fn a_component_with_no_name_is_a_reading_error() {
+    project_reading_error(&format!("{NAME}\n"), "");
+}
+
+// behavior-contexts-components: A component with no `areas` is a reading error
+#[test]
+fn a_component_with_no_areas_is_a_reading_error() {
+    project_reading_error(&format!("{AREAS}\n"), "");
+}
+
+// behavior-contexts-components: A component with no `report` is a reading error
+#[test]
+fn a_component_with_no_report_is_a_reading_error() {
+    project_reading_error(&format!("{REPORT}\n"), "");
+}
+
+// behavior-contexts-components: A component whose `areas` names an undeclared area is a reading error
+#[test]
+fn a_component_built_from_an_undeclared_area_is_a_reading_error() {
+    for areas in ["areas = [\"nowhere\"]", "areas = [\"all\", \"nowhere\"]", "areas = [\"All\"]"] {
+        project_reading_error(AREAS, areas);
+    }
+}
+
+// behavior-contexts-components: A component with an empty `areas` is a reading error
+#[test]
+fn a_component_with_empty_areas_is_a_reading_error() {
+    let repo = broken_project(AREAS, "areas = []");
+    let line = repo.line_of(PROJECT_FILE, "areas = []");
+    let expected = repo.expect_reading_error(Some(PROJECT_FILE), Some(line))["errors"].clone();
+    let mut commands = COMMANDS_THAT_READ.to_vec();
+    commands.push(&["run", "--lane", "commit", "--json"]);
+    for args in &commands {
+        let output = repo.azimuth(args);
+        output.expect_status(2);
+        assert_eq!(output.json()["errors"], expected, "{args:?}");
+    }
+}
+
+// behavior-contexts-components: A `report` path that does not start with `/` is a reading error
+#[test]
+fn a_report_path_without_a_leading_slash_is_a_reading_error() {
+    for report in ["internal/azimuth", "", "./azimuth", " /azimuth", "http://localhost/azimuth"] {
+        project_reading_error(REPORT, &format!("report = \"{report}\""));
+    }
+}
+
+// behavior-contexts-components: A component field of the wrong TOML type is a reading error
+#[test]
+fn a_component_field_of_the_wrong_type_is_a_reading_error() {
+    for (from, to) in [
+        (NAME, "name = 5"),
+        (NAME, "name = [\"api\"]"),
+        (NAME, "name = true"),
+        (AREAS, "areas = \"all\""),
+        (AREAS, "areas = [1]"),
+        (AREAS, "areas = [\"all\", false]"),
+        (AREAS, "areas = { all = true }"),
+        (REPORT, "report = 5"),
+        (REPORT, "report = [\"/internal/azimuth\"]"),
+        (REPORT, "report = true"),
+    ] {
+        project_reading_error(from, to);
+    }
+}
+
+// behavior-contexts-components: A `starts` that is not a list of names is a reading error
+#[test]
+fn starts_that_is_not_a_list_of_names_is_a_reading_error() {
+    for starts in [
+        "starts = \"api\"",
+        "starts = [1]",
+        "starts = [\"api\", 2]",
+        "starts = { api = true }",
+        "starts = true",
+        "starts = [[\"api\"]]",
+    ] {
+        project_reading_error(STARTS, starts);
+    }
+}
+
+// behavior-contexts-components: Two components with the same name are a reading error
+#[test]
+fn two_components_with_one_name_are_a_reading_error() {
+    project_reading_error("name = \"website\"", "name = \"api\"");
+}
+
+// behavior-contexts-components: A field of a component table that the CLI does not know is a reading error
+#[test]
+fn an_unknown_component_field_is_a_reading_error() {
+    project_reading_error(REPORT, &format!("{REPORT}\nshape = \"round\""));
+}
+
+// behavior-contexts-components: A component reading error names the line of the key in the project file
+#[test]
+fn a_component_reading_error_names_the_line_of_the_key() {
+    for (from, to, written) in [
+        (NAME, "name = 5", "name = 5"),
+        (AREAS, "areas = [\"nowhere\"]", "areas = [\"nowhere\"]"),
+        (REPORT, "report = 5", "report = 5"),
+        (REPORT, "report = \"internal/azimuth\"", "report = \"internal/azimuth\""),
+        (REPORT, &format!("{REPORT}\nshape = \"round\""), "shape = \"round\""),
+        (STARTS, "starts = \"api\"", "starts = \"api\""),
+    ] {
+        let repo = broken_project(from, to);
+        let line = repo.line_of(PROJECT_FILE, written);
+        repo.expect_reading_error(Some(PROJECT_FILE), Some(line));
+    }
+}
+
+fn component_reading_errors() -> Vec<Repo> {
+    vec![broken_project(REPORT, "report = 5"), broken_project(STARTS, "starts = \"api\"")]
+}
+
+// behavior-contexts-components: A reading error of components or `starts` has the same words in every command
+#[test]
+fn component_reading_errors_have_the_same_words_in_each_command() {
+    let mut commands = COMMANDS_THAT_READ.to_vec();
+    commands.push(&["run", "--lane", "commit", "--json"]);
+    for repo in component_reading_errors() {
+        let expected = repo.expect_reading_error(Some(PROJECT_FILE), None)["errors"].clone();
+        for args in &commands {
+            let output = repo.azimuth(args);
+            output.expect_status(2);
+            assert_eq!(output.json()["errors"], expected, "{args:?}");
+            let plain: Vec<_> = args.iter().copied().filter(|arg| *arg != "--json").collect();
+            let output = repo.azimuth(&plain);
+            output.expect_status(2);
+            for error in expected.as_array().unwrap() {
+                let message = error["message"].as_str().unwrap();
+                assert!(output.text().contains(message), "{plain:?} omits {message:?}: {}", output.text());
+            }
+        }
+    }
+}
+
+// behavior-contexts-components: On such a reading error, `azimuth run`, `azimuth check run` and the reading commands do nothing else
+#[test]
+fn component_reading_errors_stop_commands_before_any_other_work() {
+    for repo in component_reading_errors() {
+        repo.need_facility("present");
+        let before = repo.snapshot();
+        for args in COMMANDS_THAT_READ {
+            let output = repo.azimuth(args);
+            assert_ne!(output.status, 0, "{args:?} succeeded");
+            let document = output.json();
+            assert_eq!(document["format"], "error-1", "{args:?}: {document:#}");
+            for field in ["requirements", "checks", "suites", "class", "findings"] {
+                assert!(document.get(field).is_none(), "{args:?} answered despite the error: {document:#}");
+            }
+            assert_eq!(repo.snapshot(), before, "{args:?} changed the worktree");
+            assert!(repo.adapter_starts().is_empty(), "{args:?} started an adapter");
+            assert!(repo.probe_starts().is_empty(), "{args:?} proved a facility");
+            assert!(repo.store_files().is_empty(), "{args:?} wrote the store");
+            assert!(repo.outbox_files().is_empty(), "{args:?} wrote the outbox");
+        }
+    }
+}
+
+// behavior-contexts-components: On such a reading error, commands end with status 2
+#[test]
+fn component_reading_errors_end_with_status_two() {
+    let mut commands = COMMANDS_THAT_READ.to_vec();
+    commands.push(&["run", "--lane", "commit", "--json"]);
+    for repo in component_reading_errors() {
+        for args in &commands {
+            repo.azimuth(args).expect_status(2);
+        }
     }
 }
