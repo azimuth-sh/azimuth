@@ -2,7 +2,7 @@
 
 A row is of one of two kinds. A row of behavior is one observable fact, and a test shows it. A row of prose says what a text tells its reader; its section begins with the words "Rows of prose", and no test reads the words of the text for it. The second cell is copied exactly from `docs/design.md`. A plain test fails when a quoted sentence is no longer in that file. A behavior with no sentence to quote is not built. This list is built after `contexts-keys.md`, because a condition's type comes from its key's declaration.
 
-Status of this list: a draft, not yet read by a person.
+Status of this list: read and accepted by a person on 2026-11-24.
 
 ## Reading `Context:`
 
