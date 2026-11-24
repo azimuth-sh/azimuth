@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use unicode_normalization::UnicodeNormalization;
 
+use super::KeyType;
 use crate::canonical;
 
 /// The largest number of digits that writing a number without an exponent may add. A number such
@@ -30,6 +31,14 @@ impl Literal {
             Literal::Number(number) => number.clone(),
         }
     }
+
+    /// The text a launch hands to the product: the same value without the quotes of a one-of value.
+    fn plain(&self) -> String {
+        match self {
+            Literal::Text(text) => text.clone(),
+            other => other.normalized(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -44,12 +53,17 @@ pub struct ContextLine {
 #[derive(Debug, Default, PartialEq)]
 pub struct Condition {
     pub values: BTreeMap<String, String>,
+    /// The same keys with the text `AZIMUTH_CONTEXT` carries.
+    pub texts: BTreeMap<String, String>,
 }
 
 impl Condition {
     pub fn extend(&mut self, lines: &[ContextLine]) {
         for line in lines {
-            self.values.entry(line.key.clone()).or_insert_with(|| line.value.normalized());
+            if !self.values.contains_key(&line.key) {
+                self.values.insert(line.key.clone(), line.value.normalized());
+                self.texts.insert(line.key.clone(), line.value.plain());
+            }
         }
     }
 
@@ -61,9 +75,17 @@ impl Condition {
     pub fn claim_lines(&self) -> String {
         self.values.iter().map(|(key, value)| format!("\nContext: {key}={value}")).collect()
     }
+}
 
-    pub fn describe(&self) -> String {
-        self.values.iter().map(|(key, value)| format!("{key}={value}")).collect::<Vec<_>>().join(", ")
+/// A text a component reported for a key, read by the key's type and spelled as a stated value of
+/// that type is, so the two compare. The error says why the text is not of the type.
+pub fn read_reported(kind: &KeyType, text: &str) -> Result<String, String> {
+    match kind {
+        KeyType::Boolean if text.eq_ignore_ascii_case("true") => Ok("true".to_string()),
+        KeyType::Boolean if text.eq_ignore_ascii_case("false") => Ok("false".to_string()),
+        KeyType::Boolean => Err(format!("`{text}` is not a boolean")),
+        KeyType::Number => normalize_number(text),
+        KeyType::OneOf(_) => Ok(text.nfc().collect()),
     }
 }
 

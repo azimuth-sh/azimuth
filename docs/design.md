@@ -831,7 +831,7 @@ Example: `Catalog_routes_are_absent_when_labs_are_off` measures that three route
 
 **A suite names under `starts` the real components its tests run against.** A component in its own process and a host built inside the test process both count. A stand-in does not. The core expects the components the condition needs from this declaration, even when the runner's configuration forgets one. Lint names a Check whose condition states a key that no component its suite starts is listed for.
 
-The cost. A suite can prove a condition through a stand-in for another component; the fidelity of the stand-in stays the suite's concern. The names in `starts` are also in the runner's configuration, and a difference shows only at launch.
+The cost. A suite can prove a condition through a stand-in for another component; the fidelity of the stand-in stays the suite's concern. The names in `starts` are also in the runner's configuration. A name the suite does not start shows at launch as a missing report. A real component the suite starts without naming it is never read, so its Checks can pass or fail although the condition never reached it.
 
 Example: `website-tests` starts `website` and uses a stand-in for `api`. For `payouts.instant`, listed for both components, it must report only `website`. A suite that starts neither cannot prove that condition.
 

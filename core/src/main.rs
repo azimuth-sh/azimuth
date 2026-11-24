@@ -5,6 +5,7 @@ mod change;
 mod cli;
 mod clock;
 mod commands;
+mod contexts;
 mod digest;
 mod fingerprint;
 mod git;

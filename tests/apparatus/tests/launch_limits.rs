@@ -510,7 +510,7 @@ fn the_limit_never_reaches_the_adapter_contract() {
     request["checks"] = json!(checks);
     assert_eq!(
         request,
-        json!({"format":"adapter-request-1", "verb":"run", "suite":"suites/desk-checks", "marker_key":"Check", "checks": ids})
+        json!({"format":"adapter-request-1", "verb":"run", "suite":"suites/desk-checks", "marker_key":"Check", "checks": ids, "condition": {}, "components": []})
     );
     let records = repo.records();
     assert_eq!(records.len(), ALL_CHECKS.len());

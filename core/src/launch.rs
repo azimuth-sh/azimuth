@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
+use crate::model::Condition;
 use crate::project::{Project, Suite};
 use crate::runners;
 use crate::store;
@@ -256,11 +257,28 @@ pub struct ReportedTest {
     pub duration_ms: u64,
 }
 
+/// One read of a component's report: the document as read, or the cause it could not be read.
+#[derive(Debug)]
+pub struct ComponentRead {
+    pub phase: String,
+    pub result: Result<Value, String>,
+}
+
+#[derive(Debug)]
+pub struct ComponentEntry {
+    pub name: String,
+    /// A cause for the whole component, as when something answered at its address before the start.
+    pub error: Option<String>,
+    pub reads: Vec<ComponentRead>,
+}
+
 #[derive(Debug)]
 pub struct Report {
     pub adapter_name: String,
     pub adapter_version: String,
     pub tests: Vec<ReportedTest>,
+    /// `None` when the report has no `components`, as the report of an adapter that predates them.
+    pub components: Option<Vec<ComponentEntry>>,
 }
 
 #[derive(Debug)]
@@ -285,15 +303,30 @@ impl Launch {
     }
 }
 
+/// The variable and the request field that carry a launch's condition: one object of product keys
+/// to normalized text values.
+fn condition_object(condition: &Condition) -> Value {
+    json!(condition.texts)
+}
+
 /// Starts the suite's adapter in the suite's folder with no added arguments, asks it to run the
-/// tests of the given Checks, and reads its one report.
-pub fn run_suite(root: &Path, suite: &Suite, checks: &[String]) -> Result<(Launch, Option<u64>), String> {
+/// tests of the given Checks under the condition of this launch, and reads its one report.
+pub fn run_suite(root: &Path, project: &Project, suite: &Suite, condition: &Condition, checks: &[String]) -> Result<(Launch, Option<u64>), String> {
+    let components: Vec<Value> = suite
+        .starts
+        .iter()
+        .filter_map(|name| project.component(name))
+        .map(|component| json!({ "name": component.name, "report": component.report }))
+        .collect();
+    let condition = condition_object(condition);
     let request = json!({
         "format": REQUEST_FORMAT,
         "verb": "run",
         "suite": suite.path,
         "marker_key": suite.marker_key(),
         "checks": checks,
+        "condition": condition,
+        "components": components,
     });
     let mut output = held_output(root).map_err(|error| format!("the runner's output could not be held: {error}"))?;
     let report = temporary_file().map_err(|error| format!("prepare the adapter report: {error}"))?;
@@ -303,7 +336,7 @@ pub fn run_suite(root: &Path, suite: &Suite, checks: &[String]) -> Result<(Launc
     let limit = Duration::from_secs(suite.time_limit_minutes.saturating_mul(60));
     eprintln!("suite {}: launch starting", suite.name);
     let waited =
-        spawn_adapter(&root.join(&suite.path), &suite.adapter, request.as_bytes(), stdout, Stdio::from(stderr)).and_then(|running| {
+        spawn_adapter(&root.join(&suite.path), &suite.adapter, request.as_bytes(), stdout, Stdio::from(stderr), Some(&condition.to_string())).and_then(|running| {
             running
                 .wait_with_limit(limit, &[&report, &output.file])
                 .map_err(|error| Started::Crashed(format!("wait for the adapter: {error}")))
@@ -455,7 +488,7 @@ pub fn start_adapter(dir: &Path, command: &str, request: &Value) -> Result<Strin
     let report = temporary_file().map_err(|error| Started::Preparation(format!("prepare the adapter report: {error}")))?;
     let stdout = report.try_clone().map_err(|error| Started::Preparation(format!("hold the adapter report: {error}")))?;
     let request = request.to_string();
-    let running = spawn_adapter(dir, command, request.as_bytes(), stdout, Stdio::inherit())?;
+    let running = spawn_adapter(dir, command, request.as_bytes(), stdout, Stdio::inherit(), None)?;
     let completed = running.wait_until_exit(&[&report]).map_err(|error| Started::Crashed(format!("wait for the adapter: {error}")))?;
     if completed.status.success() {
         report_text(&report, completed.snapshot.lengths[0]).map_err(|error| Started::Crashed(format!("read the adapter report: {error}")))
@@ -464,22 +497,28 @@ pub fn start_adapter(dir: &Path, command: &str, request: &Value) -> Result<Strin
     }
 }
 
-fn spawn_adapter<'a>(dir: &Path, command: &str, request: &'a [u8], stdout: File, stderr: Stdio) -> Result<Running<'a>, Started> {
+/// `context` is the launch's `AZIMUTH_CONTEXT`. It replaces any value the core inherited, and
+/// without one the adapter gets the environment unchanged.
+fn spawn_adapter<'a>(
+    dir: &Path,
+    command: &str,
+    request: &'a [u8],
+    stdout: File,
+    stderr: Stdio,
+    context: Option<&str>,
+) -> Result<Running<'a>, Started> {
     exit_if_stopped();
     let words = split_command(command);
     let Some((program, args)) = words.split_first() else {
         return Err(Started::No("the command is empty".to_string()));
     };
     let started = Instant::now();
-    let mut child = Command::new(program)
-        .args(args)
-        .current_dir(dir)
-        .process_group(0)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::from(stdout))
-        .stderr(stderr)
-        .spawn()
-        .map_err(|error| Started::No(format!("`{program}`: {error}")))?;
+    let mut command = Command::new(program);
+    command.args(args).current_dir(dir).process_group(0).stdin(Stdio::piped()).stdout(Stdio::from(stdout)).stderr(stderr);
+    if let Some(context) = context {
+        command.env("AZIMUTH_CONTEXT", context);
+    }
+    let mut child = command.spawn().map_err(|error| Started::No(format!("`{program}`: {error}")))?;
     let input = child.stdin.take().expect("stdin is piped");
     #[cfg(target_os = "macos")]
     let nonblocking = 4;
@@ -537,7 +576,35 @@ fn parse_report(stdout: &str) -> Launch {
             None => return crashed("a test entry without `name`, `checks`, `outcome` and `duration_ms`"),
         }
     }
-    Launch::Ran(Report { adapter_name: name.to_string(), adapter_version: version.to_string(), tests })
+    let components = match report.get("components") {
+        None => None,
+        Some(Value::Array(items)) => Some(items.iter().filter_map(read_component).collect()),
+        Some(_) => return crashed("a report whose `components` is not a list"),
+    };
+    Launch::Ran(Report { adapter_name: name.to_string(), adapter_version: version.to_string(), tests, components })
+}
+
+/// An entry that names no component is dropped, so the component it was meant for has no read.
+fn read_component(item: &Value) -> Option<ComponentEntry> {
+    let name = item["name"].as_str()?.to_string();
+    let reads = item["reads"]
+        .as_array()
+        .map(|reads| {
+            reads
+                .iter()
+                .filter_map(|read| {
+                    let phase = read["phase"].as_str()?.to_string();
+                    let result = match (read.get("report"), read["error"].as_str()) {
+                        (Some(report), _) => Ok(report.clone()),
+                        (None, Some(error)) => Err(error.to_string()),
+                        (None, None) => Err("the read holds neither a report nor an error".to_string()),
+                    };
+                    Some(ComponentRead { phase, result })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Some(ComponentEntry { name, error: item["error"].as_str().map(str::to_string), reads })
 }
 
 /// The Check rule over the marked tests of one Check.
