@@ -3569,7 +3569,7 @@ The cost. One reading error anywhere blinds every command for the whole project,
 | --- | --- |
 | `Reuse:` | under a Check in `verification.md` |
 | `Verification:`, `Realization:` | under a Requirement in `specification.md` |
-| `Context:` | under a Requirement or Scenario in `specification.md`, from the increment that builds conditions in the model. Until then the line is a reading error wherever it stands |
+| `Context:` | under a Requirement or Scenario in `specification.md` |
 
 Text above the first Requirement of a file stays prose, whatever it looks like.
 

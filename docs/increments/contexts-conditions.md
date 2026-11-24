@@ -8,8 +8,8 @@ Status of this list: read and accepted by a person on 2026-11-24.
 
 | Behavior | Quote from the design |
 | --- | --- |
-| The reader accepts `Context:` under a Requirement in `specification.md` | under a Requirement or Scenario in `specification.md`, from the increment that builds conditions in the model. Until then the line is a reading error wherever it stands |
-| The reader accepts `Context:` under a Scenario in `specification.md` | under a Requirement or Scenario in `specification.md`, from the increment that builds conditions in the model. Until then the line is a reading error wherever it stands |
+| The reader accepts `Context:` under a Requirement in `specification.md` | under a Requirement or Scenario in `specification.md` |
+| The reader accepts `Context:` under a Scenario in `specification.md` | under a Requirement or Scenario in `specification.md` |
 | A `Context:` under a Check in `verification.md` is a reading error | **A declaration that stands where it has no meaning is a reading error.** |
 | A `Context:` under a Requirement or Scenario in `verification.md` is a reading error | **A declaration that stands where it has no meaning is a reading error.** |
 | A `Context:` above the first Requirement stays prose | Text above the first Requirement of a file stays prose, whatever it looks like. |

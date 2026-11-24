@@ -528,15 +528,9 @@ fn a_review_declaration_in_verification_md_is_a_reading_error() {
     misplaced(RETURNS_VERIFICATION, "#### Scenario: on-time-return-is-free\n", "Verification: reviewed");
 }
 
-// behavior: A `Context:` line under a Requirement is a reading error in both files
+// behavior: A `Context:` line under a Requirement in `verification.md` is a reading error
 #[test]
 fn a_context_line_under_a_requirement_is_a_reading_error() {
-    misplaced(
-        RETURNS_SPEC,
-        "A book returned after its due date owes a fine for each day it is late.\n",
-        "Context: the desk is open on weekdays",
-    );
-    misplaced(RETURNS_SPEC, "The desk records no fine.\n", "Context: the due date is printed on the slip");
     misplaced(RETURNS_VERIFICATION, "### Requirement: late-return-owes-a-fine\n", "Context: the desk is open on weekdays");
     misplaced(RETURNS_VERIFICATION, "  A return on the due date or earlier records no fine.\n", "  Context: the due date is printed on the slip");
 }
