@@ -92,6 +92,7 @@ fn document(target: &str, base: &str, change: &Change) -> Value {
         "target": target,
         "base": base,
         "class": change.class.to_string(),
+        "class_reasons": change.class_reasons,
         "requirements": lists_json(&change.requirements),
         "scenarios": lists_json(&change.scenarios),
         "checks": lists_json(&change.checks),
@@ -103,6 +104,9 @@ fn document(target: &str, base: &str, change: &Change) -> Value {
 
 fn text(target: &str, base: &str, change: &Change) -> String {
     let mut text = format!("class {}, compared with {target} at {}\n", change.class, &base[..base.len().min(7)]);
+    for path in &change.class_reasons {
+        text.push_str(&format!("{path}: every change to this file is class D\n"));
+    }
     for (noun, lists) in [("Requirements", &change.requirements), ("Scenarios", &change.scenarios), ("Checks", &change.checks)] {
         for (which, ids) in [("added", &lists.added), ("changed", &lists.changed), ("removed", &lists.removed)] {
             if !ids.is_empty() {

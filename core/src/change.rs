@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::git::Entry;
 use crate::markers::Marker;
-use crate::model::{Model, MODEL_FOLDER};
+use crate::model::{Model, KEY_FILE, MODEL_FOLDER};
 use crate::project::{Project, PROJECT_FILE};
 use crate::skills;
 
@@ -28,6 +28,7 @@ pub struct Lists {
 
 pub struct Change {
     pub class: char,
+    pub class_reasons: Vec<String>,
     pub requirements: Lists,
     pub scenarios: Lists,
     pub checks: Lists,
@@ -62,7 +63,8 @@ pub fn compare(before: &Side, after: &Side) -> Change {
     }
 
     let not_compared = differing.iter().filter(|path| before.files.contains_key(*path) && marked_files.contains(path.as_str())).cloned().collect();
-    Change { class, requirements, scenarios, checks, markers_removed, not_compared, rigor_lowered }
+    let class_reasons = differing.iter().filter(|path| path.as_str() == KEY_FILE).cloned().collect();
+    Change { class, class_reasons, requirements, scenarios, checks, markers_removed, not_compared, rigor_lowered }
 }
 
 /// The declarations that Requirements and Checks present on both sides lost. A Requirement or a
@@ -94,7 +96,7 @@ fn rigor_lowered(before: &Model, after: &Model) -> Vec<Lowered> {
 fn file_class(path: &str, marked_files: &BTreeSet<&str>, before: &Side, after: &Side) -> char {
     let in_model = path.starts_with(&format!("{MODEL_FOLDER}/"));
     let name = path.rsplit('/').next().unwrap_or(path);
-    if path == PROJECT_FILE || (in_model && name == "specification.md") || skills::is_installed_path(path) {
+    if path == PROJECT_FILE || path == KEY_FILE || (in_model && name == "specification.md") || skills::is_installed_path(path) {
         return 'D';
     }
     let in_a_suite = [before.project, after.project]

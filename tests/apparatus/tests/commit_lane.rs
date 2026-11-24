@@ -2,6 +2,10 @@
 
 use azimuth_tests::*;
 
+#[path = "support/contexts_conditions.rs"]
+mod contexts_conditions;
+use contexts_conditions::*;
+
 fn commit_lane(repo: &Repo, status: i32) -> serde_json::Value {
     let document = repo.run_json(&["--lane", "commit"], status);
     assert_eq!(document["lane"], "commit", "{document:#}");
@@ -146,4 +150,35 @@ fn the_commit_lane_stops_on_a_reading_error() {
     assert_eq!(output.json()["format"], "error-1");
     assert!(repo.adapter_starts().is_empty());
     assert!(repo.probe_starts().is_empty());
+}
+
+// Conditions in the model: `docs/increments/contexts-conditions.md`.
+
+/// A Requirement of its own, with no Scenario and so no Check, carries the finding. Every Check
+/// of the sample stays free of it, so only the finding can fail the lane.
+fn with_a_condition_finding() -> Repo {
+    let repo = payouts();
+    repo.append(
+        PAYOUTS_SPEC,
+        "\n### Requirement: payout-is-logged\nContext: payouts.speed=true\nEvery approved payout is written to the ledger.\n",
+    );
+    repo
+}
+
+// behavior-contexts-conditions: A condition finding fails the commit lane
+#[test]
+fn a_condition_finding_fails_the_commit_lane_although_every_check_passes() {
+    let repo = with_a_condition_finding();
+    let document = commit_lane(&repo, 1);
+    assert_eq!(document["outcome"], "failure", "{document:#}");
+    let findings = document["findings"].as_array().cloned().unwrap_or_default();
+    assert!(!findings_at(&findings, PAYOUTS_SPEC, None).is_empty(), "no finding names the specification: {document:#}");
+    for finding in &findings {
+        entry_has_kind_file_line_message(finding);
+    }
+    let requested = repo.requested_checks();
+    for check in all_checks() {
+        assert_eq!(state_of(&document, check), "passed", "{document:#}");
+        assert!(requested.contains(check), "the lane skipped {check}");
+    }
 }

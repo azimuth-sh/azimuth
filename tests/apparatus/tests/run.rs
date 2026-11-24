@@ -7,6 +7,10 @@ use std::time::{Duration, Instant};
 
 use azimuth_tests::*;
 
+#[path = "support/contexts_conditions.rs"]
+mod contexts_conditions;
+use contexts_conditions::*;
+
 fn ids(list: &[&str]) -> BTreeSet<String> {
     list.iter().map(|id| id.to_string()).collect()
 }
@@ -1230,4 +1234,110 @@ fn more_marker_lines_than_listed_tests_give_no_result() {
         assert_eq!(state_of(&document, check), "passed", "{document:#}");
         assert_eq!(repo.results_of(check).len(), 1, "{check}");
     }
+}
+
+// Conditions in the model: `docs/increments/contexts-conditions.md`. No component is started in
+// the payouts product, so a condition can never be applied.
+
+fn every_check_is_owed_as_not_applied(repo: &Repo, document: &serde_json::Value) {
+    for check in all_checks() {
+        owed_not_applied(repo, document, check);
+    }
+}
+
+// behavior-contexts-conditions: `azimuth run` leaves a Check with a condition owed with "context not applied" when no started component can apply it
+#[test]
+fn run_leaves_a_conditioned_check_owed_as_not_applied() {
+    let repo = every_check_under_a_condition();
+    let document = repo.run_json(&[], 1);
+    every_check_is_owed_as_not_applied(&repo, &document);
+    let scenario = payouts();
+    on_reaches(&scenario, &["Context: payouts.instant=true", "Context: payouts.region=\"se\""]);
+    let document = scenario.run_json(&[], 1);
+    owed_not_applied(&scenario, &document, REACHES_THE_CARD);
+}
+
+// behavior-contexts-conditions: `azimuth run` leaves such a Check owed also in a suite with Checks that have no condition
+#[test]
+fn run_leaves_a_conditioned_check_owed_beside_checks_with_no_condition() {
+    let repo = payouts();
+    on_reaches(&repo, &["Context: payouts.instant=true"]);
+    let document = repo.run_json(&[], 1);
+    owed_not_applied(&repo, &document, REACHES_THE_CARD);
+    for check in ALL_CHECKS.iter().copied().chain([WAITS_FOR_REVIEW]) {
+        assert_eq!(state_of(&document, check), "passed", "{check}: {document:#}");
+        assert_eq!(repo.results_of(check).len(), 1, "{check} has no result");
+    }
+}
+
+// behavior-contexts-conditions: `azimuth run` leaves Checks with a faulty readable condition owed with "context not applied"
+#[test]
+fn run_leaves_checks_with_a_faulty_condition_owed_as_not_applied() {
+    for (requirement, scenario) in FAULTY_CONDITIONS {
+        let repo = faulty_payouts(requirement, scenario);
+        let document = repo.run_json(&[], 1);
+        owed_not_applied(&repo, &document, REACHES_THE_CARD);
+        if scenario.is_empty() {
+            owed_not_applied(&repo, &document, WAITS_FOR_REVIEW);
+        }
+    }
+}
+
+// behavior-contexts-conditions: A Check whose condition was not applied has no result, whatever its tests did
+#[test]
+fn a_check_whose_condition_was_not_applied_has_no_result_whatever_its_tests_did() {
+    for outcome in ["passed", "failed"] {
+        let repo = every_check_under_a_condition();
+        repo.write(PAYOUTS_TESTS, &format!("test: sends-at-once\n# Check: payout-reaches-the-card\noutcome: {outcome}\n\ntest: holds-for-review\n# Check: payout-waits-for-review\noutcome: {outcome}\n"));
+        let document = repo.run_json(&[], 1);
+        every_check_is_owed_as_not_applied(&repo, &document);
+        no_results(&repo);
+        let check_run = repo.azimuth(&["check", "run", REACHES_THE_CARD, "--json"]);
+        check_run.expect_status(1);
+        owed_not_applied(&repo, &check_run.json(), REACHES_THE_CARD);
+        no_results(&repo);
+        let status = repo.status_json();
+        for check in all_checks() {
+            assert_eq!(status_checks(&status)[check]["state"], "owed", "{status:#}");
+        }
+    }
+}
+
+// behavior-contexts-conditions: `azimuth run` can still run Checks without the faulty condition in the same suite
+#[test]
+fn run_still_runs_the_checks_without_the_faulty_condition() {
+    for (requirement, scenario) in FAULTY_CONDITIONS {
+        let repo = faulty_payouts(requirement, scenario);
+        let document = repo.run_json(&[], 1);
+        owed_not_applied(&repo, &document, REACHES_THE_CARD);
+        let free: Vec<&str> = ALL_CHECKS.iter().copied().chain(if requirement.is_empty() { Some(WAITS_FOR_REVIEW) } else { None }).collect();
+        if !requirement.is_empty() {
+            owed_not_applied(&repo, &document, WAITS_FOR_REVIEW);
+        }
+        let requested = repo.requested_checks();
+        let ran = repo.tests_ran();
+        for check in free {
+            assert_eq!(state_of(&document, check), "passed", "{check}: {document:#}");
+            assert!(requested.contains(check), "{check} was not requested: {requested:?}");
+            assert_eq!(repo.results_of(check).len(), 1, "{check} has no result");
+        }
+        assert!(ran.iter().any(|name| name.contains("loan")), "the tests of the free Checks did not run: {ran:?}");
+    }
+}
+
+// behavior-contexts-conditions: The local lane ends with status 1 for "context not applied"
+#[test]
+fn the_local_lane_ends_with_status_one_for_a_condition_not_applied() {
+    let repo = payouts();
+    on_reaches(&repo, &["Context: payouts.instant=true"]);
+    let document = repo.run_json(&[], 1);
+    assert_eq!(document["outcome"], "failure", "{document:#}");
+    let output = repo.azimuth(&["run"]);
+    output.expect_status(1);
+    // Nothing else is wrong: the same model without the condition ends with status 0.
+    let control = payouts();
+    let document = control.run_json(&[], 0);
+    assert_eq!(document["outcome"], "success", "{document:#}");
+    // `check run` of the Check ends the same way.
+    repo.azimuth(&["check", "run", REACHES_THE_CARD]).expect_status(1);
 }

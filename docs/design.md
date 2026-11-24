@@ -509,7 +509,7 @@ Example: a test of "a second run on unchanged content runs nothing" copies the s
 
 **One `Context:` line states one key and one exact value, as `Context: <key>=<value>`.** Spaces and tabs around `=` are ignored. Several keys use several lines under the same heading in `specification.md`. A repeated key with the same normalized value changes nothing. Contradicting lines on one heading are a lint finding, and the affected Checks give no result, "context not applied", until the contradiction is gone. A one-of value is a JSON string, so spaces and `=` inside its quotes are values, not separators. Booleans and numbers are unquoted.
 
-**Conditions compare normalized values of their declared type.** Boolean text is `true` or `false`, without regard to ASCII case, and normalizes to lowercase. A one-of value is decoded from its JSON string, normalized to NFC and compared with the declared strings in NFC, with no case folding. A number uses the JSON decimal notation and is compared as an exact decimal, not a floating-point approximation. Its normalized text has no exponent, no unnecessary leading or fractional trailing zeros, and no decimal point for a whole number; negative zero is `0`. No condition states a range. A report's value is text read by the same type rules; a one-of report value is already decoded text.
+**Conditions compare normalized values of their declared type.** Boolean text is `true` or `false`, without regard to ASCII case, and normalizes to lowercase. A one-of value is decoded from its JSON string, normalized to NFC and compared with the declared strings in NFC, with no case folding. A number uses the JSON decimal notation and is compared as an exact decimal, not a floating-point approximation. Its normalized text has no exponent, no unnecessary leading or fractional trailing zeros, and no decimal point for a whole number; negative zero is `0`. A number that would need more than 1000 added zeros to be written without an exponent is a reading error. No condition states a range. A report's value is text read by the same type rules; a one-of report value is already decoded text.
 
 The cost. A behavior promised with a flag both on and off needs two Scenarios. A Check whose condition leaves out a key it depends on can keep applying after that key changes; only a review catches the missing line until Challenges exist.
 
@@ -3569,7 +3569,7 @@ The cost. One reading error anywhere blinds every command for the whole project,
 | --- | --- |
 | `Reuse:` | under a Check in `verification.md` |
 | `Verification:`, `Realization:` | under a Requirement in `specification.md` |
-| `Context:` | under a Requirement or Scenario in `specification.md`, from the increment that builds conditions in the model. Until then the line is a reading error wherever it stands |
+| `Context:` | under a Requirement or Scenario in `specification.md` |
 
 Text above the first Requirement of a file stays prose, whatever it looks like.
 

@@ -2,6 +2,7 @@
 //! different fingerprint can say which kind of thing changed.
 
 use crate::digest::{self, FINGERPRINT_SCHEMES};
+use crate::model::Condition;
 
 pub const PART_NAMES: [&str; 4] = ["claim", "files", "environment", "method"];
 
@@ -34,10 +35,12 @@ pub struct Fingerprint {
     pub parts: Parts,
 }
 
-/// The fingerprint of one Check: its claim text and the shared parts of this tree and machine.
-pub fn of_check(claim: &str, files: &str, object_format: &str) -> Fingerprint {
+/// The fingerprint of one Check: its claim text with its condition and the shared parts of this
+/// tree and machine. A Check with no condition keeps the digest of its claim text alone.
+pub fn of_check(claim: &str, condition: &Condition, files: &str, object_format: &str) -> Fingerprint {
+    let claim_part = format!("{}{}", digest::normalize_text(claim), condition.claim_lines());
     let parts = Parts {
-        claim: digest::text_digest(claim),
+        claim: digest::text_digest(&claim_part),
         files: files.to_string(),
         environment: digest::parts_digest(format!("environment\n{DEVELOPER_MACHINE}").as_bytes()),
         method: method_digest(object_format),

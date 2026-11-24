@@ -5,6 +5,10 @@ use std::fs;
 
 use azimuth_tests::*;
 
+#[path = "support/contexts_conditions.rs"]
+mod contexts_conditions;
+use contexts_conditions::*;
+
 fn all_kept(document: &serde_json::Value) {
     for check in ALL_CHECKS {
         assert_eq!(state_of(document, check), "kept", "{document:#}");
@@ -591,4 +595,494 @@ fn a_rewritten_commit_keeps_its_results() {
     repo.git(&["checkout", "--quiet", "--orphan", "fresh-history"]);
     repo.git(&["commit", "--quiet", "-m", "the same tree with no parent"]);
     kept_without_a_launch(&repo);
+}
+
+// Conditions in the model: `docs/increments/contexts-conditions.md`. A stored result of a Check
+// has the claim part the Check had before it carried a condition. Each test rewrites that part as
+// the design computes it for a condition (`claim_is`) and reads whether `azimuth check show`
+// names the claim among the changed parts. Every edit of the model also moves the files part,
+// because with no provider every file is an input, so `files` is expected beside it.
+
+const INSTANT_TRUE: (&str, &str) = ("payouts.instant", "true");
+
+fn with_conditions(on_requirement_lines: &[&str], on_reaches_lines: &[&str]) -> Repo {
+    let repo = payouts_with_results();
+    if !on_requirement_lines.is_empty() {
+        on_requirement(&repo, on_requirement_lines);
+    }
+    if !on_reaches_lines.is_empty() {
+        on_reaches(&repo, on_reaches_lines);
+    }
+    repo
+}
+
+/// A one-of or number key under the Requirement, in the spelling written, reads as the normalized
+/// value `normalized` and as no other.
+fn requirement_condition_reads_as(key: &str, written: &str, normalized: &str, other: &str) {
+    let repo = with_conditions(&[&format!("Context: {key}={written}")], &[]);
+    lint_is_clean(&repo);
+    claim_is(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[(key, normalized)]);
+    claim_is_not(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[(key, other)]);
+    claim_is_not(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[]);
+}
+
+// behavior-contexts-conditions: A Scenario takes its Requirement's condition
+#[test]
+fn a_scenario_takes_its_requirements_condition() {
+    let repo = with_conditions(&["Context: payouts.instant=true"], &[]);
+    for (check, claim) in [(REACHES_THE_CARD, REACHES_CLAIM), (WAITS_FOR_REVIEW, WAITS_CLAIM)] {
+        claim_is(&repo, check, claim, &[INSTANT_TRUE]);
+        claim_is_not(&repo, check, claim, &[]);
+    }
+}
+
+// behavior-contexts-conditions: A Scenario may add a key to its Requirement's condition
+#[test]
+fn a_scenario_may_add_a_key() {
+    let repo = with_conditions(&["Context: payouts.instant=true"], &["Context: payouts.region=\"no\""]);
+    lint_is_clean(&repo);
+    claim_is(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[INSTANT_TRUE, ("payouts.region", "\"no\"")]);
+    claim_is_not(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[INSTANT_TRUE]);
+    // The sibling Scenario does not take what its sibling added.
+    claim_is(&repo, WAITS_FOR_REVIEW, WAITS_CLAIM, &[INSTANT_TRUE]);
+}
+
+// behavior-contexts-conditions: A Scenario with no `Context:` of its own keeps its Requirement's condition
+#[test]
+fn a_scenario_with_no_context_of_its_own_keeps_its_requirements_condition() {
+    let repo = with_conditions(&["Context: payouts.region=\"se\""], &["Context: payouts.limit=5"]);
+    claim_is(&repo, WAITS_FOR_REVIEW, WAITS_CLAIM, &[("payouts.region", "\"se\"")]);
+    claim_is_not(&repo, WAITS_FOR_REVIEW, WAITS_CLAIM, &[("payouts.region", "\"se\""), ("payouts.limit", "5")]);
+    claim_is(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[("payouts.region", "\"se\""), ("payouts.limit", "5")]);
+}
+
+// behavior-contexts-conditions: Repeating an inherited value changes nothing
+#[test]
+fn repeating_an_inherited_value_changes_nothing() {
+    for repeated in ["Context: payouts.instant=true", "Context: payouts.instant=TRUE", "Context: payouts.instant =\ttrue"] {
+        let repo = with_conditions(&["Context: payouts.instant=true"], &[repeated]);
+        lint_is_clean(&repo);
+        claim_is(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[INSTANT_TRUE]);
+        claim_is_not_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}\nContext: payouts.instant=true\nContext: payouts.instant=true"));
+    }
+}
+
+// behavior-contexts-conditions: Repeating a key with the same normalized value on one heading changes nothing
+#[test]
+fn repeating_a_key_with_the_same_normalized_value_changes_nothing() {
+    let repo = with_conditions(
+        &[
+            "Context: payouts.limit=1",
+            "Context: payouts.limit=1.0",
+            "Context: payouts.instant=true",
+            "Context: payouts.instant=True",
+            "Context: payouts.region=\"\u{e9}\"",
+            "Context: payouts.region=\"e\u{301}\"",
+        ],
+        &[],
+    );
+    lint_is_clean(&repo);
+    let condition = [("payouts.limit", "1"), INSTANT_TRUE, ("payouts.region", "\"\u{e9}\"")];
+    claim_is(&repo, REACHES_THE_CARD, REACHES_CLAIM, &condition);
+    let scenario = with_conditions(&[], &["Context: payouts.limit=1", "Context: payouts.limit=1.0", "Context: payouts.limit=1e0"]);
+    lint_is_clean(&scenario);
+    claim_is(&scenario, REACHES_THE_CARD, REACHES_CLAIM, &[("payouts.limit", "1")]);
+    claim_is(&scenario, WAITS_FOR_REVIEW, WAITS_CLAIM, &[]);
+}
+
+// behavior-contexts-conditions: A Scenario with no condition of its own or its Requirement's has no condition
+#[test]
+fn a_scenario_with_no_condition_anywhere_has_no_condition() {
+    let repo = payouts_with_results();
+    for (check, claim) in [(REACHES_THE_CARD, REACHES_CLAIM), (WAITS_FOR_REVIEW, WAITS_CLAIM)] {
+        assert_eq!(result_claim(&repo, check), text_1_digest(claim), "{check}");
+    }
+    // A condition on one Scenario does not reach the Requirement's other Scenario or its Checks.
+    let one = with_conditions(&[], &["Context: payouts.instant=true"]);
+    claim_is(&one, REACHES_THE_CARD, REACHES_CLAIM, &[INSTANT_TRUE]);
+    claim_is(&one, WAITS_FOR_REVIEW, WAITS_CLAIM, &[]);
+    // A Check with no condition is promised everywhere: it runs, and passes, with the others owed.
+    let document = one.run_json(&[], 1);
+    assert_eq!(state_of(&document, WAITS_FOR_REVIEW), "passed", "{document:#}");
+}
+
+// behavior-contexts-conditions: Boolean text is accepted without regard to ASCII case
+#[test]
+fn boolean_text_is_accepted_in_any_ascii_case() {
+    for written in ["TRUE", "True", "tRuE", "true"] {
+        let repo = with_conditions(&[&format!("Context: payouts.instant={written}")], &[]);
+        lint_is_clean(&repo);
+        claim_is(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[INSTANT_TRUE]);
+    }
+    for written in ["FALSE", "False", "fAlSe"] {
+        let repo = with_conditions(&[&format!("Context: payouts.instant={written}")], &[]);
+        lint_is_clean(&repo);
+        claim_is(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[("payouts.instant", "false")]);
+        claim_is_not(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[INSTANT_TRUE]);
+    }
+}
+
+// behavior-contexts-conditions: Boolean text normalizes to lowercase
+#[test]
+fn boolean_text_normalizes_to_lowercase() {
+    let repo = with_conditions(&["Context: payouts.instant=TRUE"], &[]);
+    claim_is_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}\nContext: payouts.instant=true"));
+    claim_is_not_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}\nContext: payouts.instant=TRUE"));
+    claim_is_not_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}\nContext: payouts.instant=True"));
+}
+
+// behavior-contexts-conditions: A one-of value is decoded from its JSON string
+#[test]
+fn a_one_of_value_is_decoded_from_its_json_string() {
+    for written in ["\"\\u0073e\"", "\"s\\u0065\"", "\"\\u0073\\u0065\"", "\"se\""] {
+        requirement_condition_reads_as("payouts.region", written, "\"se\"", "\"no\"");
+    }
+    requirement_condition_reads_as("payouts.region", "\"\\u00e9\"", "\"\u{e9}\"", "\"\u{c9}\"");
+    // The quotes are the string's, not part of its value: the digest spells them again.
+    let repo = with_conditions(&["Context: payouts.region=\"se\""], &[]);
+    claim_is_not_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}\nContext: payouts.region=se"));
+}
+
+// behavior-contexts-conditions: A one-of value compares equal to its declared string in another Unicode form after NFC normalization
+#[test]
+fn a_one_of_value_in_another_unicode_form_equals_the_declared_string() {
+    let composed = "\"\u{e9}\"";
+    // Declared composed, written decomposed.
+    let repo = with_conditions(&["Context: payouts.region=\"e\u{301}\""], &[]);
+    lint_is_clean(&repo);
+    claim_is(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[("payouts.region", composed)]);
+    // Declared decomposed, written composed and decomposed.
+    for written in ["\"\u{e9}\"", "\"e\u{301}\"", "\"e\\u0301\""] {
+        let repo = payouts();
+        repo.write(
+            PAYOUT_KEY_FILE,
+            &payout_keys().replace("values = [\"no\", \"se\", \"\u{e9}\", \"\u{c9}\"]", "values = [\"no\", \"se\", \"e\\u0301\"]"),
+        );
+        repo.commit_all("keys with a decomposed value");
+        repo.run_json(&[], 0);
+        on_requirement(&repo, &[&format!("Context: payouts.region={written}")]);
+        lint_is_clean(&repo);
+        claim_is(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[("payouts.region", composed)]);
+    }
+}
+
+// behavior-contexts-conditions: A one-of value with another case is not folded to a declared string
+#[test]
+fn a_one_of_value_with_another_case_is_not_folded() {
+    for written in ["\"NO\"", "\"No\"", "\"SE\""] {
+        let repo = with_conditions(&[&format!("Context: payouts.region={written}")], &[]);
+        lint_names_the_specification(&repo);
+    }
+    // `é` and `É` are two declared values, and each keeps its own claim part.
+    requirement_condition_reads_as("payouts.region", "\"\u{c9}\"", "\"\u{c9}\"", "\"\u{e9}\"");
+    requirement_condition_reads_as("payouts.region", "\"\u{e9}\"", "\"\u{e9}\"", "\"\u{c9}\"");
+}
+
+// behavior-contexts-conditions: A number is read in JSON decimal notation
+#[test]
+fn a_number_is_read_in_json_decimal_notation() {
+    for (written, normalized) in [
+        ("12.5", "12.5"),
+        ("-3", "-3"),
+        ("0", "0"),
+        ("1e3", "1000"),
+        ("1E+3", "1000"),
+        ("2.5e-1", "0.25"),
+        ("0.25", "0.25"),
+        ("-1.25E2", "-125"),
+    ] {
+        requirement_condition_reads_as("payouts.limit", written, normalized, "7");
+    }
+}
+
+// behavior-contexts-conditions: Numbers compare as exact decimals
+#[test]
+fn numbers_compare_as_exact_decimals() {
+    // Each pair is one number in a floating-point approximation and two numbers exactly.
+    for (written, other) in [
+        ("0.30000000000000004", "0.3"),
+        ("9007199254740993", "9007199254740992"),
+        ("0.1000000000000000055511151231257827", "0.1"),
+        ("1.0000000000000000000000001", "1"),
+        ("123456789012345678901234567890", "123456789012345678901234567891"),
+    ] {
+        requirement_condition_reads_as("payouts.limit", written, written, other);
+    }
+    // And equal exactly in any spelling.
+    for (written, equal) in [("0.10", "0.1"), ("1.0", "1"), ("1e2", "100"), ("100e-2", "1"), ("1e30", "1000000000000000000000000000000")] {
+        requirement_condition_reads_as("payouts.limit", written, equal, "2");
+    }
+}
+
+// behavior-contexts-conditions: A normalized number has no exponent
+#[test]
+fn a_normalized_number_has_no_exponent() {
+    for (written, normalized) in [("1.5e2", "150"), ("1e-3", "0.001"), ("12E+1", "120"), ("5e0", "5"), ("-2.5e-2", "-0.025"), ("1e-30", "0.000000000000000000000000000001")] {
+        requirement_condition_reads_as("payouts.limit", written, normalized, "9");
+        let repo = with_conditions(&[&format!("Context: payouts.limit={written}")], &[]);
+        claim_is_not_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}\nContext: payouts.limit={written}"));
+    }
+}
+
+// behavior-contexts-conditions: A normalized number has no unnecessary leading zeros
+#[test]
+fn a_normalized_number_has_no_unnecessary_leading_zeros() {
+    for (written, normalized) in [("0.0001e2", "0.01"), ("0.0100e2", "1"), ("0.5e1", "5"), ("0.00123e3", "1.23"), ("-0.002e1", "-0.02")] {
+        requirement_condition_reads_as("payouts.limit", written, normalized, "0.1");
+        let repo = with_conditions(&[&format!("Context: payouts.limit={written}")], &[]);
+        claim_is_not_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}\nContext: payouts.limit={written}"));
+    }
+    // The zero before the decimal point of a fraction is necessary and stays.
+    let repo = with_conditions(&["Context: payouts.limit=0.5"], &[]);
+    claim_is_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}\nContext: payouts.limit=0.5"));
+    claim_is_not_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}\nContext: payouts.limit=.5"));
+}
+
+// behavior-contexts-conditions: A normalized number has no fractional trailing zeros
+#[test]
+fn a_normalized_number_has_no_fractional_trailing_zeros() {
+    for (written, normalized) in [("2.50", "2.5"), ("0.100", "0.1"), ("1.2300", "1.23"), ("-7.10", "-7.1"), ("1.2300e0", "1.23")] {
+        requirement_condition_reads_as("payouts.limit", written, normalized, "2.51");
+        let repo = with_conditions(&[&format!("Context: payouts.limit={written}")], &[]);
+        claim_is_not_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}\nContext: payouts.limit={written}"));
+    }
+}
+
+// behavior-contexts-conditions: A normalized whole number has no decimal point
+#[test]
+fn a_normalized_whole_number_has_no_decimal_point() {
+    for (written, normalized) in [("3.0", "3"), ("10.00", "10"), ("1e1", "10"), ("5.0e0", "5"), ("-4.0", "-4"), ("100.000", "100")] {
+        requirement_condition_reads_as("payouts.limit", written, normalized, "4");
+        let repo = with_conditions(&[&format!("Context: payouts.limit={written}")], &[]);
+        claim_is_not_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}\nContext: payouts.limit={written}"));
+    }
+    // Trailing zeros of a whole number are digits, and stay.
+    requirement_condition_reads_as("payouts.limit", "100", "100", "1");
+}
+
+// behavior-contexts-conditions: Negative zero normalizes to `0`
+#[test]
+fn negative_zero_normalizes_to_zero() {
+    for written in ["-0", "-0.0", "-0e5", "-0.000E-3", "0", "0.0", "0e0"] {
+        requirement_condition_reads_as("payouts.limit", written, "0", "1");
+        let repo = with_conditions(&[&format!("Context: payouts.limit={written}")], &[]);
+        claim_is_not_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}\nContext: payouts.limit=-0"));
+    }
+}
+
+// behavior-contexts-conditions: The claim part is the `text-1` digest of the claim text followed by its effective condition
+#[test]
+fn the_claim_part_is_the_digest_of_the_claim_and_its_condition() {
+    let repo = with_conditions(&["Context: payouts.instant=true"], &["Context: payouts.region=\"no\""]);
+    claim_is_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}\nContext: payouts.instant=true\nContext: payouts.region=\"no\""));
+    // The digest is of the claim text and the lines together, as one `text-1` digest.
+    claim_is_not_raw(&repo, REACHES_THE_CARD, REACHES_CLAIM);
+    claim_is_not_raw(&repo, REACHES_THE_CARD, "Context: payouts.instant=true\nContext: payouts.region=\"no\"");
+    claim_is_not_raw(&repo, REACHES_THE_CARD, &format!("Context: payouts.instant=true\nContext: payouts.region=\"no\"\n{REACHES_CLAIM}"));
+    claim_is_not_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}\n\nContext: payouts.instant=true\nContext: payouts.region=\"no\""));
+    // After a run the stored claim part of a Check with no condition is the digest of the claim alone.
+    let plain = payouts_with_results();
+    assert_eq!(result_claim(&plain, REACHES_THE_CARD), text_1_digest(REACHES_CLAIM));
+}
+
+// behavior-contexts-conditions: The claim text is normalized as model text before the condition is appended
+#[test]
+fn the_claim_text_is_normalized_before_the_condition_is_appended() {
+    let repo = payouts_with_results();
+    // The claim is written decomposed and with trailing spaces and a tab.
+    repo.replace(
+        PAYOUTS_VERIFICATION,
+        "  An approved payout reaches the card at once.\n",
+        "  An approved payout reaches the card at cafe\u{301}.  \t\n",
+    );
+    on_requirement(&repo, &["Context: payouts.instant=true"]);
+    claim_is(&repo, REACHES_THE_CARD, "An approved payout reaches the card at caf\u{e9}.", &[INSTANT_TRUE]);
+    claim_is_not(&repo, REACHES_THE_CARD, "An approved payout reaches the card at cafe.", &[INSTANT_TRUE]);
+}
+
+// behavior-contexts-conditions: A nonempty condition is appended after LF as one `Context: <key>=<normalized value>` line per key, sorted by key, with no last LF
+#[test]
+fn a_condition_is_appended_as_sorted_lines_without_a_last_lf() {
+    let repo = with_conditions(
+        &["Context: payouts.region=\"se\"", "Context: payouts.limit=5", "Context: payouts.instant=true", "Context: payouts.label=\"a/b\""],
+        &[],
+    );
+    lint_is_clean(&repo);
+    let lines = "Context: payouts.instant=true\nContext: payouts.label=\"a/b\"\nContext: payouts.limit=5\nContext: payouts.region=\"se\"";
+    claim_is_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}\n{lines}"));
+    claim_is_not_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}\n{lines}\n"));
+    claim_is_not_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}{lines}"));
+    // The order the lines were written in does not decide the order of the digest.
+    claim_is_not_raw(
+        &repo,
+        REACHES_THE_CARD,
+        &format!("{REACHES_CLAIM}\nContext: payouts.region=\"se\"\nContext: payouts.limit=5\nContext: payouts.instant=true\nContext: payouts.label=\"a/b\""),
+    );
+    claim_is_not_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}\n{}", lines.replace("Context: ", "")));
+    claim_is_not_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}\n{}", lines.replace("=", " = ")));
+}
+
+// Not a row of the list: the order of lines, which the design settles by sorting the lines of the claim part.
+#[test]
+fn the_order_of_context_lines_changes_nothing() {
+    let lines = ["Context: payouts.instant=true", "Context: payouts.limit=5", "Context: payouts.region=\"se\""];
+    let condition = [INSTANT_TRUE, ("payouts.limit", "5"), ("payouts.region", "\"se\"")];
+    for order in [[0, 1, 2], [2, 1, 0], [1, 2, 0], [2, 0, 1]] {
+        let repo = with_conditions(&order.map(|index| lines[index]), &[]);
+        lint_is_clean(&repo);
+        claim_is(&repo, REACHES_THE_CARD, REACHES_CLAIM, &condition);
+    }
+    // An inherited line and an own line of a Scenario give the same claim part in either place.
+    let split = with_conditions(&[lines[2]], &[lines[1], lines[0]]);
+    claim_is(&split, REACHES_THE_CARD, REACHES_CLAIM, &condition);
+}
+
+// behavior-contexts-conditions: One-of values in the claim part use the JSON string spelling of RFC 8785
+#[test]
+fn one_of_values_in_the_claim_part_use_the_rfc_8785_spelling() {
+    // How an author may write each value, which is not how RFC 8785 writes it.
+    let written = [
+        ("a = b", "\"a \\u003d b\""),
+        ("a \"quoted\" b", "\"a \\u0022quoted\\u0022 b\""),
+        ("back\\slash", "\"back\\u005cslash\""),
+        ("tab\there", "\"tab\\u0009here\""),
+        ("line\nbreak", "\"line\\u000abreak\""),
+        ("\u{1f}", "\"\\u001F\""),
+        ("a/b", "\"a\\/b\""),
+        ("\u{e9}", "\"\\u00e9\""),
+        ("\u{e9}", "\"e\\u0301\""),
+    ];
+    for (label, spelling) in written {
+        let repo = with_conditions(&[&format!("Context: payouts.label={spelling}")], &[]);
+        lint_is_clean(&repo);
+        let value = json_string(label);
+        claim_is(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[("payouts.label", &value)]);
+        // The spelling the author wrote is not the one the digest holds, unless they are the same.
+        if spelling != value {
+            claim_is_not_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}\nContext: payouts.label={spelling}"));
+        }
+    }
+    // RFC 8785 writes the short escapes for these and lowercase hexadecimal for the others.
+    for (label, rfc_8785) in [("tab\there", "\"tab\\there\""), ("line\nbreak", "\"line\\nbreak\""), ("\u{1f}", "\"\\u001f\""), ("a/b", "\"a/b\""), ("\u{e9}", "\"\u{e9}\"")] {
+        assert_eq!(json_string(label), rfc_8785);
+        let repo = with_conditions(&[&format!("Context: payouts.label={}", json_string(label))], &[]);
+        claim_is_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}\nContext: payouts.label={rfc_8785}"));
+    }
+}
+
+// behavior-contexts-conditions: Inherited and repeated lines contribute each key once to the claim part
+#[test]
+fn inherited_and_repeated_lines_contribute_each_key_once() {
+    let repo = with_conditions(
+        &["Context: payouts.instant=true", "Context: payouts.instant=TRUE", "Context: payouts.limit=1", "Context: payouts.limit=1.0"],
+        &["Context: payouts.instant=true", "Context: payouts.limit=1.00", "Context: payouts.region=\"no\""],
+    );
+    lint_is_clean(&repo);
+    let once = format!("{REACHES_CLAIM}\nContext: payouts.instant=true\nContext: payouts.limit=1\nContext: payouts.region=\"no\"");
+    claim_is_raw(&repo, REACHES_THE_CARD, &once);
+    claim_is_not_raw(&repo, REACHES_THE_CARD, &format!("{once}\nContext: payouts.instant=true"));
+    claim_is_not_raw(
+        &repo,
+        REACHES_THE_CARD,
+        &format!("{REACHES_CLAIM}\nContext: payouts.instant=true\nContext: payouts.instant=true\nContext: payouts.limit=1\nContext: payouts.region=\"no\""),
+    );
+    claim_is_raw(&repo, WAITS_FOR_REVIEW, &format!("{WAITS_CLAIM}\nContext: payouts.instant=true\nContext: payouts.limit=1"));
+}
+
+const SAMPLE_CLAIMS: [(&str, &str); 4] = [
+    (SIXTH_LOAN, "The desk refuses a sixth loan to a borrower who holds five."),
+    (RETURNED_BOOK, "After one return the desk lends again to a borrower who held five loans."),
+    (LATE_RETURN, "A return three days late records a fine of three days."),
+    (ON_TIME_RETURN, "A return on the due date or earlier records no fine."),
+];
+
+// behavior-contexts-conditions: A Check with no condition keeps the digest of its claim text alone
+#[test]
+fn a_check_with_no_condition_keeps_the_digest_of_its_claim_text() {
+    let repo = Repo::sample();
+    repo.run_json(&[], 0);
+    for (check, claim) in SAMPLE_CLAIMS {
+        assert_eq!(result_claim(&repo, check), text_1_digest(claim), "{check}");
+        assert_eq!(repo.result_of(check)["subjects"][0]["digest"], text_1_digest(claim), "{check}");
+    }
+    // Keys and conditions elsewhere in the model do not touch it: only the files part moves.
+    let payouts = payouts_with_results();
+    on_requirement(&payouts, &["Context: payouts.instant=true"]);
+    for (check, claim) in SAMPLE_CLAIMS {
+        claim_is(&payouts, check, claim, &[]);
+        assert_eq!(parts_changed(&payouts.check_show(check)), vec!["files"], "{check}");
+    }
+}
+
+// behavior-contexts-conditions: Changing a condition makes the Check owed with "claim changed"
+#[test]
+fn changing_a_condition_makes_the_check_owed_with_a_changed_claim() {
+    let repo = payouts_with_results();
+    on_requirement(&repo, &["Context: payouts.region=\"no\""]);
+    // The result the Check would have had under the first condition.
+    store_with_claim(&repo, REACHES_THE_CARD, &claim_digest(REACHES_CLAIM, &[("payouts.region", "\"no\"")]));
+    assert_eq!(parts_changed(&repo.check_show(REACHES_THE_CARD)), vec!["files"]);
+    repo.replace(PAYOUTS_SPEC, "Context: payouts.region=\"no\"", "Context: payouts.region=\"se\"");
+    let check = repo.check_show(REACHES_THE_CARD);
+    assert_eq!(check["state"], "owed", "{check:#}");
+    assert_eq!(parts_changed_set(&check), set_of(&["claim", "files"]), "{check:#}");
+    let explanation = format!("{} {}", check["reason"].as_str().unwrap_or_default(), check["detail"].as_str().unwrap_or_default());
+    assert!(explanation.contains("claim"), "the explanation does not name the claim: {check:#}");
+    let status = repo.status_json();
+    assert_eq!(status_checks(&status)[REACHES_THE_CARD]["state"], "owed", "{status:#}");
+    // Adding and removing a condition changes the claim as well.
+    let added = payouts_with_results();
+    on_requirement(&added, &["Context: payouts.instant=true"]);
+    let check = added.check_show(WAITS_FOR_REVIEW);
+    assert_eq!(parts_changed_set(&check), set_of(&["claim", "files"]), "{check:#}");
+}
+
+// Not a row of the list: the two sides of the claim digest, as a person edits a condition.
+#[test]
+fn a_respelled_condition_leaves_the_claim_unchanged() {
+    for (first, second) in [
+        ("Context: payouts.instant=true", "Context: payouts.instant=TRUE"),
+        ("Context: payouts.limit=1", "Context: payouts.limit=1.00"),
+        ("Context: payouts.limit=100", "Context: payouts.limit=1e2"),
+        ("Context: payouts.limit=0", "Context: payouts.limit=-0"),
+        ("Context: payouts.region=\"\u{e9}\"", "Context: payouts.region=\"e\u{301}\""),
+        ("Context: payouts.region=\"se\"", "Context: payouts.region=\"\\u0073e\""),
+    ] {
+        let repo = payouts_with_results();
+        on_requirement(&repo, &[first]);
+        // The first spelling of each pair is already the normalized one.
+        let (key, value) = first.trim_start_matches("Context: ").split_once('=').unwrap();
+        store_with_claim(&repo, REACHES_THE_CARD, &claim_digest(REACHES_CLAIM, &[(key, value)]));
+        repo.replace(PAYOUTS_SPEC, first, second);
+        let check = repo.check_show(REACHES_THE_CARD);
+        assert_eq!(parts_changed(&check), vec!["files"], "{first} became {second}: {check:#}");
+    }
+    // The control: another value of the same key is another claim.
+    let repo = payouts_with_results();
+    on_requirement(&repo, &["Context: payouts.limit=1"]);
+    store_with_claim(&repo, REACHES_THE_CARD, &claim_digest(REACHES_CLAIM, &[("payouts.limit", "1")]));
+    repo.replace(PAYOUTS_SPEC, "Context: payouts.limit=1", "Context: payouts.limit=1.001");
+    assert_eq!(parts_changed_set(&repo.check_show(REACHES_THE_CARD)), set_of(&["claim", "files"]));
+}
+
+// behavior-contexts-conditions: The fingerprint gains no extra context part
+#[test]
+fn the_fingerprint_has_no_context_part() {
+    let repo = payouts_with_results();
+    on_requirement(&repo, &["Context: payouts.instant=true"]);
+    // A Check with no condition, in a model that has conditions, is written with the four parts.
+    for (check, claim) in SAMPLE_CLAIMS {
+        let record = repo.result_of(check);
+        let parts: BTreeSet<String> = record["body"]["parts"].as_object().unwrap().keys().cloned().collect();
+        assert_eq!(parts, PARTS.iter().map(|part| part.to_string()).collect::<BTreeSet<_>>(), "{check}: {record:#}");
+        claim_is(&repo, check, claim, &[]);
+    }
+    // A changed condition names no part but the claim, besides the files the edit touched.
+    store_with_claim(&repo, REACHES_THE_CARD, &claim_digest(REACHES_CLAIM, &[INSTANT_TRUE]));
+    repo.replace(PAYOUTS_SPEC, "Context: payouts.instant=true", "Context: payouts.instant=false");
+    let parts = parts_changed_set(&repo.check_show(REACHES_THE_CARD));
+    assert_eq!(parts, set_of(&["claim", "files"]));
+    for part in parts {
+        assert!(PARTS.contains(&part.as_str()), "{part} is not a part of the fingerprint");
+    }
 }

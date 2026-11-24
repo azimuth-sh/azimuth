@@ -19,6 +19,7 @@ pub mod reason {
     pub const FAILED_ON_THESE_INPUTS: &str = "failed on these inputs";
     pub const CONTRADICTED: &str = "contradicted";
     pub const NO_RESULT: &str = "no result";
+    pub const CONTEXT_NOT_APPLIED: &str = "context not applied";
     pub const RUNS_IN_CI: &str = "runs in CI";
 }
 

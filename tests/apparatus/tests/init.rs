@@ -33,6 +33,21 @@ fn init_writes_the_project_file_in_toml() {
     project(&repo);
 }
 
+// behavior-contexts-keys: `azimuth init` writes no `execution-context.toml`
+#[test]
+fn init_leaves_key_declarations_for_the_product_to_declare() {
+    let repo = fresh("main");
+    init(&repo);
+    assert!(!repo.path("azimuth/execution-context.toml").exists());
+    let project = project(&repo);
+    assert!(!project.contains_key("component"), "{project:#?}");
+    if let Some(suites) = project.get("suite").and_then(toml::Value::as_array) {
+        for suite in suites {
+            assert!(suite.get("starts").is_none(), "{suite:#?}");
+        }
+    }
+}
+
 // behavior: The project file has the keys `cli`, `repository`, `area`, `suite` and `facility`
 #[test]
 fn the_project_file_knows_its_five_keys() {

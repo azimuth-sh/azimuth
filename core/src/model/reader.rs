@@ -2,8 +2,9 @@
 //! error has the same words in every command.
 
 
+use super::condition;
 use super::markdown::{self, StructureWord};
-use super::{Check, Model, Requirement, Reuse, ReuseValue, Scenario, Slip, VerificationHeading, MODEL_FOLDER};
+use super::{Check, ContextLine, Model, Requirement, Reuse, ReuseValue, Scenario, Slip, VerificationHeading, MODEL_FOLDER};
 use crate::reading::ReadingError;
 use crate::source::Source;
 
@@ -11,6 +12,9 @@ use crate::source::Source;
 /// so one run of a command names every place to fix.
 pub fn read(source: &dyn Source) -> (Model, Vec<ReadingError>) {
     let mut reader = Reader::default();
+    let (keys, errors) = super::keys::read(source);
+    reader.model.keys = keys;
+    reader.errors.extend(errors);
     let mut modules = Vec::new();
     collect_modules(source, "", &mut modules);
     for module in &modules {
@@ -115,6 +119,7 @@ impl Reader {
                             verification_review: false,
                             realization_review: false,
                             text: Vec::new(),
+                            context: Vec::new(),
                             scenarios: Vec::new(),
                         });
                         current = Some(self.model.requirements.len() - 1);
@@ -133,7 +138,7 @@ impl Reader {
                             self.error("duplicate id", file, line, message);
                             continue;
                         }
-                        self.model.requirements[requirement].scenarios.push(Scenario { id: id.to_string(), line, text: Vec::new() });
+                        self.model.requirements[requirement].scenarios.push(Scenario { id: id.to_string(), line, text: Vec::new(), context: Vec::new() });
                     }
                 }
                 continue;
@@ -162,11 +167,29 @@ impl Reader {
                     let verification = sibling(file, "verification.md");
                     self.misplaced(file, line, format!("`Reuse:` has a meaning only under a Check, so it does nothing in specification.md. Move the line under its Check in {verification}"));
                 }
-                Some(("Context", _)) => self.misplaced(file, line, context_message()),
+                Some(("Context", value)) => self.context(value, requirement, file, line),
                 Some(_) => self.note_slip(raw, file, line),
                 None => {}
             }
         }
+    }
+
+    /// A `Context:` line under the Requirement or Scenario that is open. A line that cannot be read
+    /// is dropped after its error, so the Check it belongs to is not read under a guessed condition.
+    fn context(&mut self, value: &str, requirement: usize, file: &str, line: u64) {
+        let (key, value) = match condition::parse(value) {
+            Ok(assignment) => assignment,
+            Err(message) => {
+                self.error("condition", file, line, message);
+                return;
+            }
+        };
+        let entry = &mut self.model.requirements[requirement];
+        let lines = match entry.scenarios.last_mut() {
+            Some(scenario) => &mut scenario.context,
+            None => &mut entry.context,
+        };
+        lines.push(ContextLine { line, key, value });
     }
 
     /// A review declaration has the one value `reviewed`.
@@ -259,7 +282,8 @@ impl Reader {
                     continue;
                 }
                 Some(("Context", _)) => {
-                    self.misplaced(file, line, context_message());
+                    let specification = sibling(file, "specification.md");
+                    self.misplaced(file, line, context_message(&specification));
                     continue;
                 }
                 Some(("Reuse", _)) if open.is_none() => {
@@ -361,6 +385,6 @@ fn sibling(file: &str, name: &str) -> String {
     }
 }
 
-fn context_message() -> String {
-    "`Context:` is read by no command of this version, so the line would do nothing. Remove it; it belongs nowhere until the increment that reads it".to_string()
+fn context_message(specification: &str) -> String {
+    format!("`Context:` has a meaning only under a Requirement or a Scenario in specification.md, so it does nothing here. Move the line under the heading of its Requirement or Scenario in {specification}")
 }
