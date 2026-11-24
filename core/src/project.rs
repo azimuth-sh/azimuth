@@ -20,6 +20,7 @@ pub struct Project {
     pub repository: Repository,
     pub suites: Vec<Suite>,
     pub facilities: Vec<Facility>,
+    pub components: Vec<Component>,
 }
 
 /// The repository's own line. Its `name` and every `[[area]]` are read so that a wrong one is a
@@ -39,6 +40,8 @@ pub struct Suite {
     pub marker: String,
     pub marker_key: Option<String>,
     pub needs: Vec<String>,
+    /// The names of the components the suite starts. Lint compares them with the declarations.
+    pub starts: Vec<String>,
     pub time_limit_minutes: u64,
 }
 
@@ -53,6 +56,15 @@ impl Suite {
     }
 }
 
+/// Something that runs, made from one or more areas. Reading checks only that the areas exist;
+/// a launch will use `report` in a later increment.
+#[derive(Debug)]
+pub struct Component {
+    pub name: String,
+    pub areas: Vec<String>,
+    pub report: String,
+}
+
 #[derive(Debug)]
 pub struct Facility {
     pub name: String,
@@ -60,6 +72,14 @@ pub struct Facility {
 }
 
 impl Project {
+    pub fn component(&self, name: &str) -> Option<&Component> {
+        self.components.iter().find(|component| component.name == name)
+    }
+
+    pub fn suite(&self, name: &str) -> Option<&Suite> {
+        self.suites.iter().find(|suite| suite.name == name)
+    }
+
     pub fn facility(&self, name: &str) -> Option<&Facility> {
         self.facilities.iter().find(|facility| facility.name == name)
     }
@@ -141,7 +161,7 @@ impl Reader {
     }
 
     fn project(&mut self, table: &Table) -> Project {
-        self.refuse_unknown_keys(table, Place::Top, &["cli", "repository", "area", "suite", "facility"]);
+        self.refuse_unknown_keys(table, Place::Top, &["cli", "repository", "area", "suite", "facility", "component"]);
         let cli = self.cli(table);
         let repository = match table.get("repository") {
             Some(Value::Table(repository)) => self.repository(repository),
@@ -157,16 +177,19 @@ impl Reader {
         let areas: Vec<String> = self.entries(table, "area").iter().map(|(index, entry)| self.area(entry, *index)).collect();
         let suites: Vec<Suite> = self.entries(table, "suite").iter().map(|(index, entry)| self.suite(entry, *index)).collect();
         let facilities: Vec<Facility> = self.entries(table, "facility").iter().map(|(index, entry)| self.facility(entry, *index)).collect();
+        let components: Vec<Component> =
+            self.entries(table, "component").iter().map(|(index, entry)| self.component(entry, *index, &areas)).collect();
         self.refuse_duplicates("area", areas.iter().map(String::as_str));
         self.refuse_duplicates("suite", suites.iter().map(|suite| suite.name.as_str()));
         self.refuse_duplicates("facility", facilities.iter().map(|facility| facility.name.as_str()));
+        self.refuse_duplicates("component", components.iter().map(|component| component.name.as_str()));
         for (index, suite) in suites.iter().enumerate() {
             if !suite.area.is_empty() && !areas.contains(&suite.area) {
                 let message = format!("the suite `{}` names the area `{}`, which no [[area]] declares", suite.name, suite.area);
                 self.error(Place::Entry("suite", index), Some("area"), message);
             }
         }
-        Project { cli, repository, suites, facilities }
+        Project { cli, repository, suites, facilities, components }
     }
 
     fn cli(&mut self, table: &Table) -> String {
@@ -210,7 +233,7 @@ impl Reader {
 
     fn suite(&mut self, table: &Table, index: usize) -> Suite {
         let place = Place::Entry("suite", index);
-        self.refuse_unknown_keys(table, place, &["name", "area", "path", "adapter", "marker", "marker_key", "needs", "time_limit_minutes"]);
+        self.refuse_unknown_keys(table, place, &["name", "area", "path", "adapter", "marker", "marker_key", "needs", "starts", "time_limit_minutes"]);
         let path = self.text(table, place, "path");
         let marker = self.text(table, place, "marker");
         if !marker.is_empty() && marker.matches("<id>").count() != 1 {
@@ -251,7 +274,27 @@ impl Reader {
             marker,
             marker_key,
             needs: self.texts(table, place, "needs", false),
+            starts: self.texts(table, place, "starts", false),
         }
+    }
+
+    fn component(&mut self, table: &Table, index: usize, areas: &[String]) -> Component {
+        let place = Place::Entry("component", index);
+        self.refuse_unknown_keys(table, place, &["name", "areas", "report"]);
+        let name = self.text(table, place, "name");
+        let component_areas = self.texts(table, place, "areas", true);
+        if matches!(table.get("areas"), Some(Value::Array(items)) if items.is_empty()) {
+            self.error(place, Some("areas"), format!("the component `{name}` is made from no area. List one or more areas"));
+        }
+        for area in component_areas.iter().filter(|area| !areas.contains(area)) {
+            let message = format!("the component `{name}` names the area `{area}`, which no [[area]] declares");
+            self.error(place, Some("areas"), message);
+        }
+        let report = self.text(table, place, "report");
+        if !report.is_empty() && !report.starts_with('/') {
+            self.error(place, Some("report"), format!("the report path `{report}` of the component `{name}` must be absolute and start with `/`"));
+        }
+        Component { name, areas: component_areas, report }
     }
 
     fn facility(&mut self, table: &Table, index: usize) -> Facility {

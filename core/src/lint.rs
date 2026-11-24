@@ -5,7 +5,8 @@ use std::collections::BTreeMap;
 
 use serde_json::{json, Value};
 
-use crate::markers::Marker;
+use crate::markers::{self, Marker};
+use crate::project::{Project, PROJECT_FILE};
 use crate::model::{ContextLine, Key, KeyType, Model, Requirement, Literal, KEY_FILE};
 use unicode_normalization::UnicodeNormalization;
 use crate::output;
@@ -36,7 +37,7 @@ impl Finding {
 }
 
 /// Every finding of the model against the markers in source and the tracked files.
-pub fn findings(model: &Model, markers: &[Marker], tracked_in_worktree_folder: &[String]) -> Vec<Finding> {
+pub fn findings(model: &Model, project: &Project, markers: &[Marker], tracked_in_worktree_folder: &[String]) -> Vec<Finding> {
     let mut findings = Vec::new();
 
     for key in &model.keys {
@@ -48,6 +49,17 @@ pub fn findings(model: &Model, markers: &[Marker], tracked_in_worktree_folder: &
                 message: format!("the key `{}` is listed for no component. List the components that must read it", key.name),
             });
         }
+        for component in key.components.iter().filter(|component| project.component(component).is_none()) {
+            findings.push(Finding {
+                kind: "key lists undeclared component",
+                file: KEY_FILE.to_string(),
+                line: None,
+                message: format!(
+                    "the key `{}` is listed for the component `{component}`, which no [[component]] of {PROJECT_FILE} declares. Declare the component, or correct its name",
+                    key.name
+                ),
+            });
+        }
         let prefix = format!("{}.", key.name);
         for other in model.keys.iter().filter(|other| other.name.starts_with(&prefix)) {
             findings.push(Finding {
@@ -55,6 +67,20 @@ pub fn findings(model: &Model, markers: &[Marker], tracked_in_worktree_folder: &
                 file: KEY_FILE.to_string(),
                 line: None,
                 message: format!("the key `{}` begins `{}` at a segment boundary. Rename one so neither key begins the other", key.name, other.name),
+            });
+        }
+    }
+
+    for suite in &project.suites {
+        for component in suite.starts.iter().filter(|component| project.component(component).is_none()) {
+            findings.push(Finding {
+                kind: "suite starts undeclared component",
+                file: PROJECT_FILE.to_string(),
+                line: None,
+                message: format!(
+                    "the suite `{}` starts the component `{component}`, which no [[component]] declares. Declare the component, or correct its name",
+                    suite.name
+                ),
             });
         }
     }
@@ -136,6 +162,7 @@ pub fn findings(model: &Model, markers: &[Marker], tracked_in_worktree_folder: &
     }
 
     condition_findings(model, &mut findings);
+    unproved_condition_findings(model, project, markers, &mut findings);
 
     for slip in &model.slips {
         findings.push(Finding {
@@ -161,6 +188,32 @@ pub fn findings(model: &Model, markers: &[Marker], tracked_in_worktree_folder: &
     }
 
     findings
+}
+
+/// A Check whose condition states a key that none of the components its suite starts is listed
+/// for. A Check with no marked test has no suite, and lint already names it for that.
+fn unproved_condition_findings(model: &Model, project: &Project, markers: &[Marker], findings: &mut Vec<Finding>) {
+    for check in &model.checks {
+        let Some(suite) = markers::suite_of(markers, project, &check.id).and_then(|name| project.suite(name)) else {
+            continue;
+        };
+        for key_name in model.condition_of(check).values.keys() {
+            let Some(key) = model.keys.iter().find(|key| key.name == *key_name) else {
+                continue;
+            };
+            if !suite.starts.iter().any(|started| key.components.contains(started)) {
+                findings.push(Finding {
+                    kind: "condition no started component serves",
+                    file: check.file.clone(),
+                    line: Some(check.line),
+                    message: format!(
+                        "the Check `{}` is promised under the key `{key_name}`, and the suite `{}` starts no component that {KEY_FILE} lists for it. Add such a component to `starts` of the suite in {PROJECT_FILE}, or move the Check to a suite that starts one",
+                        check.id, suite.name
+                    ),
+                });
+            }
+        }
+    }
 }
 
 fn condition_findings(model: &Model, findings: &mut Vec<Finding>) {

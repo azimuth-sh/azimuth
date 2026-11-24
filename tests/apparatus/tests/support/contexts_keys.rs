@@ -1,4 +1,4 @@
-// Project components belong to a later list, so these fixtures declare none in the
-// project file; lint does not compare a key's components with that file yet.
+// A key's components are declared in the project file, so a fixture that expects a clean
+// lint declares them beside the key (`declare_payout_components`).
 pub const KEY_FILE: &str = "azimuth/execution-context.toml";
 pub const INSTANT: &str = "[payouts.instant]\ntype = \"boolean\"\ncomponents = [\"api\", \"website\"]\n";

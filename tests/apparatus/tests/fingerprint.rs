@@ -606,7 +606,15 @@ fn a_rewritten_commit_keeps_its_results() {
 const INSTANT_TRUE: (&str, &str) = ("payouts.instant", "true");
 
 fn with_conditions(on_requirement_lines: &[&str], on_reaches_lines: &[&str]) -> Repo {
-    let repo = payouts_with_results();
+    conditions_on(payouts_with_results(), on_requirement_lines, on_reaches_lines)
+}
+
+/// The same, with the components declared and started, for a test that expects a clean lint.
+fn with_started_conditions(on_requirement_lines: &[&str], on_reaches_lines: &[&str]) -> Repo {
+    conditions_on(started_payouts_with_results(), on_requirement_lines, on_reaches_lines)
+}
+
+fn conditions_on(repo: Repo, on_requirement_lines: &[&str], on_reaches_lines: &[&str]) -> Repo {
     if !on_requirement_lines.is_empty() {
         on_requirement(&repo, on_requirement_lines);
     }
@@ -619,7 +627,7 @@ fn with_conditions(on_requirement_lines: &[&str], on_reaches_lines: &[&str]) -> 
 /// A one-of or number key under the Requirement, in the spelling written, reads as the normalized
 /// value `normalized` and as no other.
 fn requirement_condition_reads_as(key: &str, written: &str, normalized: &str, other: &str) {
-    let repo = with_conditions(&[&format!("Context: {key}={written}")], &[]);
+    let repo = with_started_conditions(&[&format!("Context: {key}={written}")], &[]);
     lint_is_clean(&repo);
     claim_is(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[(key, normalized)]);
     claim_is_not(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[(key, other)]);
@@ -639,7 +647,7 @@ fn a_scenario_takes_its_requirements_condition() {
 // behavior-contexts-conditions: A Scenario may add a key to its Requirement's condition
 #[test]
 fn a_scenario_may_add_a_key() {
-    let repo = with_conditions(&["Context: payouts.instant=true"], &["Context: payouts.region=\"no\""]);
+    let repo = with_started_conditions(&["Context: payouts.instant=true"], &["Context: payouts.region=\"no\""]);
     lint_is_clean(&repo);
     claim_is(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[INSTANT_TRUE, ("payouts.region", "\"no\"")]);
     claim_is_not(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[INSTANT_TRUE]);
@@ -660,7 +668,7 @@ fn a_scenario_with_no_context_of_its_own_keeps_its_requirements_condition() {
 #[test]
 fn repeating_an_inherited_value_changes_nothing() {
     for repeated in ["Context: payouts.instant=true", "Context: payouts.instant=TRUE", "Context: payouts.instant =\ttrue"] {
-        let repo = with_conditions(&["Context: payouts.instant=true"], &[repeated]);
+        let repo = with_started_conditions(&["Context: payouts.instant=true"], &[repeated]);
         lint_is_clean(&repo);
         claim_is(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[INSTANT_TRUE]);
         claim_is_not_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}\nContext: payouts.instant=true\nContext: payouts.instant=true"));
@@ -670,7 +678,7 @@ fn repeating_an_inherited_value_changes_nothing() {
 // behavior-contexts-conditions: Repeating a key with the same normalized value on one heading changes nothing
 #[test]
 fn repeating_a_key_with_the_same_normalized_value_changes_nothing() {
-    let repo = with_conditions(
+    let repo = with_started_conditions(
         &[
             "Context: payouts.limit=1",
             "Context: payouts.limit=1.0",
@@ -684,7 +692,7 @@ fn repeating_a_key_with_the_same_normalized_value_changes_nothing() {
     lint_is_clean(&repo);
     let condition = [("payouts.limit", "1"), INSTANT_TRUE, ("payouts.region", "\"\u{e9}\"")];
     claim_is(&repo, REACHES_THE_CARD, REACHES_CLAIM, &condition);
-    let scenario = with_conditions(&[], &["Context: payouts.limit=1", "Context: payouts.limit=1.0", "Context: payouts.limit=1e0"]);
+    let scenario = with_started_conditions(&[], &["Context: payouts.limit=1", "Context: payouts.limit=1.0", "Context: payouts.limit=1e0"]);
     lint_is_clean(&scenario);
     claim_is(&scenario, REACHES_THE_CARD, REACHES_CLAIM, &[("payouts.limit", "1")]);
     claim_is(&scenario, WAITS_FOR_REVIEW, WAITS_CLAIM, &[]);
@@ -710,12 +718,12 @@ fn a_scenario_with_no_condition_anywhere_has_no_condition() {
 #[test]
 fn boolean_text_is_accepted_in_any_ascii_case() {
     for written in ["TRUE", "True", "tRuE", "true"] {
-        let repo = with_conditions(&[&format!("Context: payouts.instant={written}")], &[]);
+        let repo = with_started_conditions(&[&format!("Context: payouts.instant={written}")], &[]);
         lint_is_clean(&repo);
         claim_is(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[INSTANT_TRUE]);
     }
     for written in ["FALSE", "False", "fAlSe"] {
-        let repo = with_conditions(&[&format!("Context: payouts.instant={written}")], &[]);
+        let repo = with_started_conditions(&[&format!("Context: payouts.instant={written}")], &[]);
         lint_is_clean(&repo);
         claim_is(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[("payouts.instant", "false")]);
         claim_is_not(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[INSTANT_TRUE]);
@@ -748,12 +756,12 @@ fn a_one_of_value_is_decoded_from_its_json_string() {
 fn a_one_of_value_in_another_unicode_form_equals_the_declared_string() {
     let composed = "\"\u{e9}\"";
     // Declared composed, written decomposed.
-    let repo = with_conditions(&["Context: payouts.region=\"e\u{301}\""], &[]);
+    let repo = with_started_conditions(&["Context: payouts.region=\"e\u{301}\""], &[]);
     lint_is_clean(&repo);
     claim_is(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[("payouts.region", composed)]);
     // Declared decomposed, written composed and decomposed.
     for written in ["\"\u{e9}\"", "\"e\u{301}\"", "\"e\\u0301\""] {
-        let repo = payouts();
+        let repo = started_payouts();
         repo.write(
             PAYOUT_KEY_FILE,
             &payout_keys().replace("values = [\"no\", \"se\", \"\u{e9}\", \"\u{c9}\"]", "values = [\"no\", \"se\", \"e\\u0301\"]"),
@@ -903,7 +911,7 @@ fn the_claim_text_is_normalized_before_the_condition_is_appended() {
 // behavior-contexts-conditions: A nonempty condition is appended after LF as one `Context: <key>=<normalized value>` line per key, sorted by key, with no last LF
 #[test]
 fn a_condition_is_appended_as_sorted_lines_without_a_last_lf() {
-    let repo = with_conditions(
+    let repo = with_started_conditions(
         &["Context: payouts.region=\"se\"", "Context: payouts.limit=5", "Context: payouts.instant=true", "Context: payouts.label=\"a/b\""],
         &[],
     );
@@ -928,12 +936,12 @@ fn the_order_of_context_lines_changes_nothing() {
     let lines = ["Context: payouts.instant=true", "Context: payouts.limit=5", "Context: payouts.region=\"se\""];
     let condition = [INSTANT_TRUE, ("payouts.limit", "5"), ("payouts.region", "\"se\"")];
     for order in [[0, 1, 2], [2, 1, 0], [1, 2, 0], [2, 0, 1]] {
-        let repo = with_conditions(&order.map(|index| lines[index]), &[]);
+        let repo = with_started_conditions(&order.map(|index| lines[index]), &[]);
         lint_is_clean(&repo);
         claim_is(&repo, REACHES_THE_CARD, REACHES_CLAIM, &condition);
     }
     // An inherited line and an own line of a Scenario give the same claim part in either place.
-    let split = with_conditions(&[lines[2]], &[lines[1], lines[0]]);
+    let split = with_started_conditions(&[lines[2]], &[lines[1], lines[0]]);
     claim_is(&split, REACHES_THE_CARD, REACHES_CLAIM, &condition);
 }
 
@@ -953,7 +961,7 @@ fn one_of_values_in_the_claim_part_use_the_rfc_8785_spelling() {
         ("\u{e9}", "\"e\\u0301\""),
     ];
     for (label, spelling) in written {
-        let repo = with_conditions(&[&format!("Context: payouts.label={spelling}")], &[]);
+        let repo = with_started_conditions(&[&format!("Context: payouts.label={spelling}")], &[]);
         lint_is_clean(&repo);
         let value = json_string(label);
         claim_is(&repo, REACHES_THE_CARD, REACHES_CLAIM, &[("payouts.label", &value)]);
@@ -965,7 +973,7 @@ fn one_of_values_in_the_claim_part_use_the_rfc_8785_spelling() {
     // RFC 8785 writes the short escapes for these and lowercase hexadecimal for the others.
     for (label, rfc_8785) in [("tab\there", "\"tab\\there\""), ("line\nbreak", "\"line\\nbreak\""), ("\u{1f}", "\"\\u001f\""), ("a/b", "\"a/b\""), ("\u{e9}", "\"\u{e9}\"")] {
         assert_eq!(json_string(label), rfc_8785);
-        let repo = with_conditions(&[&format!("Context: payouts.label={}", json_string(label))], &[]);
+        let repo = with_started_conditions(&[&format!("Context: payouts.label={}", json_string(label))], &[]);
         claim_is_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}\nContext: payouts.label={rfc_8785}"));
     }
 }
@@ -973,7 +981,7 @@ fn one_of_values_in_the_claim_part_use_the_rfc_8785_spelling() {
 // behavior-contexts-conditions: Inherited and repeated lines contribute each key once to the claim part
 #[test]
 fn inherited_and_repeated_lines_contribute_each_key_once() {
-    let repo = with_conditions(
+    let repo = with_started_conditions(
         &["Context: payouts.instant=true", "Context: payouts.instant=TRUE", "Context: payouts.limit=1", "Context: payouts.limit=1.0"],
         &["Context: payouts.instant=true", "Context: payouts.limit=1.00", "Context: payouts.region=\"no\""],
     );
