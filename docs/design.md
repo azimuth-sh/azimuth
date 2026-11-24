@@ -2390,13 +2390,44 @@ Unverified: a .NET tool for the file reference graph. It is likely a small Rosly
 
 **The library speaks of keys, sources, values, applying and reports, and knows no testing.** It opens no port and makes no connection out. Its callback returns the report; the component exposes it under the rules of a door it already has, at its declared `report` path. The same report is used in a launch and a deployment. The library never guesses applying from an environment name. The component's code gives the condition. It is evaluated once, at start, before applying. A later change to the condition changes neither `applying` nor the applied values.
 
-**A source reads a key's current value and where it came from, and applies a value in this process.** The library applies only when its condition held at start. It ships one source over the stack's configuration, used for each key with no other registered source. The source that applies Azimuth's values is added last among the configuration's sources, so its value wins. A later source that wins is reported as an override. The library reads every mapped key again whenever its callback is called, including a value that can change while it runs. A team that reads a flag service, a database or another store registers its own source for those keys. Azimuth ships no flag-service integration and requires no OpenFeature integration.
+**A source reads a key's current value and where it came from, and applies a value in this process.** The library applies only when its condition held at start. At start, when its condition holds, it reads `AZIMUTH_CONTEXT` and applies the value of each mapped key the variable names. Without the variable it applies nothing. A variable that is not one JSON object of text values stops the start with an error that names it. It ships one source over the stack's configuration, used for each key with no other registered source. The source that applies Azimuth's values is added last among the configuration's sources, so its value wins. A later source that wins is reported as an override. The library reads every mapped key again whenever its callback is called, including a value that can change while it runs. A team that reads a flag service, a database or another store registers its own source for those keys. Azimuth ships no flag-service integration and requires no OpenFeature integration.
 
 **The libraries are `Azimuth.Context` for .NET and `@azimuth-sh/context` for Node.** The .NET source reads and writes the mapped configuration path through a configuration provider. The Node source reads the mapped name from `process.env` and applies by writing that name there. It keeps the origin of its applied text; if the current text differs, it reports the environment as a later source. An application's other configuration store needs a registered source of its own. Both packages use the release's version and carry their license, site, source repository and a short readme explaining registration, mapping and reporting.
 
 The cost. Each component carries the library in production too, and settings read before registration need an earlier hook. A custom source can report a value the product code does not read. For Node, a later writer of the same text cannot be distinguished from the applied value in `process.env`.
 
 Example: `api` maps `payouts.instant` to `Features:Payouts:Instant`; `website` maps it to `FEATURE_INSTANT_PAYOUTS`. Applying is possible only under each component's own explicit condition. The launch's value reaches both settings. A key served by a flag service instead uses the team's source, with both read and apply operations.
+
+```csharp
+using Azimuth.Context;
+
+var context = builder.Configuration.AddAzimuthContext(
+    "api",
+    applyingWhen: () => Environment.GetEnvironmentVariable("PAYOUTS_TEST_STACK") == "1",
+    map => map
+        .Key("payouts.instant", "Features:Payouts:Instant")
+        .Key("payouts.region", new RegionFlagSource(flags)));
+
+app.MapGet("/internal/azimuth", () => Results.Text(context.Report(), "application/json"));
+```
+
+`AddAzimuthContext` registers the component and adds the source that applies Azimuth's values last among the configuration's sources. `Key` with a configuration path uses the shipped source; `Key` with an `IContextSource` uses a team's source, which has `Read()`, giving a `ContextRead` with `Value`, the current text, and `Source`, a `ContextSource` with `Name` and `Precedence`, and `Apply(text)`. `Precedence` is the report's own text, `before azimuth`, `azimuth` or `after azimuth`, and `Value` or `Source` is `null` when absent. `Report()` returns the report as JSON text.
+
+```js
+import { registerAzimuthContext } from "@azimuth-sh/context";
+
+const context = registerAzimuthContext("website", {
+  applyingWhen: () => process.env.PAYOUTS_TEST_STACK === "1",
+  map: {
+    "payouts.instant": "FEATURE_INSTANT_PAYOUTS",
+    "payouts.region": regionFlagSource(flags),
+  },
+});
+
+app.get("/internal/azimuth", (req, res) => res.type("application/json").send(context.report()));
+```
+
+`registerAzimuthContext` registers the component and, when its condition holds, applies each stated value by writing its mapped name to `process.env`. A key mapped to a name uses the shipped source; a key mapped to an object with `read()`, giving `{ value, source }` with `source` as `{ name, precedence }` in the report's own words, either `null` when absent, and `apply(text)` uses a team's source. `report()` returns the report as JSON text.
 
 **The report of a component has format `1` and reports exactly its mapped keys.** It carries `component`, `applying` and `context`. It carries no identity of its instance and no mark of a launch. A new part is added under the same path; a change to an existing part raises the format version.
 
