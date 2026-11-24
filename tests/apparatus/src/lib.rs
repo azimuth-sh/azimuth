@@ -56,7 +56,7 @@ pub const EXPLORATION_SKILL_FOLDER: &str = ".agents/skills/azimuth-exploration";
 pub const CLAUDE_EXPLORATION_SKILL_LINK: &str = ".claude/skills/azimuth-exploration";
 
 /// The reasons for owed, as the design writes them. A `reason` field holds exactly one of them.
-pub const OWED_REASONS: [&str; 11] = [
+pub const OWED_REASONS: [&str; 12] = [
     "an input changed",
     "never run",
     "deferred by the lane",
@@ -67,6 +67,7 @@ pub const OWED_REASONS: [&str; 11] = [
     "the start-up guard is owed",
     "expired",
     "no result",
+    "context not applied",
     "runs in CI",
 ];
 
@@ -921,7 +922,7 @@ pub fn write_record(dir: &Path, value: &Value) -> PathBuf {
 }
 
 /// The lists of behaviors the tests are written from, under `docs/increments/`.
-pub const BEHAVIOR_LISTS: [&str; 7] = [
+pub const BEHAVIOR_LISTS: [&str; 8] = [
     "increments/1.md",
     "increments/2.md",
     "increments/2-follow-up.md",
@@ -929,6 +930,7 @@ pub const BEHAVIOR_LISTS: [&str; 7] = [
     "increments/2-exploration-skill.md",
     "increments/release.md",
     "increments/contexts-keys.md",
+    "increments/contexts-conditions.md",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

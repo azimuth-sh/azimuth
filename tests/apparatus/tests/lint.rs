@@ -2,8 +2,11 @@
 
 use azimuth_tests::*;
 
+#[path = "support/contexts_conditions.rs"]
+mod contexts_conditions;
 #[path = "support/contexts_keys.rs"]
 mod contexts_keys;
+use contexts_conditions::*;
 use contexts_keys::*;
 
 fn unknown_marker(repo: &Repo) -> u64 {
@@ -444,4 +447,150 @@ fn reading_commands_still_answer_with_either_key_finding() {
         assert!(repo.adapter_starts().is_empty());
         assert!(repo.probe_starts().is_empty());
     }
+}
+
+// Conditions in the model: `docs/increments/contexts-conditions.md`.
+
+fn with_condition(lines: &[&str]) -> Repo {
+    let repo = payouts();
+    lint_is_clean(&repo);
+    on_requirement(&repo, lines);
+    repo
+}
+
+fn condition_is_a_finding(lines: &[&str]) {
+    let repo = with_condition(lines);
+    lint_names_the_specification(&repo);
+    // Lint does not stop the commands that read: the condition is readable.
+    repo.status_json();
+}
+
+// behavior-contexts-conditions: Lint reports a `Context:` that names an undeclared key
+#[test]
+fn lint_reports_a_condition_on_an_undeclared_key() {
+    condition_is_a_finding(&["Context: payouts.speed=true"]);
+    condition_is_a_finding(&["Context: payouts.instant-mode=true"]);
+    let on_scenario = payouts();
+    on_waits(&on_scenario, &["Context: payouts.speed=true"]);
+    lint_names_the_specification(&on_scenario);
+    let without_keys = payouts();
+    without_keys.remove(PAYOUT_KEY_FILE);
+    lint_is_clean(&without_keys);
+    on_requirement(&without_keys, &["Context: payouts.instant=true"]);
+    lint_names_the_specification(&without_keys);
+}
+
+// behavior-contexts-conditions: Lint reports a well-formed value of the wrong declared type
+#[test]
+fn lint_reports_a_value_of_the_wrong_type() {
+    for line in [
+        "Context: payouts.instant=\"true\"",
+        "Context: payouts.instant=1",
+        "Context: payouts.instant=\"no\"",
+        "Context: payouts.region=true",
+        "Context: payouts.region=5",
+        "Context: payouts.limit=true",
+        "Context: payouts.limit=\"5\"",
+    ] {
+        condition_is_a_finding(&[line]);
+    }
+    let on_scenario = payouts();
+    on_reaches(&on_scenario, &["Context: payouts.instant=\"true\""]);
+    lint_names_the_specification(&on_scenario);
+}
+
+// behavior-contexts-conditions: Lint reports a one-of value not in the declared list
+#[test]
+fn lint_reports_a_one_of_value_that_is_not_listed() {
+    for value in ["\"xx\"", "\"NO\"", "\"No\"", "\"se \"", "\" se\"", "\"\"", "\"\\u0073\""] {
+        condition_is_a_finding(&[&format!("Context: payouts.region={value}")]);
+    }
+    for value in ["\"no\"", "\"se\"", "\"\u{e9}\"", "\"\u{c9}\"", "\"\\u0073e\""] {
+        let repo = with_condition(&[&format!("Context: payouts.region={value}")]);
+        lint_is_clean(&repo);
+    }
+}
+
+// behavior-contexts-conditions: Lint reports contradicting `Context:` lines on one heading
+#[test]
+fn lint_reports_contradicting_lines_on_one_heading() {
+    for lines in [
+        ["Context: payouts.instant=true", "Context: payouts.instant=false"],
+        ["Context: payouts.region=\"no\"", "Context: payouts.region=\"se\""],
+        ["Context: payouts.limit=1", "Context: payouts.limit=2"],
+        ["Context: payouts.limit=9007199254740992", "Context: payouts.limit=9007199254740993"],
+        ["Context: payouts.region=\"\u{e9}\"", "Context: payouts.region=\"\u{c9}\""],
+    ] {
+        condition_is_a_finding(&lines);
+        let on_scenario = payouts();
+        on_waits(&on_scenario, &lines);
+        lint_names_the_specification(&on_scenario);
+    }
+    // Lines that normalize to one value contradict nothing.
+    for lines in [
+        ["Context: payouts.instant=true", "Context: payouts.instant=TRUE"],
+        ["Context: payouts.limit=1", "Context: payouts.limit=1.00"],
+        ["Context: payouts.limit=100", "Context: payouts.limit=1e2"],
+        ["Context: payouts.region=\"\u{e9}\"", "Context: payouts.region=\"e\u{301}\""],
+    ] {
+        lint_is_clean(&with_condition(&lines));
+    }
+}
+
+// behavior-contexts-conditions: Lint reports a Scenario that gives an inherited key another value
+#[test]
+fn lint_reports_a_scenario_that_overrides_an_inherited_key() {
+    let repo = payouts();
+    on_requirement(&repo, &["Context: payouts.instant=true"]);
+    lint_is_clean(&repo);
+    on_reaches(&repo, &["Context: payouts.instant=false"]);
+    lint_names_the_specification(&repo);
+    // Another key, and the same value in any spelling, are no override.
+    let other_key = payouts();
+    on_requirement(&other_key, &["Context: payouts.instant=true"]);
+    on_reaches(&other_key, &["Context: payouts.region=\"no\""]);
+    lint_is_clean(&other_key);
+    let same_value = payouts();
+    on_requirement(&same_value, &["Context: payouts.limit=100"]);
+    on_reaches(&same_value, &["Context: payouts.limit=1E2"]);
+    lint_is_clean(&same_value);
+    // Another value for an inherited one-of key is an override as well.
+    let other_value = payouts();
+    on_requirement(&other_value, &["Context: payouts.region=\"se\""]);
+    on_reaches(&other_value, &["Context: payouts.region=\"no\""]);
+    lint_names_the_specification(&other_value);
+}
+
+// behavior-contexts-conditions: A condition finding fails lint
+#[test]
+fn a_condition_finding_fails_lint_with_status_one() {
+    for lines in [
+        ["Context: payouts.speed=true", "Context: payouts.instant=true"],
+        ["Context: payouts.instant=true", "Context: payouts.instant=false"],
+        ["Context: payouts.instant=\"true\"", "Context: payouts.limit=1"],
+    ] {
+        let repo = with_condition(&lines);
+        lint_names_the_specification(&repo);
+        let output = repo.azimuth(&["lint"]);
+        output.expect_status(1);
+        assert!(output.text().contains(PAYOUTS_SPEC), "the text output does not name the file:\n{}", output.text());
+    }
+}
+
+// behavior-contexts-conditions: A range is not accepted as a condition value
+#[test]
+fn a_range_is_not_accepted_as_a_condition_value() {
+    // The design does not say whether a range is a reading error or a finding, so either ends
+    // lint with a failure, and a value that states one number is clean.
+    for value in ["1..5", "1-5", ">=1", ">1", "<5", "[1,5]", "(1, 5)", "1 to 5", "1:5", "\"1..5\"", "\"1-5\""] {
+        let repo = with_condition(&[&format!("Context: payouts.limit={value}")]);
+        let output = repo.azimuth(&["lint", "--json"]);
+        assert!(matches!(output.status, 1 | 2), "the range {value} was accepted:\n{}", output.text());
+    }
+    for value in ["\"se\"..\"no\"", "\"se\"-\"no\"", "\"no\" \"se\""] {
+        let repo = with_condition(&[&format!("Context: payouts.region={value}")]);
+        let output = repo.azimuth(&["lint", "--json"]);
+        assert!(matches!(output.status, 1 | 2), "the range {value} was accepted:\n{}", output.text());
+    }
+    lint_is_clean(&with_condition(&["Context: payouts.limit=5"]));
 }

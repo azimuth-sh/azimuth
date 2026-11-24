@@ -2,6 +2,10 @@
 
 use azimuth_tests::*;
 
+#[path = "support/contexts_conditions.rs"]
+mod contexts_conditions;
+use contexts_conditions::*;
+
 // behavior: `azimuth check run <id>` runs one named Check, also when its result is kept
 #[test]
 fn check_run_runs_a_kept_check() {
@@ -61,4 +65,73 @@ fn a_result_of_check_run_counts_like_any_other() {
     crashed.append(FREE_RETURN_TESTS, "adapter: crash\n");
     crashed.azimuth(&["check", "run", ON_TIME_RETURN, "--json"]).expect_status(1);
     assert!(crashed.results_of(ON_TIME_RETURN).is_empty(), "a crashed launch of check run wrote a result");
+}
+
+// Conditions in the model: `docs/increments/contexts-conditions.md`. No component is started in
+// the payouts product, so a condition can never be applied.
+
+// behavior-contexts-conditions: `azimuth check run` leaves a Check with a condition owed with "context not applied" when no started component can apply it
+#[test]
+fn check_run_leaves_a_conditioned_check_owed_as_not_applied() {
+    let repo = every_check_under_a_condition();
+    for check in all_checks() {
+        let output = repo.azimuth(&["check", "run", check, "--json"]);
+        output.expect_status(1);
+        let document = output.json();
+        assert_eq!(document["format"], "run-1", "{document:#}");
+        owed_not_applied(&repo, &document, check);
+    }
+    let scenario = payouts();
+    on_reaches(&scenario, &["Context: payouts.instant=true", "Context: payouts.region=\"se\""]);
+    let output = scenario.azimuth(&["check", "run", REACHES_THE_CARD, "--json"]);
+    output.expect_status(1);
+    owed_not_applied(&scenario, &output.json(), REACHES_THE_CARD);
+}
+
+// behavior-contexts-conditions: `azimuth check run` leaves such a Check owed also in a suite with Checks that have no condition
+#[test]
+fn check_run_leaves_a_conditioned_check_owed_beside_checks_with_no_condition() {
+    let repo = payouts();
+    on_reaches(&repo, &["Context: payouts.instant=true"]);
+    let output = repo.azimuth(&["check", "run", REACHES_THE_CARD, "--json"]);
+    output.expect_status(1);
+    owed_not_applied(&repo, &output.json(), REACHES_THE_CARD);
+    let requested = repo.requested_checks();
+    assert!(requested.iter().all(|check| check == REACHES_THE_CARD), "another Check was run: {requested:?}");
+    let free = repo.azimuth(&["check", "run", WAITS_FOR_REVIEW, "--json"]);
+    free.expect_status(0);
+    assert_eq!(state_of(&free.json(), WAITS_FOR_REVIEW), "passed");
+}
+
+// behavior-contexts-conditions: `azimuth check run` leaves Checks with a faulty readable condition owed with "context not applied"
+#[test]
+fn check_run_leaves_checks_with_a_faulty_condition_owed_as_not_applied() {
+    for (requirement, scenario) in FAULTY_CONDITIONS {
+        let repo = faulty_payouts(requirement, scenario);
+        let output = repo.azimuth(&["check", "run", REACHES_THE_CARD, "--json"]);
+        output.expect_status(1);
+        owed_not_applied(&repo, &output.json(), REACHES_THE_CARD);
+        if scenario.is_empty() {
+            let output = repo.azimuth(&["check", "run", WAITS_FOR_REVIEW, "--json"]);
+            output.expect_status(1);
+            owed_not_applied(&repo, &output.json(), WAITS_FOR_REVIEW);
+        }
+    }
+}
+
+// behavior-contexts-conditions: `azimuth check run` can still run a named Check without the faulty condition in the same suite
+#[test]
+fn check_run_still_runs_a_named_check_without_the_faulty_condition() {
+    for (requirement, scenario) in FAULTY_CONDITIONS {
+        let repo = faulty_payouts(requirement, scenario);
+        for check in ALL_CHECKS {
+            repo.clear_log();
+            let output = repo.azimuth(&["check", "run", check, "--json"]);
+            output.expect_status(0);
+            let document = output.json();
+            assert_eq!(state_of(&document, check), "passed", "{check}: {document:#}");
+            assert_eq!(repo.requested_checks().into_iter().collect::<Vec<_>>(), vec![check.to_string()]);
+            assert_eq!(repo.results_of(check).len(), 1, "{check} has no result");
+        }
+    }
 }
