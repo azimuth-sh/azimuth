@@ -7,7 +7,7 @@ mod keys;
 mod markdown;
 mod reader;
 
-pub use condition::{Condition, ContextLine, Literal};
+pub use condition::{read_reported, Condition, ContextLine, Literal};
 pub use markdown::is_valid_id;
 pub use reader::read;
 

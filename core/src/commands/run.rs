@@ -9,7 +9,9 @@ use crate::cli::Lane;
 use crate::clock;
 use crate::commands::sync::report_waiting;
 use crate::launch::{self, Launch, Verdict};
+use crate::contexts;
 use crate::lint::{self, Finding};
+use crate::model::Condition;
 use crate::output::{self, status};
 use crate::project::Suite;
 use crate::result::{EnrolledTest, NewResult, Outcome};
@@ -122,22 +124,22 @@ pub fn run(selection: Selection, json: bool) -> i32 {
         Selection::Lane(_) => workspace.model.checks.iter().map(|check| check.id.as_str()).collect(),
         Selection::One(id) => vec![id.as_str()],
     };
-    // No component is started in this version, so no condition can be applied. The Checks without
-    // a condition still run, in the same suite too.
-    let unapplied: BTreeMap<&str, String> = shown
-        .iter()
-        .copied()
-        .filter_map(|id| {
-            let condition = workspace.model.condition_of(workspace.model.check(id)?);
-            (!condition.is_empty()).then(|| (id, format!("the condition {} cannot be applied, because no component is started", condition.describe())))
-        })
-        .collect();
     let planned: Vec<&str> = match &selection {
         Selection::Lane(Lane::Local) => shown.iter().copied().filter(|id| runs_in_the_local_lane(&survey.evaluations[*id])).collect(),
         Selection::Lane(Lane::Commit) => shown.clone(),
         Selection::One(id) => vec![id.as_str()],
     };
-    let planned: Vec<&str> = planned.into_iter().filter(|id| !unapplied.contains_key(id)).collect();
+    // A faulty condition is not run under, and lint names it. Only a Check about to run is owed for it,
+    // because a Check that is kept stands on a result that did not depend on the fault.
+    let faulty: BTreeMap<&str, String> = planned
+        .iter()
+        .copied()
+        .filter_map(|id| {
+            let faults = lint::condition_faults(&workspace.model, workspace.model.check(id)?);
+            (!faults.is_empty()).then(|| (id, format!("the condition is faulty: {}", faults.join(" "))))
+        })
+        .collect();
+    let planned: Vec<&str> = planned.into_iter().filter(|id| !faulty.contains_key(id)).collect();
 
     // On the core rung the commit lane reads no stored result, so a Check stands only by what
     // this run gives it.
@@ -151,7 +153,7 @@ pub fn run(selection: Selection, json: bool) -> i32 {
             (id.to_string(), entry)
         })
         .collect();
-    for (id, detail) in &unapplied {
+    for (id, detail) in &faulty {
         entries.insert(id.to_string(), Entry::owed(reason::CONTEXT_NOT_APPLIED, detail.clone()));
     }
     let mut by_suite: BTreeMap<&str, Vec<String>> = BTreeMap::new();
@@ -174,82 +176,102 @@ pub fn run(selection: Selection, json: bool) -> i32 {
         let Some(asked) = by_suite.get(suite.name.as_str()) else {
             continue;
         };
-        if let Err(detail) = prove_needs(&survey, suite) {
-            for id in asked {
-                entries.insert(id.clone(), Entry::owed(reason::CANNOT_RUN_HERE, detail.clone()));
-            }
-            continue;
+        // Checks are grouped by the keys their condition states and the normalized values of those
+        // keys, so two spellings of one value share a launch.
+        let mut groups: BTreeMap<BTreeMap<String, String>, (Condition, Vec<String>)> = BTreeMap::new();
+        for id in asked {
+            let condition = workspace.model.condition_of(workspace.model.check(id).expect("a planned Check is declared"));
+            groups.entry(condition.values.clone()).or_insert_with(|| (condition, Vec::new())).1.push(id.clone());
         }
-        let (launch, duration_ms) = match launch::run_suite(workspace.git.root(), suite, asked) {
-            Ok(result) => result,
-            Err(message) => return output::could_not(&message),
-        };
-        let mut entry = json!({ "name": suite.name, "launch": launch.word() });
-        output::set_present(&mut entry, "duration_ms", duration_ms);
-        suites.push(entry);
-        match launch {
-            Launch::NotStarted { detail } | Launch::Crashed { detail } => {
-                eprintln!("azimuth: suite {}: {detail}", suite.name);
-                no_result(&mut entries, asked, &detail);
+        for (_, (condition, ids)) in groups {
+            let ids = &ids;
+            if let Some(detail) = contexts::unreadable_key(&workspace.model, &workspace.project, suite, &condition) {
+                context_not_applied(&mut entries, ids, &detail);
+                continue;
             }
-            Launch::TimedOut => no_result(&mut entries, asked, "the launch timed out"),
-            Launch::BuildFailed => no_result(&mut entries, asked, "the suite did not build"),
-            Launch::Ran(report) => {
-                if !inputs_unchanged(&survey) {
-                    no_result(&mut entries, asked, "an input changed during the launch");
-                    continue;
+            if let Err(detail) = prove_needs(&survey, suite) {
+                for id in ids {
+                    entries.insert(id.clone(), Entry::owed(reason::CANNOT_RUN_HERE, detail.clone()));
                 }
-                let marked_anywhere: BTreeSet<String> = survey.markers.iter().map(|marker| marker.check.clone()).collect();
-                let mut markers_in_suite: BTreeMap<String, usize> = BTreeMap::new();
-                for marker in survey.markers.iter().filter(|marker| marker.suite == suite.name) {
-                    *markers_in_suite.entry(marker.check.clone()).or_default() += 1;
+                continue;
+            }
+            let (launch, duration_ms) = match launch::run_suite(workspace.git.root(), &workspace.project, suite, &condition, ids) {
+                Ok(result) => result,
+                Err(message) => return output::could_not(&message),
+            };
+            let mut entry = json!({ "name": suite.name, "launch": launch.word() });
+            output::set_present(&mut entry, "duration_ms", duration_ms);
+            suites.push(entry);
+            match launch {
+                Launch::NotStarted { detail } | Launch::Crashed { detail } => {
+                    eprintln!("azimuth: suite {}: {detail}", suite.name);
+                    no_result(&mut entries, ids, &detail);
                 }
-                for (id, verdict) in launch::judge(&report, asked, &markers_in_suite, &marked_anywhere) {
-                    if let (Verdict::Mismatch(detail), Some(findings)) = (&verdict, findings.as_mut()) {
-                        findings.push(mismatch_finding(&survey, suite, &id, detail));
-                    }
-                    if !entries.contains_key(&id) {
+                Launch::TimedOut => no_result(&mut entries, ids, "the launch timed out"),
+                Launch::BuildFailed => no_result(&mut entries, ids, "the suite did not build"),
+                Launch::Ran(report) => {
+                    if !inputs_unchanged(&survey) {
+                        no_result(&mut entries, ids, "an input changed during the launch");
                         continue;
                     }
-                    let (outcome, tests) = match verdict {
-                        Verdict::NoResult(detail) | Verdict::Mismatch(detail) => {
-                            entries.insert(id, Entry::owed(reason::NO_RESULT, detail));
+                    if !condition.is_empty() {
+                        if let Err(detail) = contexts::compare(&workspace.model, &workspace.project, suite, &condition, report.components.as_deref()) {
+                            context_not_applied(&mut entries, ids, &detail);
                             continue;
                         }
-                        Verdict::Passed(tests) => (Outcome::Passed, tests),
-                        Verdict::Failed(tests) => (Outcome::Failed, tests),
-                    };
-                    let enrolled: Vec<EnrolledTest> = tests
-                        .iter()
-                        .map(|test| EnrolledTest { name: test.name.clone(), outcome: test.outcome.clone(), duration_ms: test.duration_ms })
-                        .collect();
-                    let record = NewResult {
-                        check: &id,
-                        outcome,
-                        fingerprint: &survey.fingerprints[&id],
-                        base: &survey.tree.base,
-                        edits: &survey.tree.edits,
-                        object_format: &survey.object_format,
-                        adapter_name: &report.adapter_name,
-                        adapter_version: &report.adapter_version,
-                        tests: &enrolled,
-                        commit: commit.as_deref(),
-                        at: &clock::now(),
                     }
-                    .to_record();
-                    if let Err(error) = survey.store.write_to_outbox(&record) {
-                        write_errors.push(error);
+                    let marked_anywhere: BTreeSet<String> = survey.markers.iter().map(|marker| marker.check.clone()).collect();
+                    let mut markers_in_suite: BTreeMap<String, usize> = BTreeMap::new();
+                    for marker in survey.markers.iter().filter(|marker| marker.suite == suite.name) {
+                        *markers_in_suite.entry(marker.check.clone()).or_default() += 1;
                     }
-                    entries.insert(
-                        id,
-                        Entry {
-                            state: outcome.as_str(),
-                            reason: None,
-                            detail: None,
-                            failing_tests: enrolled.iter().filter(|test| test.outcome == "failed").map(|test| test.name.clone()).collect(),
-                            duration_ms: Some(enrolled.iter().map(|test| test.duration_ms).sum()),
-                        },
-                    );
+                    for (id, verdict) in launch::judge(&report, ids, &markers_in_suite, &marked_anywhere) {
+                        if let (Verdict::Mismatch(detail), Some(findings)) = (&verdict, findings.as_mut()) {
+                            findings.push(mismatch_finding(&survey, suite, &id, detail));
+                        }
+                        if !entries.contains_key(&id) {
+                            continue;
+                        }
+                        let (outcome, tests) = match verdict {
+                            Verdict::NoResult(detail) | Verdict::Mismatch(detail) => {
+                                entries.insert(id, Entry::owed(reason::NO_RESULT, detail));
+                                continue;
+                            }
+                            Verdict::Passed(tests) => (Outcome::Passed, tests),
+                            Verdict::Failed(tests) => (Outcome::Failed, tests),
+                        };
+                        let enrolled: Vec<EnrolledTest> = tests
+                            .iter()
+                            .map(|test| EnrolledTest { name: test.name.clone(), outcome: test.outcome.clone(), duration_ms: test.duration_ms })
+                            .collect();
+                        let record = NewResult {
+                            check: &id,
+                            outcome,
+                            fingerprint: &survey.fingerprints[&id],
+                            base: &survey.tree.base,
+                            edits: &survey.tree.edits,
+                            object_format: &survey.object_format,
+                            adapter_name: &report.adapter_name,
+                            adapter_version: &report.adapter_version,
+                            tests: &enrolled,
+                            commit: commit.as_deref(),
+                            at: &clock::now(),
+                        }
+                        .to_record();
+                        if let Err(error) = survey.store.write_to_outbox(&record) {
+                            write_errors.push(error);
+                        }
+                        entries.insert(
+                            id,
+                            Entry {
+                                state: outcome.as_str(),
+                                reason: None,
+                                detail: None,
+                                failing_tests: enrolled.iter().filter(|test| test.outcome == "failed").map(|test| test.name.clone()).collect(),
+                                duration_ms: Some(enrolled.iter().map(|test| test.duration_ms).sum()),
+                            },
+                        );
+                    }
                 }
             }
         }
@@ -347,6 +369,12 @@ fn prove_needs(survey: &Survey, suite: &Suite) -> Result<(), String> {
 /// The inputs hashed again after the launch, compared with the fingerprints the plan computed.
 fn inputs_unchanged(survey: &Survey) -> bool {
     Tree::current(&survey.workspace.git).is_ok_and(|tree| tree.files_digest() == survey.tree.files_digest())
+}
+
+fn context_not_applied(entries: &mut BTreeMap<String, Entry>, asked: &[String], detail: &str) {
+    for id in asked {
+        entries.insert(id.clone(), Entry::owed(reason::CONTEXT_NOT_APPLIED, detail.to_string()));
+    }
 }
 
 fn no_result(entries: &mut BTreeMap<String, Entry>, asked: &[String], detail: &str) {
