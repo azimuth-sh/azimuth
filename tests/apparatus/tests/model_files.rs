@@ -1600,6 +1600,21 @@ fn a_component_built_from_an_undeclared_area_is_a_reading_error() {
     }
 }
 
+// behavior-contexts-components: A component with an empty `areas` is a reading error
+#[test]
+fn a_component_with_empty_areas_is_a_reading_error() {
+    let repo = broken_project(AREAS, "areas = []");
+    let line = repo.line_of(PROJECT_FILE, "areas = []");
+    let expected = repo.expect_reading_error(Some(PROJECT_FILE), Some(line))["errors"].clone();
+    let mut commands = COMMANDS_THAT_READ.to_vec();
+    commands.push(&["run", "--lane", "commit", "--json"]);
+    for args in &commands {
+        let output = repo.azimuth(args);
+        output.expect_status(2);
+        assert_eq!(output.json()["errors"], expected, "{args:?}");
+    }
+}
+
 // behavior-contexts-components: A `report` path that does not start with `/` is a reading error
 #[test]
 fn a_report_path_without_a_leading_slash_is_a_reading_error() {
