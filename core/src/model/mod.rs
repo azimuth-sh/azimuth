@@ -2,10 +2,12 @@
 //! in module folders at any depth under `azimuth/model/`. `realization.md` and `README.md` are
 //! prose until a later increment gives them a reader.
 
+mod condition;
 mod keys;
 mod markdown;
 mod reader;
 
+pub use condition::{Condition, ContextLine, Literal};
 pub use markdown::is_valid_id;
 pub use reader::read;
 
@@ -52,6 +54,8 @@ pub struct Requirement {
     pub realization_review: bool,
     /// The lines between the heading and the first Scenario, which `azimuth change diff` compares.
     pub text: Vec<String>,
+    /// The `Context:` lines between the heading and the first Scenario.
+    pub context: Vec<ContextLine>,
     pub scenarios: Vec<Scenario>,
 }
 
@@ -61,6 +65,7 @@ pub struct Scenario {
     pub line: u64,
     /// The lines below the heading, up to the next heading.
     pub text: Vec<String>,
+    pub context: Vec<ContextLine>,
 }
 
 #[derive(Debug)]
@@ -116,6 +121,19 @@ impl Model {
 
     pub fn check(&self, id: &str) -> Option<&Check> {
         self.checks.iter().find(|check| check.id == id)
+    }
+
+    /// What the Check runs under: its Requirement's lines, then its Scenario's own. A Scenario
+    /// that the Requirement does not declare adds nothing; lint names that heading.
+    pub fn condition_of(&self, check: &Check) -> Condition {
+        let mut condition = Condition::default();
+        if let Some(requirement) = self.requirement(&check.requirement) {
+            condition.extend(&requirement.context);
+            if let Some(scenario) = requirement.scenarios.iter().find(|scenario| scenario.id == check.scenario) {
+                condition.extend(&scenario.context);
+            }
+        }
+        condition
     }
 
     pub fn checks_of<'m>(&'m self, requirement: &'m str, scenario: &'m str) -> impl Iterator<Item = &'m Check> + 'm {

@@ -54,6 +54,13 @@ fn write_value(value: &Value, out: &mut String) -> Result<(), String> {
     Ok(())
 }
 
+/// A string in the spelling of RFC 8785.
+pub fn json_string(text: &str) -> String {
+    let mut out = String::new();
+    write_string(text, &mut out);
+    out
+}
+
 fn write_string(text: &str, out: &mut String) {
     out.push('"');
     for c in text.chars() {

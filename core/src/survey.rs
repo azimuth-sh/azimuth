@@ -35,7 +35,7 @@ impl<'w> Survey<'w> {
             .model
             .checks
             .iter()
-            .map(|check| (check.id.clone(), fingerprint::of_check(&check.claim, &files, &object_format)))
+            .map(|check| (check.id.clone(), fingerprint::of_check(&check.claim, &workspace.model.condition_of(check), &files, &object_format)))
             .collect();
         let evaluator = Evaluator::new(git, &tree);
         let evaluations = workspace

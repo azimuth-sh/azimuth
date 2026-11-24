@@ -122,11 +122,22 @@ pub fn run(selection: Selection, json: bool) -> i32 {
         Selection::Lane(_) => workspace.model.checks.iter().map(|check| check.id.as_str()).collect(),
         Selection::One(id) => vec![id.as_str()],
     };
+    // No component is started in this version, so no condition can be applied. The Checks without
+    // a condition still run, in the same suite too.
+    let unapplied: BTreeMap<&str, String> = shown
+        .iter()
+        .copied()
+        .filter_map(|id| {
+            let condition = workspace.model.condition_of(workspace.model.check(id)?);
+            (!condition.is_empty()).then(|| (id, format!("the condition {} cannot be applied, because no component is started", condition.describe())))
+        })
+        .collect();
     let planned: Vec<&str> = match &selection {
         Selection::Lane(Lane::Local) => shown.iter().copied().filter(|id| runs_in_the_local_lane(&survey.evaluations[*id])).collect(),
         Selection::Lane(Lane::Commit) => shown.clone(),
         Selection::One(id) => vec![id.as_str()],
     };
+    let planned: Vec<&str> = planned.into_iter().filter(|id| !unapplied.contains_key(id)).collect();
 
     // On the core rung the commit lane reads no stored result, so a Check stands only by what
     // this run gives it.
@@ -140,6 +151,9 @@ pub fn run(selection: Selection, json: bool) -> i32 {
             (id.to_string(), entry)
         })
         .collect();
+    for (id, detail) in &unapplied {
+        entries.insert(id.to_string(), Entry::owed(reason::CONTEXT_NOT_APPLIED, detail.clone()));
+    }
     let mut by_suite: BTreeMap<&str, Vec<String>> = BTreeMap::new();
     for id in &planned {
         match survey.suite_of(id) {

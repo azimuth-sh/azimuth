@@ -6,7 +6,8 @@ use std::collections::BTreeMap;
 use serde_json::{json, Value};
 
 use crate::markers::Marker;
-use crate::model::{Model, KEY_FILE};
+use crate::model::{ContextLine, Key, KeyType, Model, Requirement, Literal, KEY_FILE};
+use unicode_normalization::UnicodeNormalization;
 use crate::output;
 use crate::store::WORKTREE_FOLDER;
 
@@ -134,6 +135,8 @@ pub fn findings(model: &Model, markers: &[Marker], tracked_in_worktree_folder: &
         }
     }
 
+    condition_findings(model, &mut findings);
+
     for slip in &model.slips {
         findings.push(Finding {
             kind: "near declaration word",
@@ -158,4 +161,92 @@ pub fn findings(model: &Model, markers: &[Marker], tracked_in_worktree_folder: &
     }
 
     findings
+}
+
+fn condition_findings(model: &Model, findings: &mut Vec<Finding>) {
+    for requirement in &model.requirements {
+        heading_findings(model, requirement, &requirement.context, "Requirement", &requirement.id, findings);
+        for scenario in &requirement.scenarios {
+            heading_findings(model, requirement, &scenario.context, "Scenario", &scenario.id, findings);
+            for line in &scenario.context {
+                let inherited = requirement.context.iter().find(|inherited| inherited.key == line.key);
+                if let Some(inherited) = inherited.filter(|inherited| inherited.value.normalized() != line.value.normalized()) {
+                    findings.push(condition_finding(
+                        "condition overrides inherited key",
+                        requirement,
+                        line,
+                        format!(
+                            "the Scenario `{}` gives `{}` the value {}, and its Requirement `{}` states {} on line {}. A Scenario keeps an inherited key's value; give the behavior its own Scenario under a Requirement that does not state the key",
+                            scenario.id,
+                            line.key,
+                            line.value.normalized(),
+                            requirement.id,
+                            inherited.value.normalized(),
+                            inherited.line
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+}
+
+/// The lines of one heading against the key declarations and against each other.
+fn heading_findings(model: &Model, requirement: &Requirement, lines: &[ContextLine], word: &str, id: &str, findings: &mut Vec<Finding>) {
+    for (index, line) in lines.iter().enumerate() {
+        match model.keys.iter().find(|key| key.name == line.key) {
+            None => findings.push(condition_finding(
+                "condition on undeclared key",
+                requirement,
+                line,
+                format!("the {word} `{id}` states the key `{}`, which {} does not declare. Declare the key there, or correct its name", line.key, KEY_FILE),
+            )),
+            Some(key) => {
+                if let Some(message) = disagreement_with(key, &line.value) {
+                    let kind = if matches!(&key.kind, KeyType::OneOf(_)) && matches!(line.value, Literal::Text(_)) {
+                        "condition value not listed"
+                    } else {
+                        "condition of the wrong type"
+                    };
+                    findings.push(condition_finding(kind, requirement, line, format!("the {word} `{id}` states `{}`: {message}", line.key)));
+                }
+            }
+        }
+        if let Some(first) = lines[..index].iter().find(|first| first.key == line.key && first.value.normalized() != line.value.normalized()) {
+            findings.push(condition_finding(
+                "contradicting conditions",
+                requirement,
+                line,
+                format!(
+                    "the {word} `{id}` states `{}` as {} here and as {} on line {}. One heading states one value of a key; keep the one that holds",
+                    line.key,
+                    line.value.normalized(),
+                    first.value.normalized(),
+                    first.line
+                ),
+            ));
+        }
+    }
+}
+
+fn disagreement_with(key: &Key, value: &Literal) -> Option<String> {
+    let declared = match &key.kind {
+        KeyType::Boolean => "a boolean",
+        KeyType::Number => "a number",
+        KeyType::OneOf(_) => "a one-of value",
+    };
+    let fits = matches!((&key.kind, value), (KeyType::Boolean, Literal::Boolean(_)) | (KeyType::Number, Literal::Number(_)) | (KeyType::OneOf(_), Literal::Text(_)));
+    if !fits {
+        return Some(format!("the key is {declared}, and {} is not. Write the value as the key's type", value.normalized()));
+    }
+    if let (KeyType::OneOf(values), Literal::Text(text)) = (&key.kind, value) {
+        if !values.iter().any(|listed| listed.nfc().eq(text.chars())) {
+            return Some(format!("{} is not one of the values {KEY_FILE} lists for the key. Write a listed value, or list this one", value.normalized()));
+        }
+    }
+    None
+}
+
+fn condition_finding(kind: &'static str, requirement: &Requirement, line: &ContextLine, message: String) -> Finding {
+    Finding { kind, file: requirement.file.clone(), line: Some(line.line), message }
 }
