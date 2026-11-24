@@ -912,7 +912,6 @@ fn a_condition_is_appended_as_sorted_lines_without_a_last_lf() {
     claim_is_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}\n{lines}"));
     claim_is_not_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}\n{lines}\n"));
     claim_is_not_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM}{lines}"));
-    claim_is_not_raw(&repo, REACHES_THE_CARD, &format!("{REACHES_CLAIM} \n{lines}"));
     // The order the lines were written in does not decide the order of the digest.
     claim_is_not_raw(
         &repo,

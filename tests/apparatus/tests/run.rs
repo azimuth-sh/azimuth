@@ -1310,7 +1310,10 @@ fn run_still_runs_the_checks_without_the_faulty_condition() {
         let repo = faulty_payouts(requirement, scenario);
         let document = repo.run_json(&[], 1);
         owed_not_applied(&repo, &document, REACHES_THE_CARD);
-        let free: Vec<&str> = ALL_CHECKS.iter().copied().chain(if scenario.is_empty() { None } else { Some(WAITS_FOR_REVIEW) }).collect();
+        let free: Vec<&str> = ALL_CHECKS.iter().copied().chain(if requirement.is_empty() { Some(WAITS_FOR_REVIEW) } else { None }).collect();
+        if !requirement.is_empty() {
+            owed_not_applied(&repo, &document, WAITS_FOR_REVIEW);
+        }
         let requested = repo.requested_checks();
         let ran = repo.tests_ran();
         for check in free {
