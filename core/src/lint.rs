@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use serde_json::{json, Value};
 
 use crate::markers::Marker;
-use crate::model::Model;
+use crate::model::{Model, KEY_FILE};
 use crate::output;
 use crate::store::WORKTREE_FOLDER;
 
@@ -37,6 +37,26 @@ impl Finding {
 /// Every finding of the model against the markers in source and the tracked files.
 pub fn findings(model: &Model, markers: &[Marker], tracked_in_worktree_folder: &[String]) -> Vec<Finding> {
     let mut findings = Vec::new();
+
+    for key in &model.keys {
+        if key.components.is_empty() {
+            findings.push(Finding {
+                kind: "key without components",
+                file: KEY_FILE.to_string(),
+                line: None,
+                message: format!("the key `{}` is listed for no component. List the components that must read it", key.name),
+            });
+        }
+        let prefix = format!("{}.", key.name);
+        for other in model.keys.iter().filter(|other| other.name.starts_with(&prefix)) {
+            findings.push(Finding {
+                kind: "key prefix",
+                file: KEY_FILE.to_string(),
+                line: None,
+                message: format!("the key `{}` begins `{}` at a segment boundary. Rename one so neither key begins the other", key.name, other.name),
+            });
+        }
+    }
 
     for marker in markers {
         if model.check(&marker.check).is_none() {

@@ -11,6 +11,9 @@ use crate::source::Source;
 /// so one run of a command names every place to fix.
 pub fn read(source: &dyn Source) -> (Model, Vec<ReadingError>) {
     let mut reader = Reader::default();
+    let (keys, errors) = super::keys::read(source);
+    reader.model.keys = keys;
+    reader.errors.extend(errors);
     let mut modules = Vec::new();
     collect_modules(source, "", &mut modules);
     for module in &modules {

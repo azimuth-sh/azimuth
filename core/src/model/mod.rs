@@ -2,6 +2,7 @@
 //! in module folders at any depth under `azimuth/model/`. `realization.md` and `README.md` are
 //! prose until a later increment gives them a reader.
 
+mod keys;
 mod markdown;
 mod reader;
 
@@ -9,12 +10,14 @@ pub use markdown::is_valid_id;
 pub use reader::read;
 
 pub const MODEL_FOLDER: &str = "azimuth/model";
+pub const KEY_FILE: &str = "azimuth/execution-context.toml";
 
 /// The words that make a line a declaration when they start it, followed by a colon.
 pub const DECLARATION_WORDS: [&str; 4] = ["Context", "Realization", "Verification", "Reuse"];
 
 #[derive(Debug, Default)]
 pub struct Model {
+    pub keys: Vec<Key>,
     pub requirements: Vec<Requirement>,
     pub checks: Vec<Check>,
     /// Requirement and Scenario headings of `verification.md`, which must name ids of
@@ -22,6 +25,20 @@ pub struct Model {
     pub verification_headings: Vec<VerificationHeading>,
     /// Lines whose first word nearly spells a declaration word.
     pub slips: Vec<Slip>,
+}
+
+#[derive(Debug)]
+pub struct Key {
+    pub name: String,
+    pub kind: KeyType,
+    pub components: Vec<String>,
+}
+
+#[derive(Debug)]
+pub enum KeyType {
+    Boolean,
+    OneOf(Vec<String>),
+    Number,
 }
 
 #[derive(Debug)]
