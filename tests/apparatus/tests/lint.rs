@@ -356,6 +356,7 @@ fn lint_ends_with_status_one_on_a_finding() {
 
 fn key_finding_repo(overlap: bool) -> Repo {
     let repo = Repo::sample();
+    declare_payout_components(&repo);
     let declarations = if overlap {
         format!("[payouts]\ntype = \"boolean\"\ncomponents = [\"api\"]\n\n{INSTANT}")
     } else {
@@ -380,6 +381,7 @@ fn key_findings_are_reported(findings: &[serde_json::Value]) {
 #[test]
 fn lint_reports_segment_boundary_prefixes_but_not_plain_text_prefixes() {
     let repo = Repo::sample();
+    declare_payout_components(&repo);
     repo.write(KEY_FILE, &format!("{INSTANT}\n[payouts.instantly]\ntype = \"boolean\"\ncomponents = [\"api\"]\n"));
     assert!(repo.lint_findings(0).is_empty());
     repo.append(KEY_FILE, "\n[payouts]\ntype = \"boolean\"\ncomponents = [\"api\"]\n");
@@ -390,6 +392,7 @@ fn lint_reports_segment_boundary_prefixes_but_not_plain_text_prefixes() {
 #[test]
 fn lint_reports_a_key_listed_for_no_component() {
     let repo = Repo::sample();
+    declare_payout_components(&repo);
     assert!(repo.lint_findings(0).is_empty());
     repo.write(KEY_FILE, &INSTANT.replace("[\"api\", \"website\"]", "[]"));
     key_findings_are_reported(&repo.lint_findings(1));
@@ -452,7 +455,7 @@ fn reading_commands_still_answer_with_either_key_finding() {
 // Conditions in the model: `docs/increments/contexts-conditions.md`.
 
 fn with_condition(lines: &[&str]) -> Repo {
-    let repo = payouts();
+    let repo = started_payouts();
     lint_is_clean(&repo);
     on_requirement(&repo, lines);
     repo
@@ -470,10 +473,10 @@ fn condition_is_a_finding(lines: &[&str]) {
 fn lint_reports_a_condition_on_an_undeclared_key() {
     condition_is_a_finding(&["Context: payouts.speed=true"]);
     condition_is_a_finding(&["Context: payouts.instant-mode=true"]);
-    let on_scenario = payouts();
+    let on_scenario = started_payouts();
     on_waits(&on_scenario, &["Context: payouts.speed=true"]);
     lint_names_the_specification(&on_scenario);
-    let without_keys = payouts();
+    let without_keys = started_payouts();
     without_keys.remove(PAYOUT_KEY_FILE);
     lint_is_clean(&without_keys);
     on_requirement(&without_keys, &["Context: payouts.instant=true"]);
@@ -494,7 +497,7 @@ fn lint_reports_a_value_of_the_wrong_type() {
     ] {
         condition_is_a_finding(&[line]);
     }
-    let on_scenario = payouts();
+    let on_scenario = started_payouts();
     on_reaches(&on_scenario, &["Context: payouts.instant=\"true\""]);
     lint_names_the_specification(&on_scenario);
 }
@@ -522,7 +525,7 @@ fn lint_reports_contradicting_lines_on_one_heading() {
         ["Context: payouts.region=\"\u{e9}\"", "Context: payouts.region=\"\u{c9}\""],
     ] {
         condition_is_a_finding(&lines);
-        let on_scenario = payouts();
+        let on_scenario = started_payouts();
         on_waits(&on_scenario, &lines);
         lint_names_the_specification(&on_scenario);
     }
@@ -540,22 +543,22 @@ fn lint_reports_contradicting_lines_on_one_heading() {
 // behavior-contexts-conditions: Lint reports a Scenario that gives an inherited key another value
 #[test]
 fn lint_reports_a_scenario_that_overrides_an_inherited_key() {
-    let repo = payouts();
+    let repo = started_payouts();
     on_requirement(&repo, &["Context: payouts.instant=true"]);
     lint_is_clean(&repo);
     on_reaches(&repo, &["Context: payouts.instant=false"]);
     lint_names_the_specification(&repo);
     // Another key, and the same value in any spelling, are no override.
-    let other_key = payouts();
+    let other_key = started_payouts();
     on_requirement(&other_key, &["Context: payouts.instant=true"]);
     on_reaches(&other_key, &["Context: payouts.region=\"no\""]);
     lint_is_clean(&other_key);
-    let same_value = payouts();
+    let same_value = started_payouts();
     on_requirement(&same_value, &["Context: payouts.limit=100"]);
     on_reaches(&same_value, &["Context: payouts.limit=1E2"]);
     lint_is_clean(&same_value);
     // Another value for an inherited one-of key is an override as well.
-    let other_value = payouts();
+    let other_value = started_payouts();
     on_requirement(&other_value, &["Context: payouts.region=\"se\""]);
     on_reaches(&other_value, &["Context: payouts.region=\"no\""]);
     lint_names_the_specification(&other_value);
@@ -593,4 +596,196 @@ fn a_range_is_not_accepted_as_a_condition_value() {
         assert!(matches!(output.status, 1 | 2), "the range {value} was accepted:\n{}", output.text());
     }
     lint_is_clean(&with_condition(&["Context: payouts.limit=5"]));
+}
+
+// Started components in the model: `docs/increments/contexts-components.md`. The design says
+// that lint names a Check, and for the two declaration findings which declarations disagree;
+// it gives no kind, message or line, so the tests assert the Check named, or a file of the pair.
+
+fn undeclared_in_a_key() -> Repo {
+    let repo = started_payouts();
+    repo.append(PAYOUT_KEY_FILE, "\n[payouts.ledger]\ntype = \"boolean\"\ncomponents = [\"ledger\"]\n");
+    repo
+}
+
+fn undeclared_in_starts() -> Repo {
+    let repo = started_payouts();
+    start_components(&repo, &[API, WEBSITE, "ledger"]);
+    repo
+}
+
+/// The two Checks of the payouts Requirement, one of them under a condition that no started
+/// component is listed for.
+fn check_not_proved() -> Repo {
+    let repo = started_payouts();
+    on_reaches(&repo, &["Context: payouts.instant=true"]);
+    start_components(&repo, &[]);
+    repo
+}
+
+// behavior-contexts-components: Lint reports an undeclared component in a key's `components`
+#[test]
+fn lint_reports_an_undeclared_component_in_a_key() {
+    let repo = undeclared_in_a_key();
+    lint_names_a_declaration_file(&repo);
+    let control = started_payouts();
+    control.append(PAYOUT_KEY_FILE, "\n[payouts.ledger]\ntype = \"boolean\"\ncomponents = [\"api\"]\n");
+    lint_is_clean(&control);
+    let sample = Repo::sample();
+    sample.write(KEY_FILE, INSTANT);
+    lint_names_a_declaration_file(&sample);
+}
+
+// behavior-contexts-components: Lint reports an undeclared component in a suite's `starts`
+#[test]
+fn lint_reports_an_undeclared_component_in_starts() {
+    let repo = undeclared_in_starts();
+    lint_names_a_declaration_file(&repo);
+    lint_is_clean(&started_payouts());
+}
+
+fn condition_with_starts(requirement: &[&str], scenario: &[&str], starts: &[&str]) -> Repo {
+    let repo = started_payouts();
+    on_requirement(&repo, requirement);
+    if !scenario.is_empty() {
+        on_reaches(&repo, scenario);
+    }
+    start_components(&repo, starts);
+    repo
+}
+
+const INSTANT_TRUE: &str = "Context: payouts.instant=true";
+const REGION_NO: &str = "Context: payouts.region=\"no\"";
+
+// behavior-contexts-components: Lint reports a Check whose condition states a key that no component its suite starts is listed for
+#[test]
+fn lint_reports_a_check_whose_condition_no_started_component_serves() {
+    // The Requirement's condition is every Scenario's, so both Checks are named.
+    lint_names_checks(&condition_with_starts(&[INSTANT_TRUE], &[], &[]), &PAYOUT_CHECKS);
+    // A Scenario's own condition names only its Check.
+    lint_names_only(&condition_with_starts(&[], &[INSTANT_TRUE], &[]), &[REACHES_THE_CARD], &[WAITS_FOR_REVIEW]);
+    // `payouts.region` is listed for `api` alone, and a Scenario adds it to the Requirement's condition.
+    lint_names_only(
+        &condition_with_starts(&[INSTANT_TRUE], &[REGION_NO], &[WEBSITE]),
+        &[REACHES_THE_CARD],
+        &[WAITS_FOR_REVIEW],
+    );
+    // A Check with no condition is promised everywhere, and needs no started component.
+    lint_is_clean(&condition_with_starts(&[], &[], &[]));
+}
+
+// behavior-contexts-components: Lint reports such a Check when its suite has no `starts`
+#[test]
+fn lint_reports_a_check_when_its_suite_has_no_starts() {
+    let repo = started_payouts();
+    on_requirement(&repo, &[INSTANT_TRUE]);
+    omit_starts(&repo);
+    assert!(!repo.read(PROJECT_FILE).contains("starts"));
+    lint_names_checks(&repo, &PAYOUT_CHECKS);
+}
+
+// behavior-contexts-components: Lint reports such a Check when its suite starts only components the key is not listed for
+#[test]
+fn lint_reports_a_check_when_the_suite_starts_only_unlisted_components() {
+    // `payouts.region` is listed for `api`, and the suite starts `website`.
+    lint_names_checks(&condition_with_starts(&["Context: payouts.region=\"se\""], &[], &[WEBSITE]), &PAYOUT_CHECKS);
+    // Starting a component that is listed for another key does not help either.
+    lint_names_only(&condition_with_starts(&[], &[REGION_NO], &[WEBSITE]), &[REACHES_THE_CARD], &[WAITS_FOR_REVIEW]);
+    lint_is_clean(&condition_with_starts(&["Context: payouts.region=\"se\""], &[], &[API]));
+}
+
+// behavior-contexts-components: Lint reports nothing for a Check whose suite starts one component the key is listed for
+#[test]
+fn lint_reports_nothing_when_the_suite_starts_one_listed_component() {
+    // `payouts.instant` is listed for both components.
+    for starts in [[API], [WEBSITE]] {
+        lint_is_clean(&condition_with_starts(&[INSTANT_TRUE], &[], &starts));
+        lint_is_clean(&condition_with_starts(&[], &[INSTANT_TRUE], &starts));
+    }
+    // The condition a Scenario inherits and adds to is served by `api`, which both keys list.
+    lint_is_clean(&condition_with_starts(&[INSTANT_TRUE], &[REGION_NO], &[API]));
+}
+
+// behavior-contexts-components: Lint reports nothing for a Check whose suite starts every component the key is listed for
+#[test]
+fn lint_reports_nothing_when_the_suite_starts_every_listed_component() {
+    lint_is_clean(&condition_with_starts(&[INSTANT_TRUE], &[], &[API, WEBSITE]));
+    lint_is_clean(&condition_with_starts(&[INSTANT_TRUE], &[REGION_NO], &[API, WEBSITE]));
+    // A component the key is not listed for may be started as well.
+    let repo = condition_with_starts(&[INSTANT_TRUE], &[], &[API, WEBSITE, "desk-host"]);
+    repo.append(PROJECT_FILE, &component_table("desk-host", &["all"], "/internal/azimuth"));
+    lint_is_clean(&repo);
+}
+
+// behavior-contexts-components: A component that exists but is not started by the suite does not satisfy the finding
+#[test]
+fn a_declared_component_that_the_suite_does_not_start_does_not_satisfy_lint() {
+    // Both components are declared and listed for the key; another suite starts `api`.
+    let repo = started_payouts();
+    let tests = repo.read(PAYOUTS_TESTS);
+    repo.remove(PAYOUTS_TESTS);
+    repo.write("suites/payout-checks/payouts.test", &tests);
+    repo.add_text_suite("payout-checks", "");
+    on_requirement(&repo, &[INSTANT_TRUE]);
+    lint_names_checks(&repo, &PAYOUT_CHECKS);
+    repo.append(PROJECT_FILE, "starts = [\"website\"]\n");
+    lint_is_clean(&repo);
+}
+
+fn component_findings() -> Vec<Repo> {
+    vec![undeclared_in_a_key(), undeclared_in_starts(), check_not_proved()]
+}
+
+// behavior-contexts-components: A component finding fails lint
+#[test]
+fn a_component_finding_fails_lint_with_status_one() {
+    for repo in component_findings() {
+        let findings = repo.lint_findings(1);
+        assert!(!findings.is_empty());
+        repo.azimuth(&["lint"]).expect_status(1);
+    }
+}
+
+// behavior-contexts-components: A component finding fails the commit lane
+#[test]
+fn a_component_finding_fails_the_commit_lane() {
+    for repo in [undeclared_in_a_key(), undeclared_in_starts()] {
+        let document = repo.run_json(&["--lane", "commit"], 1);
+        assert_eq!(document["outcome"], "failure", "{document:#}");
+        assert!(!document["findings"].as_array().unwrap().is_empty(), "{document:#}");
+        for check in all_checks() {
+            assert_eq!(state_of(&document, check), "passed", "{document:#}");
+        }
+    }
+    let document = check_not_proved().run_json(&["--lane", "commit"], 1);
+    assert_eq!(document["outcome"], "failure", "{document:#}");
+    assert!(findings_naming(document["findings"].as_array().unwrap(), REACHES_THE_CARD) > 0, "{document:#}");
+}
+
+// behavior-contexts-components: A component finding does not stop the reading commands
+#[test]
+fn reading_commands_still_answer_with_a_component_finding() {
+    for repo in component_findings() {
+        repo.lint_findings(1);
+        for (args, format) in [
+            (vec!["status", "--json"], "status-1"),
+            (vec!["requirement", "show", SENT_AT_ONCE, "--json"], "requirement-1"),
+            (vec!["check", "show", REACHES_THE_CARD, "--json"], "check-1"),
+            (vec!["change", "diff", "--json"], "change-1"),
+        ] {
+            let output = repo.azimuth(&args);
+            output.expect_status(0);
+            let document = output.json();
+            assert_eq!(document["format"], format, "{document:#}");
+            if format == "status-1" {
+                for check in all_checks() {
+                    assert_eq!(status_checks(&document)[check]["state"], "owed", "{document:#}");
+                }
+            } else if format == "check-1" {
+                assert_eq!(document["state"], "owed", "{document:#}");
+            }
+        }
+        assert!(repo.adapter_starts().is_empty());
+        assert!(repo.probe_starts().is_empty());
+    }
 }

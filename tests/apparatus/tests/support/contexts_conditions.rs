@@ -2,6 +2,8 @@
 //! The invented payouts product of the conditions tests. It is a third module beside the
 //! sample's two, with keys declared in `execution-context.toml` and no component in the project
 //! file, so no started component exists and every Check with a condition is owed.
+//! `started_payouts` declares the components its keys list and starts both in the suite, which a
+//! test needs to expect a clean lint.
 
 use std::collections::BTreeSet;
 
@@ -62,6 +64,29 @@ pub fn payout_keys() -> String {
     )
 }
 
+pub const API: &str = "api";
+pub const WEBSITE: &str = "website";
+
+pub fn component_table(name: &str, areas: &[&str], report: &str) -> String {
+    let areas: Vec<String> = areas.iter().map(|area| format!("\"{area}\"")).collect();
+    format!("\n[[component]]\nname = \"{name}\"\nareas = [{}]\nreport = \"{report}\"\n", areas.join(", "))
+}
+
+/// Declares the two components the payouts keys list, both built from the sample's one area.
+pub fn declare_payout_components(repo: &Repo) {
+    repo.append(PROJECT_FILE, &component_table(API, &["all"], "/internal/azimuth"));
+    repo.append(PROJECT_FILE, &component_table(WEBSITE, &["all"], "/internal/azimuth"));
+}
+
+/// Gives the sample's suite a `starts` list, replacing any it has.
+pub fn start_components(repo: &Repo, names: &[&str]) {
+    let project = repo.read(PROJECT_FILE);
+    let kept: Vec<&str> = project.lines().filter(|line| !line.starts_with("starts =")).collect();
+    let names: Vec<String> = names.iter().map(|name| format!("\"{name}\"")).collect();
+    let with_starts = kept.join("\n").replacen("needs = []", &format!("needs = []\nstarts = [{}]", names.join(", ")), 1);
+    repo.write(PROJECT_FILE, &format!("{with_starts}\n"));
+}
+
 /// The sample with the payouts module and its keys, committed. Its two payout Checks pass.
 pub fn payouts() -> Repo {
     let repo = Repo::sample();
@@ -73,9 +98,76 @@ pub fn payouts() -> Repo {
     repo
 }
 
+/// Removes the `starts` line, so the suite starts nothing by omission.
+pub fn omit_starts(repo: &Repo) {
+    let project = repo.read(PROJECT_FILE);
+    let kept: Vec<&str> = project.lines().filter(|line| !line.starts_with("starts =")).collect();
+    repo.write(PROJECT_FILE, &format!("{}\n", kept.join("\n")));
+}
+
+/// Splits the sample's one area in two: `api` holds the suite and everything but `playwright/`,
+/// and `website` holds that folder. Every file still has exactly one area.
+pub fn split_areas(repo: &Repo) {
+    repo.replace(
+        PROJECT_FILE,
+        "[[area]]\nname = \"all\"\nmounts = [\".\"]\n",
+        "[[area]]\nname = \"api\"\nmounts = [\".gitignore\", \"README.md\", \"azimuth\", \"desk\", \"dotnet\", \"reading-room\", \"suites\"]\n\n[[area]]\nname = \"website\"\nmounts = [\"playwright\"]\n",
+    );
+    repo.replace(PROJECT_FILE, "area = \"all\"", "area = \"api\"");
+}
+
+/// A finding names one of the two files that hold the declarations a component finding compares.
+/// The design says which declarations are compared, not which of the two files the finding names.
+pub fn lint_names_a_declaration_file(repo: &Repo) -> Vec<serde_json::Value> {
+    let findings = repo.lint_findings(1);
+    assert!(
+        !findings_at(&findings, PROJECT_FILE, None).is_empty() || !findings_at(&findings, PAYOUT_KEY_FILE, None).is_empty(),
+        "no finding names {PROJECT_FILE} or {PAYOUT_KEY_FILE}: {findings:#?}"
+    );
+    findings
+}
+
+/// Lint ends with a finding, and the findings name each of these Checks. The design says that
+/// lint "names" the Check, not in which field.
+pub fn lint_names_checks(repo: &Repo, named: &[&str]) -> Vec<serde_json::Value> {
+    let findings = repo.lint_findings(1);
+    for check in named {
+        assert!(findings_naming(&findings, check) > 0, "no finding names {check}: {findings:#?}");
+    }
+    findings
+}
+
+/// As `lint_names_checks`, and no finding names another Check that the test lists.
+pub fn lint_names_only(repo: &Repo, named: &[&str], unnamed: &[&str]) {
+    let findings = lint_names_checks(repo, named);
+    for check in unnamed {
+        assert_eq!(findings_naming(&findings, check), 0, "a finding names {check}: {findings:#?}");
+    }
+}
+
+/// The findings whose message names the Check.
+pub fn findings_naming(findings: &[serde_json::Value], check: &str) -> usize {
+    findings.iter().filter(|finding| finding["message"].as_str().is_some_and(|message| message.contains(check))).count()
+}
+
+/// The payouts sample whose suite starts both components, so every key is listed for a started component.
+pub fn started_payouts() -> Repo {
+    let repo = payouts();
+    declare_payout_components(&repo);
+    start_components(&repo, &[API, WEBSITE]);
+    repo.commit_all("declare and start the payouts components");
+    repo
+}
+
 /// The payouts sample after one run, so every Check has the result it had before any condition.
 pub fn payouts_with_results() -> Repo {
     let repo = payouts();
+    repo.run_json(&[], 0);
+    repo
+}
+
+pub fn started_payouts_with_results() -> Repo {
+    let repo = started_payouts();
     repo.run_json(&[], 0);
     repo
 }
