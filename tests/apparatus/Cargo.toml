@@ -42,6 +42,11 @@ path = "tests/context_library_dotnet.rs"
 required-features = ["dotnet"]
 
 [[test]]
+name = "context_library_node"
+path = "tests/context_library_node.rs"
+required-features = ["playwright"]
+
+[[test]]
 name = "default_launch_limit"
 path = "tests/default_launch_limit.rs"
 required-features = ["long-timeout"]
