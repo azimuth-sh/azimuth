@@ -8,7 +8,7 @@ Status of this list: a draft, not yet read by a person.
 
 | Behavior | Quote from the design |
 | --- | --- |
-| The library is published as `@azimuth-sh/context` for Node | The libraries are `Azimuth.Context` for .NET and `@azimuth-sh/context` for Node. |
+| The library is named `@azimuth-sh/context` for Node | The libraries are `Azimuth.Context` for .NET and `@azimuth-sh/context` for Node. |
 | The library speaks of keys, sources, values, applying and reports, and names no testing | The library speaks of keys, sources, values, applying and reports, and knows no testing. |
 | The library opens no port | It opens no port and makes no connection out. |
 | The library makes no connection out | It opens no port and makes no connection out. |
@@ -42,6 +42,9 @@ Status of this list: a draft, not yet read by a person.
 | `applying` is `possible` when the condition held at start | `possible` when the registration's condition held at start, otherwise `not possible` |
 | `applying` is `not possible` when the condition did not hold at start | `possible` when the registration's condition held at start, otherwise `not possible` |
 | The library applies a value only when its condition held at start | The library applies only when its condition held at start. |
+| At start, when its condition holds, the library reads `AZIMUTH_CONTEXT` | At start, when its condition holds, it reads `AZIMUTH_CONTEXT` and applies the value of each mapped key the variable names. |
+| The library applies the value of each mapped key that `AZIMUTH_CONTEXT` names, and no other key | At start, when its condition holds, it reads `AZIMUTH_CONTEXT` and applies the value of each mapped key the variable names. |
+| Without `AZIMUTH_CONTEXT` the library applies nothing | Without the variable it applies nothing. |
 | Applying is possible only under the component's own explicit condition | Applying is possible only under each component's own explicit condition. |
 | The values to apply come from `AZIMUTH_CONTEXT`, one JSON object of product keys to text values | Each launch gets `AZIMUTH_CONTEXT` as one JSON object of product keys to normalized text values. |
 | The launch's value reaches each mapped setting when applying is possible | The launch's value reaches both settings. |
