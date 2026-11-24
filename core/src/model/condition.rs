@@ -232,5 +232,5 @@ fn normalize_number(text: &str) -> Result<String, String> {
 }
 
 fn too_long(text: &str) -> String {
-    format!("the `Context:` number `{text}` would take more than {MOST_ZEROS} zeros to write without an exponent. State a number that is nearer to zero")
+    format!("the `Context:` number `{text}` would take more than {MOST_ZEROS} zeros to write without an exponent. State a number with a smaller exponent")
 }
