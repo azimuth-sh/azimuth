@@ -55,7 +55,15 @@ fn host_is_accepted() {
 }
 
 fn assert_accepted(repo: &Repo) {
-    proven(repo, &repo.run_json(&[], 0), INSTANT_CHECK);
+    accepted_document(repo);
+}
+
+/// The document of the run that proved the Check. A second run owes nothing and makes no launch, so
+/// a test that reads a launch takes it from this one.
+fn accepted_document(repo: &Repo) -> serde_json::Value {
+    let document = repo.run_json(&[], 0);
+    proven(repo, &document, INSTANT_CHECK);
+    document
 }
 
 fn launch_entry(document: &serde_json::Value, pairs: &[(&str, &str)]) -> serde_json::Value {
@@ -104,8 +112,7 @@ fn a_component_whose_reads_have_the_phase_built_is_read_as_a_host() {
 fn a_component_whose_reads_have_the_phase_disposing_is_read_as_a_host() {
     // One host beside a separate process in the same launch: each is judged by its own phases.
     let repo = instant_true_with(&[HOST]);
-    assert_accepted(&repo);
-    let document = repo.run_json(&[], 0);
+    let document = accepted_document(&repo);
     let entry = launch_entry(&document, &[("payouts.instant", "true")]);
     assert_eq!(phases_of(&reads_of(&entry["components"], API)), strs(&["built", "disposing"]), "{entry:#}");
     assert_eq!(phases_of(&reads_of(&entry["components"], WEBSITE)), strs(&["start", "stop"]), "{entry:#}");
@@ -125,8 +132,7 @@ fn a_component_whose_reads_have_only_start_and_stop_is_read_as_a_separate_proces
 #[test]
 fn a_host_of_api_with_one_built_and_one_disposing_read_is_accepted() {
     let repo = instant_true_with(&[HOST]);
-    assert_accepted(&repo);
-    let document = repo.run_json(&[], 0);
+    let document = accepted_document(&repo);
     let entry = launch_entry(&document, &[("payouts.instant", "true")]);
     assert_eq!(phases_of(&reads_of(&entry["components"], API)), strs(&["built", "disposing"]), "{entry:#}");
 }
