@@ -2,7 +2,7 @@
 
 A row is of one of two kinds. A row of behavior is one observable fact, and a test shows it. A row of prose says what a text tells its reader; its section begins with the words "Rows of prose", and no test reads the words of the text for it. The second cell is copied exactly from `docs/design.md`. A plain test fails when a quoted sentence is no longer in that file. A behavior with no sentence to quote is not built. This list is built after the list of launches on the sample (`contexts-launches.md`) and the list of launch records (`contexts-launch-records.md`), because it adds the reads of a host inside the test process to the launches and the collected reads those lists build. The code that reads in a fixture is the team's own code, and no Azimuth helper package for it is listed here.
 
-Status of this list: a draft, not yet read by a person.
+Status of this list: read and accepted by a person on 2026-11-25.
 
 ## The reads of a host inside the test process
 
@@ -75,6 +75,7 @@ Status of this list: a draft, not yet read by a person.
 | A read of a host with an `error` instead of a report gives the cause of a report missing or unreadable, naming its declared place | Missing reports name their declared place. |
 | A host with a `built` read and no `disposing` read gives the cause of a report missing or unreadable | a report missing or unreadable |
 | A separate process with a `start` read and no `stop` read gives the cause of a report missing or unreadable | a report missing or unreadable |
+| A separate process with a `stop` read and no `start` read gives the cause of a report missing or unreadable | a report missing or unreadable |
 | An unequal count of `built` and `disposing` reads gives the cause of a report missing or unreadable | a report missing or unreadable |
 | More `disposing` reads than `built` reads give the cause of a report missing or unreadable | a report missing or unreadable |
 | A component with reads of both kinds gives the cause of a report missing or unreadable | a report missing or unreadable |
