@@ -176,8 +176,7 @@ fn each_entry_gains_the_reads_its_launch_collected() {
     let document = bare.run_json(&[], 0);
     for entry in suites_of(&document) {
         assert_eq!(entry["condition"], json!({}), "{entry:#}");
-        let components = entry.get("components").cloned().unwrap_or(json!([]));
-        assert!(components.is_null() || components == json!([]), "the adapter collected nothing: {entry:#}");
+        assert_eq!(entry["components"], json!([]), "the adapter collected nothing: {entry:#}");
     }
 }
 
@@ -367,8 +366,8 @@ fn the_components_of_a_result_are_the_reports_collected_reads() {
     // An adapter that collects nothing leaves a Check with no condition with no reads.
     let bare = Repo::sample();
     bare.run_json(&[], 0);
-    let components = result_body(&bare, ALL_CHECKS[0]).get("components").cloned().unwrap_or(json!([]));
-    assert!(components.is_null() || components == json!([]), "{components:#}");
+    assert_eq!(result_body(&bare, ALL_CHECKS[0])["components"], json!([]));
+    assert_eq!(bare.check_show(ALL_CHECKS[0])["components"], json!([]));
 }
 
 // behavior-contexts-launch-records: `azimuth check show` exposes the same added fields of `check-1`
