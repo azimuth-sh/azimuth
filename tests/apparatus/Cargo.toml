@@ -47,6 +47,11 @@ path = "tests/context_library_node.rs"
 required-features = ["playwright"]
 
 [[test]]
+name = "xunit_reads"
+path = "tests/xunit_reads.rs"
+required-features = ["dotnet"]
+
+[[test]]
 name = "default_launch_limit"
 path = "tests/default_launch_limit.rs"
 required-features = ["long-timeout"]

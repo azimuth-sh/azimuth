@@ -80,6 +80,9 @@ pub const OTHER_CLI: &str = "0.2.0-alpha.99";
 
 const TIME_LIMIT: Duration = Duration::from_secs(120);
 
+/// The folder of the sample's xUnit project for reads, from the root of the sample.
+pub const READS_TESTS: &str = "payouts/api-tests";
+
 pub fn sample_source() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../sample")
 }
@@ -232,6 +235,13 @@ impl Repo {
         Repo::build("main", |_| {})
     }
 
+    /// The sample with the xUnit project that writes reads for the adapter (`payouts/api-tests`).
+    /// Every other sample leaves it out: the adapter's `discover` lists every xUnit project under
+    /// the root, and the sample's other tests expect it to find only the library desk's.
+    pub fn sample_with_reads_tests() -> Repo {
+        Repo::build_keeping("main", &[READS_TESTS], |_| {})
+    }
+
     /// The sample with `azimuth/` and `.azimuth/` removed, as a repository that has never met Azimuth.
     pub fn sample_before_init(branch: &str) -> Repo {
         Repo::build(branch, |root| {
@@ -246,12 +256,21 @@ impl Repo {
     }
 
     fn build(branch: &str, prepare: impl FnOnce(&Path)) -> Repo {
+        Repo::build_keeping(branch, &[], prepare)
+    }
+
+    fn build_keeping(branch: &str, keep: &[&str], prepare: impl FnOnce(&Path)) -> Repo {
         let temp = tempfile::Builder::new()
             .prefix("azimuth-sample-")
             .tempdir()
             .expect("a temporary folder");
         let root = temp.path().join("library-desk");
         copy_git_worktree_files(&sample_source(), &root);
+        for left_out in [READS_TESTS] {
+            if !keep.contains(&left_out) {
+                let _ = fs::remove_dir_all(root.join(left_out));
+            }
+        }
         pin_to_the_cli(&root);
         // `.azimuth/` ignores itself, so the sample cannot carry it in Azimuth's own repository.
         // It is written here as `azimuth init` would have left it.
@@ -922,7 +941,7 @@ pub fn write_record(dir: &Path, value: &Value) -> PathBuf {
 }
 
 /// The lists of behaviors the tests are written from, under `docs/increments/`.
-pub const BEHAVIOR_LISTS: [&str; 13] = [
+pub const BEHAVIOR_LISTS: [&str; 14] = [
     "increments/1.md",
     "increments/2.md",
     "increments/2-follow-up.md",
@@ -936,6 +955,7 @@ pub const BEHAVIOR_LISTS: [&str; 13] = [
     "increments/contexts-launch-records.md",
     "increments/contexts-library-dotnet.md",
     "increments/contexts-library-node.md",
+    "increments/contexts-in-process.md",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

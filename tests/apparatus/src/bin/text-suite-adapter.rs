@@ -51,7 +51,14 @@
 //! - `adapter: component <name> none` leaves the component out of `components`.
 //! - `adapter: component <name> answered` gives it the entry `error: "something else answers there"`
 //!   with no reads, and reports every test as `not_run`.
-//! - `adapter: component <name> <start|stop|both> <change>` changes what a read gives. A change is
+//! - `adapter: component <name> phases <phase>...` sets the phases of the component's reads, in
+//!   order, in place of `start stop`. A host inside the test process gives `built disposing`, and
+//!   several hosts give `built disposing built disposing`. Each read is as faithful as a `start`
+//!   read, and the first of each phase is dated like the first read of a pair.
+//! - `adapter: component <name> <selector> <change>` changes what a read gives. The selector is a
+//!   phase (`start`, `stop`, `built`, `disposing`, all the reads of that phase), `both` (the reads
+//!   of `start` and `stop`), `all` (every read), or `read <n>` (the n-th read of the sequence,
+//!   counted from 1). A change is
 //!   `skip` (no read of that phase), `error <text>`, `malformed` (the document is a text),
 //!   `incomplete` (no `context`), `applying not-possible`, `name <other>`, `read-time <text>`,
 //!   `value <key> <text>`, `absent <key>` (null value and null source), `drop <key>` (no such key),
@@ -103,8 +110,8 @@ struct ComponentPlan {
     maps: Option<Vec<(String, Option<String>)>>,
     omitted: bool,
     answered: bool,
-    start: ReadPlan,
-    stop: ReadPlan,
+    phases: Option<Vec<String>>,
+    changes: Vec<(String, Vec<String>)>,
 }
 
 #[derive(Default)]
@@ -389,14 +396,23 @@ fn read_directives(text: &str, directives: &mut Directives, condition: &BTreeMap
             ["component", name, "answered"] => {
                 directives.plans.entry(name.to_string()).or_default().answered = true
             }
-            ["component", name, phase @ ("start" | "stop" | "both"), change @ ..] => {
-                let plan = directives.plans.entry(name.to_string()).or_default();
-                if matches!(*phase, "start" | "both") {
-                    change_read(&mut plan.start, change);
-                }
-                if matches!(*phase, "stop" | "both") {
-                    change_read(&mut plan.stop, change);
-                }
+            ["component", name, "phases", phases @ ..] => {
+                directives.plans.entry(name.to_string()).or_default().phases =
+                    Some(phases.iter().map(|phase| phase.to_string()).collect())
+            }
+            ["component", name, "read", number, change @ ..] => directives
+                .plans
+                .entry(name.to_string())
+                .or_default()
+                .changes
+                .push((format!("read {number}"), change.iter().map(|word| word.to_string()).collect())),
+            ["component", name, selector @ ("start" | "stop" | "built" | "disposing" | "both" | "all"), change @ ..] => {
+                directives
+                    .plans
+                    .entry(name.to_string())
+                    .or_default()
+                    .changes
+                    .push((selector.to_string(), change.iter().map(|word| word.to_string()).collect()))
             }
             ["lists", name, check] => directives
                 .extra_listed
@@ -456,10 +472,22 @@ fn component_entries(
             continue;
         }
         let mut reads = Vec::new();
-        for (phase, read, time) in [
-            ("start", &plan.start, "2026-11-24T10:15:00Z"),
-            ("stop", &plan.stop, "2026-11-24T10:16:30Z"),
-        ] {
+        let phases = plan.phases.clone().unwrap_or_else(|| vec!["start".to_string(), "stop".to_string()]);
+        for (index, phase) in phases.iter().enumerate() {
+            let closing = matches!(phase.as_str(), "stop" | "disposing");
+            let time = if closing { "2026-11-24T10:16:30Z" } else { "2026-11-24T10:15:00Z" };
+            let mut read = ReadPlan::default();
+            for (selector, change) in &plan.changes {
+                let selected = match selector.as_str() {
+                    "all" => true,
+                    "both" => matches!(phase.as_str(), "start" | "stop"),
+                    other => other == phase || other == format!("read {}", index + 1),
+                };
+                if selected {
+                    let words: Vec<&str> = change.iter().map(String::as_str).collect();
+                    change_read(&mut read, &words);
+                }
+            }
             if read.skip {
                 continue;
             }
@@ -467,7 +495,7 @@ fn component_entries(
                 reads.push(json!({ "phase": phase, "error": error }));
                 continue;
             }
-            reads.push(json!({ "phase": phase, "report": component_report(&name, &plan, read, time, condition) }));
+            reads.push(json!({ "phase": phase, "report": component_report(&name, &plan, &read, time, condition) }));
         }
         entries.push(json!({ "name": name, "reads": reads }));
     }
