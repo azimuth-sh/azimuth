@@ -154,6 +154,10 @@ pub fn check_document(survey: &Survey, id: &str) -> Value {
         entry
     });
     output::set_present(&mut document, "result", result);
+    if let Some(reference) = &evaluation.reference {
+        document["condition"] = reference.condition.clone();
+        document["components"] = reference.components.clone();
+    }
     if let Some(reuse) = &check.reuse {
         document["reuse"] = json!({ "value": reuse.value.as_str(), "reason": reuse.reason });
     }
@@ -208,8 +212,45 @@ pub fn check_text(survey: &Survey, id: &str) -> String {
         for test in &result.tests {
             text.push_str(&format!("    {}  {}  {} ms\n", test.name, test.outcome, test.duration_ms));
         }
+        text.push_str(&format!("  condition: {}\n", condition_line(&result.condition)));
+        text.push_str(&reads_text(&result.components));
     } else {
         text.push_str("  tests: no result yet\n");
+    }
+    text
+}
+
+fn condition_line(condition: &Value) -> String {
+    let pairs: Vec<String> = condition.as_object().into_iter().flatten().map(|(key, value)| format!("{key}={}", value.as_str().unwrap_or_default())).collect();
+    if pairs.is_empty() { "none".to_string() } else { pairs.join(" ") }
+}
+
+/// The reads a result kept, each mapped key with its value, source and read time.
+fn reads_text(components: &Value) -> String {
+    let mut text = String::from("  components:\n");
+    let list = components.as_array().map(Vec::as_slice).unwrap_or_default();
+    if list.is_empty() {
+        text.push_str("    no reads\n");
+    }
+    for component in list {
+        text.push_str(&format!("    {}\n", component["name"].as_str().unwrap_or_default()));
+        if let Some(error) = component["error"].as_str() {
+            text.push_str(&format!("      {error}\n"));
+        }
+        for read in component["reads"].as_array().map(Vec::as_slice).unwrap_or_default() {
+            let phase = read["phase"].as_str().unwrap_or_default();
+            if let Some(error) = read["error"].as_str() {
+                text.push_str(&format!("      {phase}: not read: {error}\n"));
+                continue;
+            }
+            text.push_str(&format!("      {phase}:\n"));
+            for (key, entry) in read["report"]["context"].as_object().into_iter().flatten() {
+                let value = entry["value"].as_str().unwrap_or("absent");
+                let source = entry["source"]["name"].as_str().unwrap_or("no source");
+                let at = entry["read"].as_str().unwrap_or("no read time");
+                text.push_str(&format!("        {key}={value}, source {source}, read {at}\n"));
+            }
+        }
     }
     text
 }

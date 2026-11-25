@@ -264,12 +264,31 @@ pub struct ComponentRead {
     pub result: Result<Value, String>,
 }
 
+impl ComponentRead {
+    fn to_json(&self) -> Value {
+        match &self.result {
+            Ok(report) => json!({ "phase": self.phase, "report": report }),
+            Err(error) => json!({ "phase": self.phase, "error": error }),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ComponentEntry {
     pub name: String,
     /// A cause for the whole component, as when something answered at its address before the start.
     pub error: Option<String>,
     pub reads: Vec<ComponentRead>,
+}
+
+impl ComponentEntry {
+    pub fn to_json(&self) -> Value {
+        let mut entry = json!({ "name": self.name, "reads": self.reads.iter().map(ComponentRead::to_json).collect::<Vec<_>>() });
+        if let Some(error) = &self.error {
+            entry["error"] = json!(error);
+        }
+        entry
+    }
 }
 
 #[derive(Debug)]
@@ -291,6 +310,15 @@ pub enum Launch {
 }
 
 impl Launch {
+    /// The reads the launch collected, as `run-1` and `result-1` keep them. A launch that gave no
+    /// report, or an adapter that reports no reads, keeps an empty list.
+    pub fn components_json(&self) -> Value {
+        match self {
+            Launch::Ran(Report { components: Some(entries), .. }) => entries.iter().map(ComponentEntry::to_json).collect(),
+            _ => json!([]),
+        }
+    }
+
     /// The word of `launch` in `run-1`.
     pub fn word(&self) -> &'static str {
         match self {
@@ -318,6 +346,7 @@ pub fn run_suite(root: &Path, project: &Project, suite: &Suite, condition: &Cond
         .filter_map(|name| project.component(name))
         .map(|component| json!({ "name": component.name, "report": component.report }))
         .collect();
+    let condition_of_request = condition;
     let condition = condition_object(condition);
     let request = json!({
         "format": REQUEST_FORMAT,
@@ -334,7 +363,8 @@ pub fn run_suite(root: &Path, project: &Project, suite: &Suite, condition: &Cond
     let stdout = report.try_clone().map_err(|error| format!("hold the adapter report: {error}"))?;
     let request = request.to_string();
     let limit = Duration::from_secs(suite.time_limit_minutes.saturating_mul(60));
-    eprintln!("suite {}: launch starting", suite.name);
+    let named = crate::contexts::condition_text(&condition_of_request);
+    eprintln!("suite {} ({named}): launch starting", suite.name);
     let waited =
         spawn_adapter(&root.join(&suite.path), &suite.adapter, request.as_bytes(), stdout, Stdio::from(stderr), Some(&condition.to_string())).and_then(|running| {
             running
@@ -372,7 +402,7 @@ pub fn run_suite(root: &Path, project: &Project, suite: &Suite, condition: &Cond
         Err(Started::Preparation(detail)) => return Err(detail),
     };
     let duration = duration_ms.map(|ms| format!(" in {ms} ms")).unwrap_or_default();
-    eprintln!("suite {}: launch {}{duration}", suite.name, launch.word());
+    eprintln!("suite {} ({named}): launch {}{duration}", suite.name, launch.word());
     let trouble = match &launch {
         Launch::Crashed { .. } | Launch::TimedOut | Launch::BuildFailed => true,
         Launch::Ran(report) => report.tests.iter().any(|test| test.outcome == "failed"),

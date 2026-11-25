@@ -11,6 +11,14 @@ const ANSWERED_BEFORE_START: &str = "something else answers there";
 const NEVER_REACHED: &str = "the context never reached the component";
 const PHASES: [&str; 2] = ["start", "stop"];
 
+/// A condition as a line of text names it: its stated keys with their normalized values.
+pub fn condition_text(condition: &Condition) -> String {
+    if condition.texts.is_empty() {
+        return "no condition".to_string();
+    }
+    condition.texts.iter().map(|(key, value)| format!("{key}={value}")).collect::<Vec<_>>().join(" ")
+}
+
 /// The cause of a condition that no launch could apply: a stated key that no component of the
 /// suite's `starts` is listed for.
 pub fn unreadable_key(model: &Model, project: &Project, suite: &Suite, condition: &Condition) -> Option<String> {
