@@ -145,7 +145,11 @@ fn each_entry_gains_the_checks_requested_for_its_launch() {
     let entries = suites_of(&repo.run_json(&[], 0));
     assert_eq!(checks_of(entry_with(&entries, &instant_pairs("true"))), ids(&[INSTANT_CHECK]), "{entries:#?}");
     assert_eq!(checks_of(entry_with(&entries, &instant_pairs("false"))), ids(&[REVIEW_CHECK]), "{entries:#?}");
-    assert_eq!(checks_of(entry_with(&entries, &[])), lending_checks(), "{entries:#?}");
+    assert_eq!(
+        checks_of(entry_with(&entries, &[])),
+        lending_checks().into_iter().chain(ids(&[REGION_CHECK])).collect::<BTreeSet<_>>(),
+        "{entries:#?}"
+    );
     for launch in launches(&repo) {
         assert_eq!(checks_of(entry_with(&entries, &launch_pairs(&launch))), launch.checks(), "{entries:#?}");
     }
