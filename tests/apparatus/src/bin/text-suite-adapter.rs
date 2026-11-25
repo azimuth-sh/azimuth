@@ -57,8 +57,11 @@
 //!   `value <key> <text>`, `absent <key>` (null value and null source), `drop <key>` (no such key),
 //!   or `source <key> <before-azimuth|azimuth|after-azimuth> <source name>`.
 //!
-//! Three environment variables reach what the files cannot hold without moving the fingerprint:
-//! `TEXT_ADAPTER_VERSION` overrides the version the adapter reports, `TEXT_ADAPTER_FAIL` names
+//! Five environment variables reach what the files cannot hold without moving the fingerprint:
+//! `TEXT_ADAPTER_CONFIGURED` is a list `<key>=<text>,...` of what configuration gives each key that
+//! the condition does not state and a component maps, as the machine's own configuration would,
+//! `TEXT_ADAPTER_READ_TIME` is the time every read of a component gives, as another moment of the
+//! same run would, `TEXT_ADAPTER_VERSION` overrides the version the adapter reports, `TEXT_ADAPTER_FAIL` names
 //! tests, separated by commas, that fail whatever their file says, as an unstable test or a fault
 //! of the machine would, and `APPARATUS_LOG` names a file outside the repository where each start
 //! is recorded for the tests to inspect, with the value of `APPARATUS_MARK`, so a test can see
@@ -481,7 +484,17 @@ fn component_report(
     if read.malformed {
         return json!("this is not the report of a component");
     }
-    let time = read.read_time.clone().unwrap_or_else(|| default_time.to_string());
+    let time = read
+        .read_time
+        .clone()
+        .or_else(|| std::env::var("TEXT_ADAPTER_READ_TIME").ok())
+        .unwrap_or_else(|| default_time.to_string());
+    let machine: BTreeMap<String, String> = std::env::var("TEXT_ADAPTER_CONFIGURED")
+        .unwrap_or_default()
+        .split(',')
+        .filter_map(|pair| pair.split_once('='))
+        .map(|(key, text)| (key.to_string(), text.to_string()))
+        .collect();
     let applied = |text: &str| {
         json!({ "value": text, "source": { "name": "azimuth", "precedence": "azimuth" }, "read": time })
     };
@@ -489,7 +502,8 @@ fn component_report(
     match &plan.maps {
         Some(keys) => {
             for (key, configured) in keys {
-                let entry = match (condition.get(key), configured) {
+                let configured = configured.clone().or_else(|| machine.get(key).cloned());
+                let entry = match (condition.get(key), &configured) {
                     (Some(stated), _) => applied(stated),
                     (None, Some(text)) => json!({
                         "value": text,
