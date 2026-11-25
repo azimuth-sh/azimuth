@@ -22,10 +22,16 @@ Status of this list: a draft, not yet read by a person.
 | The folder of a launch is named in `AZIMUTH_READS` | For each launch it creates an empty folder, names it in `AZIMUTH_READS` |
 | Two launches of one suite get different folders | For each launch it creates an empty folder, names it in `AZIMUTH_READS` |
 | The adapter writes `components.json` in the folder before the tests run | writes there a file `components.json` that lists the request's components with their names and report paths |
-| `components.json` lists each component of the request with its name and report path | writes there a file `components.json` that lists the request's components with their names and report paths |
+| `components.json` lists every component of the request with its name and report path | writes there a file `components.json` that lists the request's components with their names and report paths |
 | The adapter takes a read file with `name`, `phase` and `report` into the report | The code writes each read as its own JSON file in that folder, with `name`, `phase` and either `report` or `error`. |
 | The adapter takes a read file with `name`, `phase` and `error` into the report | The code writes each read as its own JSON file in that folder, with `name`, `phase` and either `report` or `error`. |
 | Every read file the adapter finds after the runner ends is in the report | After the runner ends, the adapter puts every read it finds into the report's `components`. |
+| A read whose `name` is no component of the request is kept in the report | After the runner ends, the adapter puts every read it finds into the report's `components`. |
+| A read file of an earlier launch is not read by a later launch | For each launch it creates an empty folder, names it in `AZIMUTH_READS` |
+| A file in the folder that is not JSON makes the launch `crashed` | A file in the folder that is not a read, because it is not JSON or has no `name` or `phase`, makes the launch `crashed`, and the adapter names the file. |
+| A file in the folder with no `name` makes the launch `crashed` | A file in the folder that is not a read, because it is not JSON or has no `name` or `phase`, makes the launch `crashed`, and the adapter names the file. |
+| A file in the folder with no `phase` makes the launch `crashed` | A file in the folder that is not a read, because it is not JSON or has no `name` or `phase`, makes the launch `crashed`, and the adapter names the file. |
+| The adapter names the file that is not a read | A file in the folder that is not a read, because it is not JSON or has no `name` or `phase`, makes the launch `crashed`, and the adapter names the file. |
 
 ## A separate process that the code of the tests starts
 
@@ -49,6 +55,7 @@ Status of this list: a draft, not yet read by a person.
 | Two `built` reads and two `disposing` reads of `api` are accepted | A component whose reads have `built` or `disposing` needs at least one of each and as many `disposing` reads as `built` reads; any other component needs a `start` and a `stop` read. |
 | A separate process with a `start` read and no `stop` read leaves the Checks of its launch owed | A component whose reads have `built` or `disposing` needs at least one of each and as many `disposing` reads as `built` reads; any other component needs a `start` and a `stop` read. |
 | A separate process with a `stop` read and no `start` read leaves the Checks of its launch owed | A component whose reads have `built` or `disposing` needs at least one of each and as many `disposing` reads as `built` reads; any other component needs a `start` and a `stop` read. |
+| More `disposing` reads of `api` than `built` reads leave the Checks of the launch owed | A component whose reads have `built` or `disposing` needs at least one of each and as many `disposing` reads as `built` reads; any other component needs a `start` and a `stop` read. |
 | A component with a `start` read and a `built` read in one launch is a report the core cannot read | A component with reads of both kinds in one launch is a report the core cannot read. |
 | A component with a `stop` read and a `disposing` read in one launch is a report the core cannot read | A component with reads of both kinds in one launch is a report the core cannot read. |
 | A component with reads of both kinds leaves the Checks of its launch owed | A component with reads of both kinds in one launch is a report the core cannot read. |
@@ -66,6 +73,11 @@ Status of this list: a draft, not yet read by a person.
 | The state of those Checks is `owed` and the reason is `context not applied` | The state is `owed`, the reason is `context not applied` |
 | The detail of such a result names the component, key, stated and reported values, and cause | the detail names the component, key, stated and reported values, and cause |
 | A read of a host with an `error` instead of a report gives the cause of a report missing or unreadable, naming its declared place | Missing reports name their declared place. |
+| A host with a `built` read and no `disposing` read gives the cause of a report missing or unreadable | a report missing or unreadable |
+| A separate process with a `start` read and no `stop` read gives the cause of a report missing or unreadable | a report missing or unreadable |
+| An unequal count of `built` and `disposing` reads gives the cause of a report missing or unreadable | a report missing or unreadable |
+| More `disposing` reads than `built` reads give the cause of a report missing or unreadable | a report missing or unreadable |
+| A component with reads of both kinds gives the cause of a report missing or unreadable | a report missing or unreadable |
 | A launch with no condition needs no reads of a host | Only components needed by a nonempty condition are required to have reads. |
 | A malformed read of a host is a component read error, not a new outcome of a test | A malformed component report is a component read error, not a new outcome of a test. |
 | The collected reads of a host appear in `run-1` and in each Check result of the launch | The same launch's reports appear in each of its Check results. |
