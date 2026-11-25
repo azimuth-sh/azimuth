@@ -35,3 +35,9 @@ Status of this list: read and accepted by a person on 2026-11-24.
 | A result of a Check on a machine whose unstated key differs has the same fingerprint | An unstated key can differ between two machines without changing a fingerprint; the reports keep its value and source visible after the run. |
 | The collected reports are not an input of the fingerprint | No extra fingerprint part holds context; reported values of unstated keys are not fingerprint inputs of their own. |
 
+## A value applied by Azimuth that differs
+
+| Behavior | Quote from the design |
+| --- | --- |
+| A report with precedence `azimuth` and a value other than the stated one gives the cause "the reported value differs from the stated value" | If the precedence is `azimuth` and the value differs from the stated value, the cause is "the reported value differs from the stated value". |
+
