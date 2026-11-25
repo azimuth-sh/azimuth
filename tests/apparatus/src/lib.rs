@@ -232,6 +232,15 @@ impl Repo {
         Repo::build("main", |_| {})
     }
 
+    /// The sample with the xUnit project that writes reads for the adapter, copied from the
+    /// fixtures of the tests to `payouts/api-tests`. Only the tests of those reads see it: the
+    /// adapter's `discover` lists every xUnit project under the root.
+    pub fn sample_with_reads_tests() -> Repo {
+        Repo::sample_with(|root| {
+            copy_tree(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/api-tests"), &root.join("payouts/api-tests"));
+        })
+    }
+
     /// The sample with `azimuth/` and `.azimuth/` removed, as a repository that has never met Azimuth.
     pub fn sample_before_init(branch: &str) -> Repo {
         Repo::build(branch, |root| {
@@ -922,7 +931,7 @@ pub fn write_record(dir: &Path, value: &Value) -> PathBuf {
 }
 
 /// The lists of behaviors the tests are written from, under `docs/increments/`.
-pub const BEHAVIOR_LISTS: [&str; 13] = [
+pub const BEHAVIOR_LISTS: [&str; 14] = [
     "increments/1.md",
     "increments/2.md",
     "increments/2-follow-up.md",
@@ -936,6 +945,7 @@ pub const BEHAVIOR_LISTS: [&str; 13] = [
     "increments/contexts-launch-records.md",
     "increments/contexts-library-dotnet.md",
     "increments/contexts-library-node.md",
+    "increments/contexts-in-process.md",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

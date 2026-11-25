@@ -11,6 +11,7 @@
 //! Records of launches use `// behavior-contexts-launch-records:` for theirs.
 //! The .NET context library uses `// behavior-contexts-library-dotnet:` for its accepted list.
 //! The Node context library uses `// behavior-contexts-library-node:` for its accepted list.
+//! Contexts in process use `// behavior-contexts-in-process:` for their accepted list.
 //! Rows of prose need no annotation, and an annotation naming one is an error.
 
 use std::collections::BTreeSet;
@@ -46,6 +47,7 @@ fn every_behavior_of_the_increment_has_a_test() {
                     || line.trim_start().starts_with("// behavior-contexts-launch-records:")
                     || line.trim_start().starts_with("// behavior-contexts-library-dotnet:")
                     || line.trim_start().starts_with("// behavior-contexts-library-node:")
+                    || line.trim_start().starts_with("// behavior-contexts-in-process:")
                 {
                     let mut next = index + 1;
                     while next < lines.len()
@@ -80,7 +82,10 @@ fn every_behavior_of_the_increment_has_a_test() {
                                 .starts_with("// behavior-contexts-library-dotnet:")
                             || lines[next]
                                 .trim_start()
-                                .starts_with("// behavior-contexts-library-node:"))
+                                .starts_with("// behavior-contexts-library-node:")
+                            || lines[next]
+                                .trim_start()
+                                .starts_with("// behavior-contexts-in-process:"))
                     {
                         next += 1;
                     }
@@ -107,7 +112,13 @@ fn every_behavior_of_the_increment_has_a_test() {
                         index + 1
                     );
                 }
-                if let Some(behavior) = line.trim_start().strip_prefix("// behavior-contexts-library-node: ")
+                if let Some(behavior) = line.trim_start().strip_prefix("// behavior-contexts-in-process: ")
+                {
+                    named.insert((
+                        "increments/contexts-in-process.md".to_string(),
+                        behavior.trim_end().to_string(),
+                    ));
+                } else if let Some(behavior) = line.trim_start().strip_prefix("// behavior-contexts-library-node: ")
                 {
                     named.insert((
                         "increments/contexts-library-node.md".to_string(),

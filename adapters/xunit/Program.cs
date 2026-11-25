@@ -27,7 +27,7 @@ try
     var report = (string?)request["verb"] switch
     {
         "discover" => Discovery.Report(Text(request, "folder")),
-        "run" => Suite.Run(Text(request, "marker_key"), Checks(request)),
+        "run" => Suite.Run(Text(request, "marker_key"), Checks(request), request["components"] as JsonArray),
         var verb => throw new AdapterException($"the verb `{verb}` is not known; this adapter knows `discover` and `run`"),
     };
     report.Insert(0, "format", "adapter-report-1");

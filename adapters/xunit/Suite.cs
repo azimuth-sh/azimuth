@@ -8,7 +8,7 @@ namespace Azimuth.Xunit;
 /// </summary>
 public static class Suite
 {
-    public static JsonObject Run(string markerKey, IReadOnlySet<string> asked)
+    public static JsonObject Run(string markerKey, IReadOnlySet<string> asked, JsonArray? components)
     {
         var folder = Directory.GetCurrentDirectory();
         var project = ProjectFile.InFolder(folder);
@@ -25,9 +25,10 @@ public static class Suite
 
         var tests = TestListing.Marked(assembly, markerKey);
         var askedChecks = tests.SelectMany(test => test.Checks).Where(asked.Contains).ToHashSet();
+        using var reads = ReadsFolder.For(components);
         var outcomes = askedChecks.Count == 0
             ? new Dictionary<(string, string), TestOutcome>()
-            : TestRun.Run(folder, project, markerKey, askedChecks);
+            : TestRun.Run(folder, project, markerKey, askedChecks, reads.Path);
 
         var entries = new JsonArray();
         foreach (var test in tests.OrderBy(test => test.Name, StringComparer.Ordinal))
@@ -41,6 +42,6 @@ public static class Suite
                 ["duration_ms"] = outcome.DurationMs,
             });
         }
-        return new JsonObject { ["build"] = "ok", ["tests"] = entries };
+        return new JsonObject { ["build"] = "ok", ["tests"] = entries, ["components"] = reads.Collect() };
     }
 }
