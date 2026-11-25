@@ -80,9 +80,6 @@ pub const OTHER_CLI: &str = "0.2.0-alpha.99";
 
 const TIME_LIMIT: Duration = Duration::from_secs(120);
 
-/// The folder of the sample's xUnit project for reads, from the root of the sample.
-pub const READS_TESTS: &str = "payouts/api-tests";
-
 pub fn sample_source() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../sample")
 }
@@ -235,11 +232,13 @@ impl Repo {
         Repo::build("main", |_| {})
     }
 
-    /// The sample with the xUnit project that writes reads for the adapter (`payouts/api-tests`).
-    /// Every other sample leaves it out: the adapter's `discover` lists every xUnit project under
-    /// the root, and the sample's other tests expect it to find only the library desk's.
+    /// The sample with the xUnit project that writes reads for the adapter, copied from the
+    /// fixtures of the tests to `payouts/api-tests`. Only the tests of those reads see it: the
+    /// adapter's `discover` lists every xUnit project under the root.
     pub fn sample_with_reads_tests() -> Repo {
-        Repo::build_keeping("main", &[READS_TESTS], |_| {})
+        Repo::sample_with(|root| {
+            copy_tree(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/api-tests"), &root.join("payouts/api-tests"));
+        })
     }
 
     /// The sample with `azimuth/` and `.azimuth/` removed, as a repository that has never met Azimuth.
@@ -256,21 +255,12 @@ impl Repo {
     }
 
     fn build(branch: &str, prepare: impl FnOnce(&Path)) -> Repo {
-        Repo::build_keeping(branch, &[], prepare)
-    }
-
-    fn build_keeping(branch: &str, keep: &[&str], prepare: impl FnOnce(&Path)) -> Repo {
         let temp = tempfile::Builder::new()
             .prefix("azimuth-sample-")
             .tempdir()
             .expect("a temporary folder");
         let root = temp.path().join("library-desk");
         copy_git_worktree_files(&sample_source(), &root);
-        for left_out in [READS_TESTS] {
-            if !keep.contains(&left_out) {
-                let _ = fs::remove_dir_all(root.join(left_out));
-            }
-        }
         pin_to_the_cli(&root);
         // `.azimuth/` ignores itself, so the sample cannot carry it in Azimuth's own repository.
         // It is written here as `azimuth init` would have left it.
