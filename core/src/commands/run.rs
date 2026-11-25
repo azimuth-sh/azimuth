@@ -199,7 +199,14 @@ pub fn run(selection: Selection, json: bool) -> i32 {
                 Ok(result) => result,
                 Err(message) => return output::could_not(&message),
             };
-            let mut entry = json!({ "name": suite.name, "launch": launch.word() });
+            let components = launch.components_json();
+            let mut entry = json!({
+                "name": suite.name,
+                "launch": launch.word(),
+                "condition": condition.texts,
+                "checks": ids,
+                "components": components,
+            });
             output::set_present(&mut entry, "duration_ms", duration_ms);
             suites.push(entry);
             match launch {
@@ -256,6 +263,8 @@ pub fn run(selection: Selection, json: bool) -> i32 {
                             tests: &enrolled,
                             commit: commit.as_deref(),
                             at: &clock::now(),
+                            condition: json!(condition.texts),
+                            components: components.clone(),
                         }
                         .to_record();
                         if let Err(error) = survey.store.write_to_outbox(&record) {
@@ -296,6 +305,9 @@ pub fn run(selection: Selection, json: bool) -> i32 {
         }
         output::document(&document);
     } else {
+        for launch in &suites {
+            println!("{}", launch_line(launch));
+        }
         for id in &shown {
             println!("{}", entries[*id].to_text(id));
         }
@@ -308,6 +320,15 @@ pub fn run(selection: Selection, json: bool) -> i32 {
     } else {
         status::NOT_FINE
     }
+}
+
+/// One launch in the text of a run: its suite, condition, duration and requested Checks.
+fn launch_line(launch: &Value) -> String {
+    let pairs: Vec<String> = launch["condition"].as_object().into_iter().flatten().map(|(key, value)| format!("{key}={}", value.as_str().unwrap_or_default())).collect();
+    let condition = if pairs.is_empty() { "no condition".to_string() } else { pairs.join(" ") };
+    let checks: Vec<&str> = launch["checks"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+    let duration = launch["duration_ms"].as_u64().map(|ms| format!(" in {ms} ms")).unwrap_or_default();
+    format!("suite {} ({condition}): launch {}{duration}, Checks: {}", launch["name"].as_str().unwrap_or_default(), launch["launch"].as_str().unwrap_or_default(), checks.join(", "))
 }
 
 /// The first step of the commit lane. Its output comes first and names lint, on standard output

@@ -54,6 +54,8 @@ pub struct NewResult<'a> {
     pub tests: &'a [EnrolledTest],
     pub commit: Option<&'a str>,
     pub at: &'a str,
+    pub condition: Value,
+    pub components: Value,
 }
 
 impl NewResult<'_> {
@@ -70,6 +72,8 @@ impl NewResult<'_> {
                 "adapter": { "name": self.adapter_name, "version": self.adapter_version },
             },
             "tests": self.tests.iter().map(EnrolledTest::to_json).collect::<Vec<_>>(),
+            "condition": self.condition,
+            "components": self.components,
             "where": WHERE,
         });
         if !self.edits.is_empty() {
@@ -103,6 +107,8 @@ pub struct StoredResult {
     pub tests: Vec<EnrolledTest>,
     pub where_: String,
     pub commit: Option<String>,
+    pub condition: Value,
+    pub components: Value,
 }
 
 impl StoredResult {
@@ -158,6 +164,8 @@ impl StoredResult {
             tests,
             where_: text(&body["where"]).unwrap_or_else(|| WHERE.to_string()),
             commit: text(&body["commit"]),
+            condition: body.get("condition").filter(|condition| condition.is_object()).cloned().unwrap_or_else(|| json!({})),
+            components: body.get("components").filter(|components| components.is_array()).cloned().unwrap_or_else(|| json!([])),
         })
     }
 

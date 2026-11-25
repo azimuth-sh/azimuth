@@ -8,6 +8,7 @@
 //! Conditions in the model use `// behavior-contexts-conditions:` for theirs.
 //! Started components in the model use `// behavior-contexts-components:` for theirs.
 //! Launches on the sample use `// behavior-contexts-launches:` for theirs.
+//! Records of launches use `// behavior-contexts-launch-records:` for theirs.
 //! The .NET context library uses `// behavior-contexts-library-dotnet:` for its accepted list.
 //! The Node context library uses `// behavior-contexts-library-node:` for its accepted list.
 //! Rows of prose need no annotation, and an annotation naming one is an error.
@@ -42,6 +43,7 @@ fn every_behavior_of_the_increment_has_a_test() {
                     || line.trim_start().starts_with("// behavior-contexts-conditions:")
                     || line.trim_start().starts_with("// behavior-contexts-components:")
                     || line.trim_start().starts_with("// behavior-contexts-launches:")
+                    || line.trim_start().starts_with("// behavior-contexts-launch-records:")
                     || line.trim_start().starts_with("// behavior-contexts-library-dotnet:")
                     || line.trim_start().starts_with("// behavior-contexts-library-node:")
                 {
@@ -70,6 +72,9 @@ fn every_behavior_of_the_increment_has_a_test() {
                             || lines[next]
                                 .trim_start()
                                 .starts_with("// behavior-contexts-launches:")
+                            || lines[next]
+                                .trim_start()
+                                .starts_with("// behavior-contexts-launch-records:")
                             || lines[next]
                                 .trim_start()
                                 .starts_with("// behavior-contexts-library-dotnet:")
@@ -112,6 +117,12 @@ fn every_behavior_of_the_increment_has_a_test() {
                 {
                     named.insert((
                         "increments/contexts-library-dotnet.md".to_string(),
+                        behavior.trim_end().to_string(),
+                    ));
+                } else if let Some(behavior) = line.trim_start().strip_prefix("// behavior-contexts-launch-records: ")
+                {
+                    named.insert((
+                        "increments/contexts-launch-records.md".to_string(),
                         behavior.trim_end().to_string(),
                     ));
                 } else if let Some(behavior) = line.trim_start().strip_prefix("// behavior-contexts-launches: ")
