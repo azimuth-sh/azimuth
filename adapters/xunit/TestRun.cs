@@ -16,7 +16,7 @@ public static class TestRun
 
     /// <summary>The outcome of each test the runner reported, by class and method name.</summary>
     public static IReadOnlyDictionary<(string ClassName, string MethodName), TestOutcome> Run(
-        string folder, string project, string markerKey, IReadOnlyCollection<string> checks)
+        string folder, string project, string markerKey, IReadOnlyCollection<string> checks, string readsFolder)
     {
         var results = Directory.CreateTempSubdirectory("azimuth-xunit-");
         try
@@ -24,7 +24,7 @@ public static class TestRun
             var trx = Path.Combine(results.FullName, "results.trx");
             var filter = string.Join("|", checks.Order(StringComparer.Ordinal).Select(check => $"{markerKey}={check}"));
             // The runner ends with a failure status when a test failed; the TRX file says what happened.
-            Processes.Dotnet(folder, "test", project, "--no-build", "--nologo", "--filter", filter,
+            Processes.DotnetWith(folder, (ReadsFolder.EnvironmentVariable, readsFolder), "test", project, "--no-build", "--nologo", "--filter", filter,
                 "--logger", $"trx;LogFileName={trx}", "--results-directory", results.FullName);
             if (!File.Exists(trx))
             {
