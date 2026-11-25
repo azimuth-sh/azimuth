@@ -15,6 +15,9 @@ Status of this list: a draft, not yet read by a person.
 | The entry of a component is the `webServer` entry whose `name` is the component's name | A component's entry is the one whose `name` is the component's name. |
 | The address of a component is the origin of the `url` of its entry | Its address is the origin of the entry's `url` |
 | An entry that gives only `port` has the address `http://localhost:<port>` | or `http://localhost:<port>` when the entry gives only `port`. |
+| A config in which two entries have the name of one component is refused, and the adapter runs nothing | A config in which two entries have the name of one component is refused: the adapter runs nothing, says why, and the Checks get no result. |
+| The adapter says why it refused such a config | A config in which two entries have the name of one component is refused: the adapter runs nothing, says why, and the Checks get no result. |
+| The Checks of a launch with such a config get no result | A config in which two entries have the name of one component is refused: the adapter runs nothing, says why, and the Checks get no result. |
 | An address that the runner configuration does not name is not looked at | Each adapter finds only the addresses its own runner's configuration names |
 
 ## The look before the start
@@ -28,6 +31,10 @@ Status of this list: a draft, not yet read by a person.
 | When an address answers, the report lists the tests as `not_run` | reports the tests as `not_run` |
 | When an address answers, the report gives "something else answers there" for that component | reports "something else answers there" for that component |
 | The component that answered has `error: "something else answers there"` and no reads | A component that answered before start instead has `error: "something else answers there"` and no reads |
+| The look covers every address before the adapter decides | The look covers every address before the adapter decides, so each component whose address answers has that error. |
+| Each component whose address answers has the error "something else answers there" | The look covers every address before the adapter decides, so each component whose address answers has that error. |
+| When an address answers, the adapter starts nothing | The adapter then starts nothing, and every other component is listed with no reads. |
+| Every component whose address does not answer is listed with no reads | The adapter then starts nothing, and every other component is listed with no reads. |
 | For `localhost` an answer on `127.0.0.1` is found | For `localhost` the look covers both `127.0.0.1` and `::1`. |
 | For `localhost` an answer on `::1` is found | For `localhost` the look covers both `127.0.0.1` and `::1`. |
 | An address learned only after the start, such as a free port chosen then, is not looked at | An address learned only after the start, such as a free port chosen then, needs no look. |
