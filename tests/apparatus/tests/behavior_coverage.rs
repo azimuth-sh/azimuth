@@ -9,6 +9,7 @@
 //! Started components in the model use `// behavior-contexts-components:` for theirs.
 //! Launches on the sample use `// behavior-contexts-launches:` for theirs.
 //! The .NET context library uses `// behavior-contexts-library-dotnet:` for its accepted list.
+//! The Node context library uses `// behavior-contexts-library-node:` for its accepted list.
 //! Rows of prose need no annotation, and an annotation naming one is an error.
 
 use std::collections::BTreeSet;
@@ -42,6 +43,7 @@ fn every_behavior_of_the_increment_has_a_test() {
                     || line.trim_start().starts_with("// behavior-contexts-components:")
                     || line.trim_start().starts_with("// behavior-contexts-launches:")
                     || line.trim_start().starts_with("// behavior-contexts-library-dotnet:")
+                    || line.trim_start().starts_with("// behavior-contexts-library-node:")
                 {
                     let mut next = index + 1;
                     while next < lines.len()
@@ -70,7 +72,10 @@ fn every_behavior_of_the_increment_has_a_test() {
                                 .starts_with("// behavior-contexts-launches:")
                             || lines[next]
                                 .trim_start()
-                                .starts_with("// behavior-contexts-library-dotnet:"))
+                                .starts_with("// behavior-contexts-library-dotnet:")
+                            || lines[next]
+                                .trim_start()
+                                .starts_with("// behavior-contexts-library-node:"))
                     {
                         next += 1;
                     }
@@ -97,7 +102,13 @@ fn every_behavior_of_the_increment_has_a_test() {
                         index + 1
                     );
                 }
-                if let Some(behavior) = line.trim_start().strip_prefix("// behavior-contexts-library-dotnet: ")
+                if let Some(behavior) = line.trim_start().strip_prefix("// behavior-contexts-library-node: ")
+                {
+                    named.insert((
+                        "increments/contexts-library-node.md".to_string(),
+                        behavior.trim_end().to_string(),
+                    ));
+                } else if let Some(behavior) = line.trim_start().strip_prefix("// behavior-contexts-library-dotnet: ")
                 {
                     named.insert((
                         "increments/contexts-library-dotnet.md".to_string(),
