@@ -1,6 +1,6 @@
 //! Recording publication operands and bytes makes local replay independent of registry access.
 
-use super::{assert_default_conditions, expanded_commands, jobs, repository_root, shell, Node};
+use super::{assert_default_conditions, expanded_commands, jobs, nuget, repository_root, shell, Node};
 use azimuth_tests::{files_under, run_with_time_limit, Output};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -57,7 +57,8 @@ fn source_files(destination: &Path) {
             "--exclude-standard",
             "-z",
             "--",
-            "adapters/playwright",
+            "adapters",
+            "libraries",
             "release",
             "*.npmrc",
         ])
@@ -162,6 +163,7 @@ fn replay_job_result(
 
 #[derive(Default)]
 struct ReplayOptions {
+    stop_after_nuget_push: bool,
     installed_version: Option<String>,
     corrupt_after_step: Option<usize>,
     fail_nuget: bool,
@@ -198,14 +200,67 @@ fn replay_job_options(
         fs::copy(env!("CARGO_BIN_EXE_gh-release-recorder"), tools.join("gh")).unwrap();
     }
     // Both operations share a log so their order is visible even inside one shell step.
+    // `pack` writes a file named by the project's `PackageId` and the `Version` property, so the
+    // packed names and versions are visible without a build. `push` behaves as NuGet does on the
+    // points a retry depends on: a version already in the feed is refused unless
+    // `--skip-duplicate` is given, and then it is skipped.
     let dotnet = tools.join("dotnet");
     fs::write(
         &dotnet,
         r#"#!/bin/sh
 set -eu
+if [ "$1" = pack ]; then
+  shift
+  project=.; output=""; version=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --output|-o) output="$2"; shift ;;
+      --output=*) output="${1#--output=}" ;;
+      -p:Version=*|/p:Version=*|--property:Version=*) version="${1#*Version=}" ;;
+      --configuration|-c|--runtime|-r|--framework|-f|--verbosity|-v|--version-suffix) shift ;;
+      -*) ;;
+      *) project="$1" ;;
+    esac
+    shift
+  done
+  if [ -d "$project" ]; then folder="$project"; csproj="$(ls "$project"/*.csproj | sed -n 1p)"; else folder="$(dirname "$project")"; csproj="$project"; fi
+  id="$(sed -n 's:.*<PackageId>\(.*\)</PackageId>.*:\1:p' "$csproj" | sed -n 1p)"
+  [ -n "$id" ] || id="$(basename "$csproj" .csproj)"
+  [ -n "$output" ] || output="$folder/bin/Release"
+  mkdir -p "$output"
+  printf 'nupkg of %s %s\n' "$id" "$version" > "$output/$id.$version.nupkg"
+  printf '{"verb":"dotnet pack","id":"%s","version":"%s","project":"%s","job":"%s"}\n' "$id" "$version" "$project" "${RELEASE_REPLAY_JOB:-}" >> "$NPM_RELEASE_LOG"
+  exit 0
+fi
 test "$1" = nuget && test "$2" = push || exit 97
+shift 2
 printf '{"verb":"nuget push","status":%s}\n' "$RELEASE_REPLAY_NUGET_STATUS" >> "$GH_RELEASE_LOG"
-exit "$RELEASE_REPLAY_NUGET_STATUS"
+{
+  printf 'call %s %s\n' "${RELEASE_REPLAY_JOB:-}" "${RELEASE_REPLAY_STEP:-}"
+  for argument in "$@"; do printf 'arg %s\n' "$argument"; done
+} >> "$GH_RELEASE_LOG.nuget"
+if [ "$RELEASE_REPLAY_NUGET_STATUS" != 0 ]; then exit "$RELEASE_REPLAY_NUGET_STATUS"; fi
+skip=no
+for argument in "$@"; do if [ "$argument" = --skip-duplicate ]; then skip=yes; fi; done
+for argument in "$@"; do
+  case "$argument" in
+    *.nupkg)
+      name="$(basename "$argument")"
+      if grep -qxF "$name" "$RELEASE_REPLAY_NUGET_FEED" 2>/dev/null; then
+        if [ "$skip" = yes ]; then
+          printf 'skipped %s\n' "$name" >> "$RELEASE_REPLAY_NUGET_FEED.log"
+        else
+          printf 'Response status code does not indicate success: 409 (Conflict) for %s\n' "$name" >&2
+          exit 1
+        fi
+      else
+        printf '%s\n' "$name" >> "$RELEASE_REPLAY_NUGET_FEED"
+        printf 'pushed %s\n' "$name" >> "$RELEASE_REPLAY_NUGET_FEED.log"
+      fi
+      ;;
+  esac
+done
+exit 0
 "#,
     )
     .unwrap();
@@ -238,6 +293,10 @@ exit "$RELEASE_REPLAY_NUGET_STATUS"
             temp.join("gh.jsonl").display().to_string(),
         ),
         ("npm_config_offline".into(), "true".into()),
+        (
+            "RELEASE_REPLAY_NUGET_FEED".into(),
+            temp.join("nuget-feed").display().to_string(),
+        ),
         (
             "RELEASE_REPLAY_NUGET_STATUS".into(),
             if options.fail_nuget { "1" } else { "0" }.into(),
@@ -375,7 +434,17 @@ exit "$RELEASE_REPLAY_NUGET_STATUS"
                 .iter()
                 .any(|word| word.starts_with("release/") || word.starts_with("./release/"))
         });
-        if !npm && !github && !nuget && !assemble && !files_only && !repository_script {
+        let packs_dotnet = commands
+            .iter()
+            .any(|w| shell::invokes(w, &["dotnet", "pack"]));
+        if !npm
+            && !github
+            && !nuget
+            && !packs_dotnet
+            && !assemble
+            && !files_only
+            && !repository_script
+        {
             continue;
         }
         let mut effective = env.clone();
@@ -410,6 +479,9 @@ exit "$RELEASE_REPLAY_NUGET_STATUS"
         let result: Output = run_with_time_limit(command, Duration::from_secs(30), None);
         if result.status != 0 {
             return Err(result);
+        }
+        if options.stop_after_nuget_push && nuget {
+            return Ok(());
         }
         if let Ok(text) = fs::read_to_string(&github_path) {
             for path in text.lines().filter(|line| !line.is_empty()) {
@@ -862,5 +934,176 @@ pub fn tool_job(
         diagnostic,
         calls,
         paths,
+    }
+}
+
+/// The script that the retry of an npm package is. Its interface is stated in `stage_npm.rs`.
+pub const STAGE_SCRIPT: &str = "release/stage-npm.sh";
+
+fn job_commands(job: &Node) -> Vec<Vec<String>> {
+    job.descendants()
+        .into_iter()
+        .filter(|n| n.key == "run")
+        .flat_map(|n| expanded_commands(n.value.as_deref().unwrap_or_default()))
+        .collect()
+}
+
+/// A command that stages, however the program is named: `npm`, `"$npm"` or a path.
+pub fn names_stage(words: &[String]) -> bool {
+    words.windows(2).any(|pair| pair[0] == "stage" && pair[1] == "publish")
+}
+
+pub fn stages_npm(job: &Node) -> bool {
+    job_commands(job).iter().any(|words| names_stage(words))
+        || job
+            .descendants()
+            .into_iter()
+            .filter(|n| n.key == "run")
+            .any(|n| n.value.as_deref().unwrap_or_default().contains(STAGE_SCRIPT))
+}
+
+pub fn packs_npm(job: &Node) -> bool {
+    job_commands(job)
+        .iter()
+        .any(|words| shell::invokes(words, &["npm", "pack"]))
+}
+
+pub fn packs_dotnet(job: &Node) -> bool {
+    job_commands(job)
+        .iter()
+        .any(|words| shell::invokes(words, &["dotnet", "pack"]))
+}
+
+/// The jobs in an order where a job comes after every selected job it needs.
+fn in_dependency_order<'a>(root: &'a Node, selected: Vec<&'a Node>) -> Vec<&'a Node> {
+    let mut counted: Vec<(usize, &Node)> = selected
+        .iter()
+        .map(|job| {
+            let before = selected
+                .iter()
+                .filter(|other| other.key != job.key && job_depends_on(root, job, other))
+                .count();
+            (before, *job)
+        })
+        .collect();
+    counted.sort_by_key(|(before, _)| *before);
+    counted.into_iter().map(|(_, job)| job).collect()
+}
+
+/// Replays every job that packs or stages an npm package, each in a checkout of its own and
+/// after the jobs it needs, with the recorder for `npm`. A package is not published at the
+/// recorder, so a read of a version finds none. The records are those of `npm.jsonl`, each with
+/// the key of its job.
+pub fn replay_npm_jobs(root: &Node, version: &str) -> Vec<Value> {
+    assert_default_conditions(root);
+    let selected: Vec<&Node> = jobs(root)
+        .into_iter()
+        .filter(|job| packs_npm(job) || stages_npm(job))
+        .collect();
+    assert!(!selected.is_empty(), "no job packs or stages an npm package");
+    let temp = tempfile::tempdir().unwrap();
+    let mut artifacts = BTreeMap::new();
+    let tag = format!("v{version}");
+    for job in in_dependency_order(root, selected) {
+        replay_job(
+            root,
+            job,
+            &temp.path().join(&job.key),
+            temp.path(),
+            &tag,
+            &mut artifacts,
+        );
+    }
+    calls(temp.path())
+}
+
+pub struct NugetPush {
+    pub job: String,
+    pub step: String,
+    pub arguments: Vec<String>,
+}
+
+pub struct NugetReplay {
+    pub status: i32,
+    pub diagnostic: String,
+    /// The file names the packs wrote, such as `Azimuth.Context.0.2.0-alpha.9.nupkg`.
+    pub packed: Vec<String>,
+    pub pushes: Vec<NugetPush>,
+    /// `pushed <file>` or `skipped <file>`, in order.
+    pub outcomes: Vec<String>,
+}
+
+/// Replays every job that packs a NuGet package, then the job that pushes, up to its push, against
+/// a feed that already holds the files named in `present`. As NuGet does, the feed refuses a file
+/// it holds unless the push says `--skip-duplicate`.
+pub fn replay_nuget(root: &Node, version: &str, present: &[&str]) -> NugetReplay {
+    assert_default_conditions(root);
+    let selected: Vec<&Node> = jobs(root)
+        .into_iter()
+        .filter(|job| packs_dotnet(job) || job_commands(job).iter().any(|words| nuget(words)))
+        .collect();
+    assert!(!selected.is_empty(), "no job packs or pushes a NuGet package");
+    let temp = tempfile::tempdir().unwrap();
+    let feed = temp.path().join("nuget-feed");
+    fs::write(&feed, present.iter().map(|name| format!("{name}\n")).collect::<String>()).unwrap();
+    let mut artifacts = BTreeMap::new();
+    let tag = format!("v{version}");
+    let mut status = 0;
+    let mut diagnostic = String::new();
+    for job in in_dependency_order(root, selected) {
+        let options = ReplayOptions {
+            stop_after_nuget_push: true,
+            ..ReplayOptions::default()
+        };
+        if let Err(output) = replay_job_options(
+            root,
+            job,
+            &temp.path().join(&job.key),
+            temp.path(),
+            &tag,
+            &mut artifacts,
+            &options,
+        ) {
+            status = output.status;
+            diagnostic = output.text();
+            break;
+        }
+    }
+    let packed = calls(temp.path())
+        .iter()
+        .filter(|call| call["verb"] == "dotnet pack")
+        .map(|call| {
+            format!(
+                "{}.{}.nupkg",
+                call["id"].as_str().unwrap(),
+                call["version"].as_str().unwrap()
+            )
+        })
+        .collect();
+    let mut pushes: Vec<NugetPush> = Vec::new();
+    let recorded = fs::read_to_string(temp.path().join("gh.jsonl.nuget")).unwrap_or_default();
+    for line in recorded.lines() {
+        if let Some(header) = line.strip_prefix("call ") {
+            let (job, step) = header.split_once(' ').unwrap_or((header, ""));
+            pushes.push(NugetPush {
+                job: job.into(),
+                step: step.into(),
+                arguments: Vec::new(),
+            });
+        } else if let Some(argument) = line.strip_prefix("arg ") {
+            pushes.last_mut().unwrap().arguments.push(argument.into());
+        }
+    }
+    let outcomes = fs::read_to_string(temp.path().join("nuget-feed.log"))
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_string)
+        .collect();
+    NugetReplay {
+        status,
+        diagnostic,
+        packed,
+        pushes,
+        outcomes,
     }
 }

@@ -185,6 +185,13 @@ fn main() {
         );
         return;
     }
+    if args.first().is_some_and(|arg| arg == "view") {
+        // Nothing is published at the stand-in registry, so a read of a version finds none.
+        append_record(&json!({"verb":"view","args":args,
+            "job":std::env::var("RELEASE_REPLAY_JOB").ok()}));
+        eprintln!("npm error code E404\nnpm error 404 Not Found - GET https://registry.npmjs.org/ - Not found");
+        std::process::exit(1);
+    }
     let index = args
         .iter()
         .position(|v| {
