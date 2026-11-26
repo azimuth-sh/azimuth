@@ -363,7 +363,7 @@ pub fn run_suite(root: &Path, project: &Project, suite: &Suite, condition: &Cond
     let stdout = report.try_clone().map_err(|error| format!("hold the adapter report: {error}"))?;
     let request = request.to_string();
     let limit = Duration::from_secs(suite.time_limit_minutes.saturating_mul(60));
-    let named = crate::contexts::condition_text(&condition_of_request);
+    let named = crate::contexts::condition_text(condition_of_request);
     eprintln!("suite {} ({named}): launch starting", suite.name);
     let waited =
         spawn_adapter(&root.join(&suite.path), &suite.adapter, request.as_bytes(), stdout, Stdio::from(stderr), Some(&condition.to_string())).and_then(|running| {
