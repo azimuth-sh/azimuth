@@ -2,7 +2,7 @@
 
 A row is of one of two kinds. A row of behavior is one observable fact, and a test shows it. A row of prose says what a text tells its reader; its section begins with the words "Rows of prose", and no test reads the words of the text for it. The second cell is copied exactly from `docs/design.md`. A plain test fails when a quoted sentence is no longer in that file. A behavior with no sentence to quote is not built. This list is built after the list of the context library for .NET (`contexts-library-dotnet.md`) and the list of the context library for Node (`contexts-library-node.md`), because it packs and publishes those two libraries, and after the list of the first release (`release.md`), whose workflow it extends and whose rows it does not list again. The libraries' own behavior is not listed here.
 
-Status of this list: a draft, not yet read by a person.
+Status of this list: read and accepted by a person on 2026-11-26.
 
 ## The libraries are packed with the release's version
 
@@ -110,7 +110,7 @@ These rows have no test in the repository. The registries and the approvals are 
 | A version that npm refuses as already staged stops its job, and a person compares the shasum at npm with the printed one, then approves or rejects it | a person compares its shasum at npm with the one the job printed, then approves or rejects it |
 | A fault in the workflow of a tag is corrected by the next version, and the tag stays without a release | The correction gets the next version, the tag stays without a release, and a person deletes its draft. |
 
-## What the design does not answer yet
+## Readings the maintainer accepted
 
-- Whether the retry at npm is a release script in `release/` or steps of the workflow. The design says only that "that job" reads the published version, compares the integrity, stages and prints the shasum. The rows are written so that either shows them: the workflow file, and a script where there is one.
-- How the job learns the integrity of the published version without credentials, and how it tells npm's refusal as already staged from another refusal.
+- The retry at npm is a release script in `release/`, and the job calls it, because "The steps of a release that can run on a developer's machine are scripts in the repository." Its tests run it with a stand-in for npm, as the tests of the install script run it with a stand-in for the releases.
+- How the script reads the integrity of a published version and recognizes npm's refusal as already staged are means, not behaviors. The stand-in for npm answers as npm does: the published version's `dist.integrity` without credentials, and `409 Conflict` for a version that is already staged.
