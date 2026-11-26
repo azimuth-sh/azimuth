@@ -531,33 +531,18 @@ pub fn pack_and_stage_with_stray_tarball(root: &Node, version: &str) -> Vec<Valu
 
 fn pack_and_stage_checkout(root: &Node, version: &str, stray: bool) -> Vec<Value> {
     assert_default_conditions(root);
-    let pack: Vec<_> = jobs(root)
-        .into_iter()
-        .filter(|j| {
-            j.descendants().iter().filter(|n| n.key == "run").any(|n| {
-                expanded_commands(n.value.as_deref().unwrap())
-                    .iter()
-                    .any(|w| shell::invokes(w, &["npm", "pack"]))
-            })
-        })
-        .collect();
-    let stage: Vec<_> = jobs(root)
-        .into_iter()
-        .filter(|j| {
-            j.descendants().iter().filter(|n| n.key == "run").any(|n| {
-                expanded_commands(n.value.as_deref().unwrap())
-                    .iter()
-                    .any(|w| shell::invokes(w, &["npm", "stage", "publish"]))
-            })
-        })
-        .collect();
-    assert_eq!(pack.len(), 1, "no unique npm pack job");
-    assert_eq!(stage.len(), 1, "no unique npm staging job");
-    assert!(
-        job_depends_on(root, stage[0], pack[0]),
-        "npm staging must depend on the job that packs its artifact"
-    );
-    for job in [pack[0], stage[0]] {
+    let pack: Vec<&Node> = jobs(root).into_iter().filter(|j| packs_npm(j)).collect();
+    let stage: Vec<&Node> = jobs(root).into_iter().filter(|j| stages_npm(j)).collect();
+    assert!(!pack.is_empty(), "no npm pack job");
+    assert!(!stage.is_empty(), "no npm staging job");
+    for staging in &stage {
+        assert!(
+            pack.iter().any(|packing| job_depends_on(root, staging, packing)),
+            "npm staging must depend on the job that packs its artifact: {}",
+            staging.key
+        );
+    }
+    for job in pack.iter().chain(stage.iter()) {
         for registry in job
             .descendants()
             .into_iter()
@@ -572,24 +557,25 @@ fn pack_and_stage_checkout(root: &Node, version: &str, stray: bool) -> Vec<Value
     }
     let temp = tempfile::tempdir().unwrap();
     if stray {
-        fs::create_dir_all(temp.path().join("pack")).unwrap();
-        fs::write(temp.path().join("pack/azimuth-sh-playwright-9.9.9.tgz"),serde_json::json!({"packed_manifest":{"name":"@azimuth-sh/playwright","version":"9.9.9"}}).to_string()).unwrap();
+        for job in &pack {
+            let folder = temp.path().join(&job.key);
+            fs::create_dir_all(&folder).unwrap();
+            fs::write(folder.join("azimuth-sh-playwright-9.9.9.tgz"),serde_json::json!({"packed_manifest":{"name":"@azimuth-sh/playwright","version":"9.9.9"}}).to_string()).unwrap();
+        }
     }
     let mut artifacts = BTreeMap::new();
     let tag = format!("v{version}");
-    replay_job(
-        root,
-        pack[0],
-        &temp.path().join("pack"),
-        temp.path(),
-        &tag,
-        &mut artifacts,
-    );
-    if pack[0].key != stage[0].key {
+    let mut selected = pack;
+    for job in stage {
+        if !selected.iter().any(|other| other.key == job.key) {
+            selected.push(job);
+        }
+    }
+    for job in in_dependency_order(root, selected) {
         replay_job(
             root,
-            stage[0],
-            &temp.path().join("stage"),
+            job,
+            &temp.path().join(&job.key),
             temp.path(),
             &tag,
             &mut artifacts,

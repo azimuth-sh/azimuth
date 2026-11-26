@@ -523,6 +523,8 @@ struct Job {
     environment: Option<String>,
     calls: Option<String>,
     needs: Vec<String>,
+    /// Whether the job stages at npm, directly or through the script of `release/`.
+    stages_at_npm: bool,
 }
 
 const SITE_WORKFLOW: &str = "./.github/workflows/site.yml";
@@ -595,6 +597,7 @@ fn all_jobs() -> Vec<Job> {
                 }),
                 calls: job.child("uses").and_then(|node| node.value.clone()),
                 needs,
+                stages_at_npm: release_replay::stages_npm(job),
             });
         }
     }
@@ -707,6 +710,63 @@ fn role<'a>(all: &'a [Job], name: &str, matches: impl Fn(&[String]) -> bool) -> 
     );
     found[0]
 }
+/// Every job that stages at npm, at least one.
+fn staging_roles(all: &[Job]) -> Vec<&Job> {
+    let found: Vec<&Job> = all.iter().filter(|job| job.stages_at_npm).collect();
+    assert!(!found.is_empty(), "no job stages at npm");
+    found
+}
+
+/// Every job of the workflow that stages at npm, at least one.
+fn npm_jobs(root: &Node) -> Vec<&Node> {
+    let found: Vec<&Node> = jobs(root)
+        .into_iter()
+        .filter(|job| release_replay::stages_npm(job))
+        .collect();
+    assert!(!found.is_empty(), "the release workflow has no npm staging job");
+    found
+}
+
+fn calls_of_job(calls: &[serde_json::Value], job: &str) -> Vec<serde_json::Value> {
+    calls.iter().filter(|call| call["job"] == job).cloned().collect()
+}
+
+/// The one job that stages the Playwright adapter: the staging job that does not name the
+/// context library's folder.
+fn playwright_staging_job(root: &Node) -> &Node {
+    let found: Vec<&Node> = npm_jobs(root)
+        .into_iter()
+        .filter(|job| !job_text(job).contains("libraries/node"))
+        .collect();
+    assert_eq!(found.len(), 1, "no unique staging job of the Playwright adapter");
+    found[0]
+}
+
+fn playwright_packing_job(root: &Node) -> &Node {
+    let found: Vec<&Node> = jobs(root)
+        .into_iter()
+        .filter(|job| release_replay::packs_npm(job) && !job_text(job).contains("libraries/node"))
+        .collect();
+    assert_eq!(found.len(), 1, "no unique packing job of the Playwright adapter");
+    found[0]
+}
+
+/// The records of packing and of staging that concern one package.
+fn records_of_package<'a>(
+    calls: &'a [serde_json::Value],
+    name: &str,
+) -> (Vec<&'a serde_json::Value>, Vec<&'a serde_json::Value>) {
+    let packs = calls
+        .iter()
+        .filter(|call| call["verb"] == "pack" && call["manifest"]["name"] == name)
+        .collect();
+    let stages = calls
+        .iter()
+        .filter(|call| call["verb"] == "stage publish" && manifest_in(&call["bytes"])["name"] == name)
+        .collect();
+    (packs, stages)
+}
+
 fn draft(words: &[String]) -> bool {
     shell::invokes(words, &["gh", "release", "create"])
         && words.iter().any(|w| w == "--draft" || w == "--draft=true")
@@ -715,9 +775,6 @@ fn publish_draft(words: &[String]) -> bool {
     shell::invokes(words, &["gh", "release", "edit"])
         && (words.iter().any(|w| w == "--draft=false")
             || words.windows(2).any(|w| w == ["--draft", "false"]))
-}
-fn stage(words: &[String]) -> bool {
-    shell::invokes(words, &["npm", "stage", "publish"])
 }
 fn nuget(words: &[String]) -> bool {
     shell::invokes(words, &["dotnet", "nuget", "push"])
@@ -759,7 +816,7 @@ fn only_the_draft_and_publication_jobs_write_contents_and_registry_jobs_get_iden
     let all = all_jobs();
     let drafting = role(&all, "draft release", draft);
     let publishing = role(&all, "publish draft", publish_draft);
-    let staging = role(&all, "npm staging", stage);
+    let staging = staging_roles(&all);
     let pushing = role(&all, "NuGet push", nuget);
     assert_eq!(
         all.iter()
@@ -773,14 +830,14 @@ fn only_the_draft_and_publication_jobs_write_contents_and_registry_jobs_get_iden
                 && !deploys_pages(j)
                 && !calls_the_site(j))
             .count(),
-        2
+        staging.len() + usize::from(!staging.iter().any(|s| std::ptr::eq(*s, pushing)))
     );
     for job in &all {
         let mut allowed = Vec::new();
         if std::ptr::eq(job, drafting) || std::ptr::eq(job, publishing) {
             allowed.push("contents");
         }
-        if std::ptr::eq(job, staging) || std::ptr::eq(job, pushing) {
+        if staging.iter().any(|s| std::ptr::eq(job, *s)) || std::ptr::eq(job, pushing) {
             allowed.push("id-token");
         }
         if deploys_pages(job) || calls_the_site(job) {
@@ -1214,38 +1271,15 @@ fn release_workflow() -> Node {
 #[path = "support/release_replay.rs"]
 mod release_replay;
 
-fn npm_job(root: &Node) -> &Node {
-    let found: Vec<_> = jobs(root)
-        .into_iter()
-        .filter(|job| {
-            job.descendants()
-                .into_iter()
-                .filter(|n| n.key == "run")
-                .any(|n| {
-                    expanded_commands(n.value.as_deref().unwrap())
-                        .iter()
-                        .any(|w| stage(w))
-                })
-        })
-        .collect();
-    assert_eq!(
-        found.len(),
-        1,
-        "the release workflow has no unique npm staging job"
-    );
-    found[0]
-}
-
 // behavior-2: The release workflow packs the Playwright adapter with the version of the release and stages that packed file at npm
 #[test]
 fn the_release_stages_exactly_the_packed_file_and_bytes_at_the_tag_version() {
     let root = release_workflow();
-    npm_job(&root);
     let all = all_jobs();
-    let packing = role(&all, "npm packing", |words| {
-        shell::invokes(words, &["npm", "pack"])
-    });
-    let staging = role(&all, "npm staging", stage);
+    let packing_name = playwright_packing_job(&root).key.clone();
+    let staging_name = playwright_staging_job(&root).key.clone();
+    let packing = all.iter().find(|job| job.name == packing_name).unwrap();
+    let staging = all.iter().find(|job| job.name == staging_name).unwrap();
     assert!(
         packing.name == staging.name || depends_on(&all, staging, packing),
         "staging must depend on the job that packs its file"
@@ -1253,11 +1287,7 @@ fn the_release_stages_exactly_the_packed_file_and_bytes_at_the_tag_version() {
     let mut artifacts = Vec::new();
     for version in ["0.2.0-alpha.73", "0.3.1-alpha.5"] {
         let calls = release_replay::pack_and_stage(&root, version);
-        let packs: Vec<_> = calls.iter().filter(|c| c["verb"] == "pack").collect();
-        let stages: Vec<_> = calls
-            .iter()
-            .filter(|c| c["verb"] == "stage publish")
-            .collect();
+        let (packs, stages) = records_of_package(&calls, "@azimuth-sh/playwright");
         assert_eq!(packs.len(), 1, "{calls:#?}");
         assert_eq!(stages.len(), 1, "{calls:#?}");
         assert_eq!(packs[0]["manifest"]["name"], "@azimuth-sh/playwright");
@@ -1293,15 +1323,19 @@ fn only_the_tag_workflow_stages_at_npm_and_no_workflow_publishes_directly() {
         assert_no_npm_publish(&root);
     }
     let all = all_jobs();
-    let staging = role(&all, "npm staging", stage);
-    assert_eq!(staging.workflow, "publish.yml");
-    assert_eq!(
-        all.iter()
-            .flat_map(|job| &job.commands)
-            .filter(|words| stage(words))
-            .count(),
-        1
-    );
+    for staging in staging_roles(&all) {
+        assert_eq!(staging.workflow, "publish.yml");
+        assert_eq!(
+            staging
+                .commands
+                .iter()
+                .filter(|words| release_replay::names_stage(words))
+                .count(),
+            1,
+            "{} does not stage exactly once",
+            staging.name
+        );
+    }
 }
 
 fn npm_credential_name(name: &str) -> bool {
@@ -1428,13 +1462,14 @@ fn npm_credentials(root: &Node, job: &Node, base: &Path) -> Vec<String> {
 #[test]
 fn npm_staging_uses_the_job_identity_without_registry_credentials() {
     let root = release_workflow();
-    let job = npm_job(&root);
-    assert_eq!(
-        job.child("permissions")
-            .and_then(|n| n.child("id-token"))
-            .and_then(|n| n.value.as_deref()),
-        Some("write")
-    );
+    for job in npm_jobs(&root) {
+        assert_eq!(
+            job.child("permissions")
+                .and_then(|n| n.child("id-token"))
+                .and_then(|n| n.value.as_deref()),
+            Some("write")
+        );
+    }
     for job in jobs(&root) {
         let errors = npm_credentials(&root, job, &repository_root());
         assert!(errors.is_empty(), "{errors:#?}");
@@ -1476,10 +1511,9 @@ fn npm_credential_checks_cover_inheritance_and_config_files_without_banning_unre
 #[test]
 fn staging_and_draft_creation_precede_the_release_approval_environment() {
     let all = all_jobs();
-    for job in [
-        role(&all, "npm staging", stage),
-        role(&all, "draft release", draft),
-    ] {
+    let mut before_approval = staging_roles(&all);
+    before_approval.push(role(&all, "draft release", draft));
+    for job in before_approval {
         assert_ne!(
             job.environment.as_deref(),
             Some("release"),
@@ -1556,10 +1590,9 @@ fn assert_draft_attachments(
 fn the_nuget_job_waits_for_both_first_phases() {
     let all = all_jobs();
     let pushing = role(&all, "NuGet push", nuget);
-    for before in [
-        role(&all, "draft release", draft),
-        role(&all, "npm staging", stage),
-    ] {
+    let mut first_phases = staging_roles(&all);
+    first_phases.push(role(&all, "draft release", draft));
+    for before in first_phases {
         assert!(
             depends_on(&all, pushing, before),
             "{} can start before {}",
@@ -1798,13 +1831,14 @@ fn the_nuget_push_can_be_repeated_without_rejecting_an_existing_version() {
 #[test]
 fn npm_staging_uses_only_existing_trusted_external_actions() {
     let root = release_workflow();
-    let job = npm_job(&root);
-    for node in job.descendants().into_iter().filter(|n| n.key == "uses") {
-        let action = node.value.as_deref().unwrap_or_default();
-        assert!(
-            action.starts_with("actions/") || action.starts_with("NuGet/login@"),
-            "the npm job must use no local or untrusted action: {action}"
-        );
+    for job in npm_jobs(&root) {
+        for node in job.descendants().into_iter().filter(|n| n.key == "uses") {
+            let action = node.value.as_deref().unwrap_or_default();
+            assert!(
+                action.starts_with("actions/") || action.starts_with("NuGet/login@"),
+                "the npm job must use no local or untrusted action: {action}"
+            );
+        }
     }
 }
 
@@ -2171,33 +2205,54 @@ fn assert_latest_staging_tag(calls: &[serde_json::Value]) {
         .iter()
         .filter(|call| call["verb"] == "stage publish")
         .collect();
-    assert_eq!(stages.len(), 1, "{calls:#?}");
-    assert_eq!(
-        stages[0]["options"]["tag"],
-        serde_json::json!(["latest"]),
-        "the staging command must explicitly name --tag latest"
-    );
+    assert!(!stages.is_empty(), "{calls:#?}");
+    for stage in &stages {
+        assert_eq!(
+            stages.iter().filter(|other| other["job"] == stage["job"]).count(),
+            1,
+            "{calls:#?}"
+        );
+        assert_eq!(
+            stage["options"]["tag"],
+            serde_json::json!(["latest"]),
+            "the staging command must explicitly name --tag latest"
+        );
+    }
 }
 
 // behavior-2: The staging step names the tag `latest`
 #[test]
 fn the_release_explicitly_stages_the_prerelease_with_the_latest_tag() {
-    let calls = release_replay::pack_and_stage(&release_workflow(), "0.2.0-alpha.73");
+    let root = release_workflow();
+    let calls = release_replay::pack_and_stage(&root, "0.2.0-alpha.73");
     let packed: Vec<_> = calls.iter().filter(|call| call["verb"] == "pack").collect();
-    assert_eq!(packed.len(), 1);
-    assert_eq!(packed[0]["manifest"]["version"], "0.2.0-alpha.73");
+    assert!(!packed.is_empty());
+    for pack in &packed {
+        assert_eq!(pack["manifest"]["version"], "0.2.0-alpha.73");
+    }
+    for job in npm_jobs(&root) {
+        assert!(
+            calls.iter().any(|call| call["verb"] == "stage publish" && call["job"] == job.key),
+            "{} did not stage",
+            job.key
+        );
+    }
     assert_latest_staging_tag(&calls);
 }
 
 fn assert_staging_npm_installation(root: &Node, calls: &[serde_json::Value]) {
-    let job = npm_job(root);
+    for job in npm_jobs(root) {
+        assert_job_installs_its_npm_before_staging(job, calls);
+    }
+}
+
+fn assert_job_installs_its_npm_before_staging(job: &Node, calls: &[serde_json::Value]) {
     let stages: Vec<_> = calls
         .iter()
-        .filter(|call| call["verb"] == "stage publish")
+        .filter(|call| call["verb"] == "stage publish" && call["job"] == job.key)
         .collect();
     assert_eq!(stages.len(), 1, "{calls:#?}");
     let stage = stages[0];
-    assert_eq!(stage["job"], job.key);
     let stage_step = stage["step"].as_u64().unwrap();
     let install = calls
         .iter()
@@ -2467,11 +2522,7 @@ fn the_draft_job_refuses_an_existing_published_release() {
 fn staging_uses_the_printed_packed_filename_even_with_another_tarball_in_checkout() {
     let calls =
         release_replay::pack_and_stage_with_stray_tarball(&release_workflow(), "0.2.0-alpha.73");
-    let packs: Vec<_> = calls.iter().filter(|call| call["verb"] == "pack").collect();
-    let stages: Vec<_> = calls
-        .iter()
-        .filter(|call| call["verb"] == "stage publish")
-        .collect();
+    let (packs, stages) = records_of_package(&calls, "@azimuth-sh/playwright");
     assert_eq!(packs.len(), 1);
     assert_eq!(stages.len(), 1);
     assert_eq!(stages[0]["bytes"], packs[0]["bytes"]);
@@ -2548,11 +2599,15 @@ mod npm_installation;
 fn staging_npm_installation_stays_in_a_job_owned_folder() {
     let root = release_workflow();
     let calls = release_replay::pack_and_stage(&root, "0.2.0-alpha.73");
-    let installed = npm_installation::installation(&calls);
-    assert!(
-        installed["prefix"].is_string(),
-        "no owned installation folder was recorded"
-    );
+    for job in npm_jobs(&root) {
+        let own = calls_of_job(&calls, &job.key);
+        let installed = npm_installation::installation(&own);
+        assert!(
+            installed["prefix"].is_string(),
+            "no owned installation folder was recorded for {}",
+            job.key
+        );
+    }
 }
 
 // behavior-2: The job that stages installs its npm by running a script of the repository, and the workflow names no npm version itself
@@ -2565,32 +2620,34 @@ fn staging_installs_npm_from_the_repository_script_without_an_inline_version() {
 #[test]
 fn later_staging_steps_use_the_npm_installed_by_the_script() {
     let root = release_workflow();
-    npm_installation::install_step(npm_job(&root));
-    let calls = release_replay::pack_and_stage(&root, "0.2.0-alpha.73");
-    let installed = npm_installation::installation(&calls);
-    let installer = installed["step"].as_u64().unwrap();
-    assert!(npm_installation::invokes_script(
-        npm_job(&root).child("steps").unwrap().children[installer as usize]
-            .child("run")
-            .unwrap()
-            .value
-            .as_deref()
-            .unwrap()
-    ));
-    let later: Vec<_> = calls
-        .iter()
-        .filter(|call| {
-            call["job"] == npm_job(&root).key
-                && call["step"].as_u64().is_some_and(|step| step > installer)
-                && call["executable"].is_string()
-        })
-        .collect();
-    assert!(later.iter().any(|call| call["verb"] == "stage publish"));
-    for call in later {
-        assert_eq!(
-            call["executable"], installed["installed_executable"],
-            "a later step used another npm: {call:#}"
-        );
+    let all_calls = release_replay::pack_and_stage(&root, "0.2.0-alpha.73");
+    for job in npm_jobs(&root) {
+        npm_installation::install_step(job);
+        let calls = calls_of_job(&all_calls, &job.key);
+        let installed = npm_installation::installation(&calls);
+        let installer = installed["step"].as_u64().unwrap();
+        assert!(npm_installation::invokes_script(
+            job.child("steps").unwrap().children[installer as usize]
+                .child("run")
+                .unwrap()
+                .value
+                .as_deref()
+                .unwrap()
+        ));
+        let later: Vec<_> = calls
+            .iter()
+            .filter(|call| {
+                call["step"].as_u64().is_some_and(|step| step > installer)
+                    && call["executable"].is_string()
+            })
+            .collect();
+        assert!(later.iter().any(|call| call["verb"] == "stage publish"));
+        for call in later {
+            assert_eq!(
+                call["executable"], installed["installed_executable"],
+                "a later step used another npm: {call:#}"
+            );
+        }
     }
 }
 
