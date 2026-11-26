@@ -22,14 +22,18 @@ The tests pack each library into a local folder and read the description inside 
 
 | Behavior | Quote from the design |
 | --- | --- |
-| The NuGet package of the library names a license | carry their license, site, source repository and a short readme |
-| The NuGet package of the library names the site of the project | carry their license, site, source repository and a short readme |
-| The NuGet package of the library names the source repository | carry their license, site, source repository and a short readme |
-| The NuGet package of the library carries a readme | carry their license, site, source repository and a short readme |
-| The npm package of the library names a license | carry their license, site, source repository and a short readme |
-| The npm package of the library names the site of the project | carry their license, site, source repository and a short readme |
-| The npm package of the library names the source repository | carry their license, site, source repository and a short readme |
-| The npm package of the library carries a readme | carry their license, site, source repository and a short readme |
+| The NuGet package of the library names the license `Apache-2.0` | For `Azimuth.Xunit` that is the license `Apache-2.0`, the site `https://azimuth.sh`, the repository `https://github.com/azimuth-sh/azimuth` and the author `Azimuth`. |
+| The NuGet package of the library names the site `https://azimuth.sh` | For `Azimuth.Xunit` that is the license `Apache-2.0`, the site `https://azimuth.sh`, the repository `https://github.com/azimuth-sh/azimuth` and the author `Azimuth`. |
+| The NuGet package of the library names the repository `https://github.com/azimuth-sh/azimuth` | For `Azimuth.Xunit` that is the license `Apache-2.0`, the site `https://azimuth.sh`, the repository `https://github.com/azimuth-sh/azimuth` and the author `Azimuth`. |
+| The NuGet package of the library names the author `Azimuth` | For `Azimuth.Xunit` that is the license `Apache-2.0`, the site `https://azimuth.sh`, the repository `https://github.com/azimuth-sh/azimuth` and the author `Azimuth`. |
+| The NuGet package of the library names the same license, site, repository and author as the package of its stack's adapter | They name the same license, site, repository and author as the adapters. |
+| The NuGet package of the library carries a readme | a short readme explaining registration, mapping and reporting |
+| The npm package of the library names the license `Apache-2.0` | For `Azimuth.Xunit` that is the license `Apache-2.0`, the site `https://azimuth.sh`, the repository `https://github.com/azimuth-sh/azimuth` and the author `Azimuth`. |
+| The npm package of the library names the site `https://azimuth.sh` | For `Azimuth.Xunit` that is the license `Apache-2.0`, the site `https://azimuth.sh`, the repository `https://github.com/azimuth-sh/azimuth` and the author `Azimuth`. |
+| The npm package of the library names the repository `https://github.com/azimuth-sh/azimuth` | For `Azimuth.Xunit` that is the license `Apache-2.0`, the site `https://azimuth.sh`, the repository `https://github.com/azimuth-sh/azimuth` and the author `Azimuth`. |
+| The npm package of the library names the author `Azimuth` | For `Azimuth.Xunit` that is the license `Apache-2.0`, the site `https://azimuth.sh`, the repository `https://github.com/azimuth-sh/azimuth` and the author `Azimuth`. |
+| The npm package of the library names the same license, site, repository and author as the package of its stack's adapter | They name the same license, site, repository and author as the adapters. |
+| The npm package of the library carries a readme | a short readme explaining registration, mapping and reporting |
 | The readme of each library mentions registration, mapping and reporting | a short readme explaining registration, mapping and reporting |
 
 ## Rows of prose: the readmes of the libraries
@@ -54,28 +58,31 @@ The tests pack each library into a local folder and read the description inside 
 
 | Behavior | Quote from the design |
 | --- | --- |
-| The workflow stages `@azimuth-sh/context` in the job of the first phase, beside the Playwright package | `@azimuth-sh/context` goes to npm beside the Playwright package. |
-| The Playwright package is still packed and staged with the version of the release | `@azimuth-sh/context` goes to npm beside the Playwright package. |
-| The library is staged with the tag `latest`, also while the version says alpha | Every npm package is staged in step 1 with `latest` and awaits its own approval at npm. |
+| The Playwright adapter is staged by one job and `@azimuth-sh/context` by another, and no job stages both | At npm each package is staged by a job of its own, so a run of the failed jobs stages only the packages that failed. |
+| Neither npm staging job needs the other, so a run of the failed jobs repeats only the failed one | At npm each package is staged by a job of its own, so a run of the failed jobs stages only the packages that failed. |
+| Both npm staging jobs run in the first phase, before the approval is asked for | Every npm package is staged in step 1 with `latest` and awaits its own approval at npm. |
+| Each package is staged from the file packed with the version of the release | `@azimuth-sh/context` goes to npm beside the Playwright package. |
+| Each package is staged with the tag `latest`, also while the version says alpha | Every npm package is staged in step 1 with `latest` and awaits its own approval at npm. |
 | The staging step names `latest` for every npm package | The step names `latest`, also while the version says alpha, as the GitHub release is the latest normal one. |
 | The workflow stages with `npm stage publish` and has no `npm publish` for either package | The workflow runs `npm stage publish` and never `npm publish` |
-| No job after the GitHub approval stages or publishes a package at npm | It does not replace a staged version or publish it itself. |
-| The workflow holds no stored registry key for the library | The workflow stores no registry key |
-| Only the staging job asks for the registry identity at npm, and it asks for nothing that publishes | The workflow keeps its staging-only identity at npm, its one job after GitHub approval, and the rule that a tag is never moved. |
+| No job after the GitHub approval stages or publishes a package at npm | The job does not replace a staged version or publish it itself. |
+| The workflow holds no stored registry key for either package | The workflow stores no registry key |
+| Only the npm staging jobs ask for the registry identity at npm, and it only stages | The workflow keeps its staging-only identity at npm, its one job after GitHub approval, and the rule that a tag is never moved. |
 
 ## npm: the retry of each package
 
-The retry at npm is a release script run with the packed files, as the steps that can run on a developer's machine are scripts. Its tests run it with a stand-in for the registry that reports what is staged or published.
+The retry at npm is the behavior of the staging job of one package. Its tests read the workflow as text and run the release script of the job, where there is one, with a stand-in for the registry that serves published versions and refuses an already staged one.
 
 | Behavior | Quote from the design |
 | --- | --- |
-| A package whose packed file matches a staged version is kept, and nothing is staged for it | At npm it keeps a matching staged or published version and stages each missing one |
-| A package whose packed file matches a published version is kept, and nothing is staged for it | At npm it keeps a matching staged or published version and stages each missing one |
-| A package that has no staged or published version of the release is staged | At npm it keeps a matching staged or published version and stages each missing one |
-| With one package kept and one missing, only the missing one is staged | The two npm packages keep their staged versions and still wait for approval at npm. |
-| A packed file that differs under the same name and version stops the release, and stages nothing | a different packed file under the same name and version stops the release |
-| The retry never replaces a staged version | It does not replace a staged version or publish it itself. |
-| The retry never publishes a staged version | It does not replace a staged version or publish it itself. |
+| The job reads the published version of its package without any registry credential | That job reads the package's published version without credentials |
+| A published version with the integrity of the packed file is kept, and nothing is staged | one with the packed file's integrity is kept |
+| A published version with another integrity stops the release, and nothing is staged | a different one stops the release |
+| A version that is not published is staged | A version that is not published is staged. |
+| When npm refuses a version as already staged, the job stops and names that version | when npm refuses a version as already staged, the job stops and names it |
+| The job prints the shasum of the packed file | a person compares its shasum at npm with the one the job printed |
+| The job never replaces a staged version | The job does not replace a staged version or publish it itself. |
+| The job never publishes a staged version | The job does not replace a staged version or publish it itself. |
 
 ## Tags
 
@@ -94,15 +101,16 @@ These rows have no test in the repository. The registries and the approvals are 
 | `@azimuth-sh/context` is a staged version at npm after step 1, and is not public until a person approves it at npm | Every npm package is staged in step 1 with `latest` and awaits its own approval at npm. |
 | Both npm packages wait for their own approval at npm | The two npm packages keep their staged versions and still wait for approval at npm. |
 | After the approval at npm, `npm install @azimuth-sh/context` with no version gives the newest release | So a person who installs the package without a version gets the newest release. |
+| A person reserves `@azimuth-sh/context` at npm with a code-free prerelease published by hand, and binds trusted publishing before the tag that first stages it | A new package under the scope is published by a person the first time, because the registry binds trusted publishing to a package that exists. |
 | A person makes the first publication of `@azimuth-sh/context` at npm | A person makes the first publication of `@azimuth-sh/context` at npm |
 | Trusted publishing is bound to that existing package, set to allow only staging | then binds trusted publishing to that existing package, as for every new package under the scope. |
 | The trusted publisher of the package allows only staging, so the workflow alone cannot put a version on npm | the trusted publisher at npm is set to allow only that. |
 | When NuGet refuses one package, a repeated run of the failed job pushes the missing package and keeps the one already there | The retry skips the context library and pushes the missing package. |
 | A repeated run leaves the staged versions at npm as they were | The two npm packages keep their staged versions and still wait for approval at npm. |
+| A version that npm refuses as already staged stops its job, and a person compares the shasum at npm with the printed one, then approves or rejects it | a person compares its shasum at npm with the one the job printed, then approves or rejects it |
 | A fault in the workflow of a tag is corrected by the next version, and the tag stays without a release | The correction gets the next version, the tag stays without a release, and a person deletes its draft. |
 
 ## What the design does not answer yet
 
-- How the workflow learns what is staged or published at npm, and what makes a packed file "matching" (the bytes, the integrity hash or the contents). The rows of the retry at npm quote the sentence that promises the outcome and not the means.
-- The values of the license, the site and the repository of the two libraries. The design states them for the adapters only, so the rows above name that each package carries them and not what they are.
-- The order of the first publication at npm and the first tag. Staging a package that does not exist at npm may fail, and the design does not say that the person publishes before the tag.
+- Whether the retry at npm is a release script in `release/` or steps of the workflow. The design says only that "that job" reads the published version, compares the integrity, stages and prints the shasum. The rows are written so that either shows them: the workflow file, and a script where there is one.
+- How the job learns the integrity of the published version without credentials, and how it tells npm's refusal as already staged from another refusal.
