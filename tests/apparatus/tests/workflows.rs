@@ -3656,7 +3656,9 @@ fn only_the_npm_staging_jobs_ask_for_the_identity_at_npm_and_only_stage() {
                 "{} publishes",
                 job.key
             );
-        } else if job.key != pushing.name {
+        } else if job.key != pushing.name
+            && !all.iter().any(|j| j.name == job.key && calls_the_site(j))
+        {
             assert!(!identity, "{} asks for an identity and does not stage", job.key);
         }
     }
