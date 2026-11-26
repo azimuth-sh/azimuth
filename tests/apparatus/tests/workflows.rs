@@ -16,6 +16,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use azimuth_tests::{parse_toml, run_with_time_limit, Output};
+use serde_json::Value;
 
 #[path = "support/shell.rs"]
 mod shell;
@@ -522,6 +523,8 @@ struct Job {
     environment: Option<String>,
     calls: Option<String>,
     needs: Vec<String>,
+    /// Whether the job stages at npm, directly or through the script of `release/`.
+    stages_at_npm: bool,
 }
 
 const SITE_WORKFLOW: &str = "./.github/workflows/site.yml";
@@ -594,6 +597,7 @@ fn all_jobs() -> Vec<Job> {
                 }),
                 calls: job.child("uses").and_then(|node| node.value.clone()),
                 needs,
+                stages_at_npm: release_replay::stages_npm(job),
             });
         }
     }
@@ -706,6 +710,63 @@ fn role<'a>(all: &'a [Job], name: &str, matches: impl Fn(&[String]) -> bool) -> 
     );
     found[0]
 }
+/// Every job that stages at npm, at least one.
+fn staging_roles(all: &[Job]) -> Vec<&Job> {
+    let found: Vec<&Job> = all.iter().filter(|job| job.stages_at_npm).collect();
+    assert!(!found.is_empty(), "no job stages at npm");
+    found
+}
+
+/// Every job of the workflow that stages at npm, at least one.
+fn npm_jobs(root: &Node) -> Vec<&Node> {
+    let found: Vec<&Node> = jobs(root)
+        .into_iter()
+        .filter(|job| release_replay::stages_npm(job))
+        .collect();
+    assert!(!found.is_empty(), "the release workflow has no npm staging job");
+    found
+}
+
+fn calls_of_job(calls: &[serde_json::Value], job: &str) -> Vec<serde_json::Value> {
+    calls.iter().filter(|call| call["job"] == job).cloned().collect()
+}
+
+/// The one job that stages the Playwright adapter: the staging job that does not name the
+/// context library's folder.
+fn playwright_staging_job(root: &Node) -> &Node {
+    let found: Vec<&Node> = npm_jobs(root)
+        .into_iter()
+        .filter(|job| !job_text(job).contains("libraries/node"))
+        .collect();
+    assert_eq!(found.len(), 1, "no unique staging job of the Playwright adapter");
+    found[0]
+}
+
+fn playwright_packing_job(root: &Node) -> &Node {
+    let found: Vec<&Node> = jobs(root)
+        .into_iter()
+        .filter(|job| release_replay::packs_npm(job) && !job_text(job).contains("libraries/node"))
+        .collect();
+    assert_eq!(found.len(), 1, "no unique packing job of the Playwright adapter");
+    found[0]
+}
+
+/// The records of packing and of staging that concern one package.
+fn records_of_package<'a>(
+    calls: &'a [serde_json::Value],
+    name: &str,
+) -> (Vec<&'a serde_json::Value>, Vec<&'a serde_json::Value>) {
+    let packs = calls
+        .iter()
+        .filter(|call| call["verb"] == "pack" && call["manifest"]["name"] == name)
+        .collect();
+    let stages = calls
+        .iter()
+        .filter(|call| call["verb"] == "stage publish" && manifest_in(&call["bytes"])["name"] == name)
+        .collect();
+    (packs, stages)
+}
+
 fn draft(words: &[String]) -> bool {
     shell::invokes(words, &["gh", "release", "create"])
         && words.iter().any(|w| w == "--draft" || w == "--draft=true")
@@ -714,9 +775,6 @@ fn publish_draft(words: &[String]) -> bool {
     shell::invokes(words, &["gh", "release", "edit"])
         && (words.iter().any(|w| w == "--draft=false")
             || words.windows(2).any(|w| w == ["--draft", "false"]))
-}
-fn stage(words: &[String]) -> bool {
-    shell::invokes(words, &["npm", "stage", "publish"])
 }
 fn nuget(words: &[String]) -> bool {
     shell::invokes(words, &["dotnet", "nuget", "push"])
@@ -758,7 +816,7 @@ fn only_the_draft_and_publication_jobs_write_contents_and_registry_jobs_get_iden
     let all = all_jobs();
     let drafting = role(&all, "draft release", draft);
     let publishing = role(&all, "publish draft", publish_draft);
-    let staging = role(&all, "npm staging", stage);
+    let staging = staging_roles(&all);
     let pushing = role(&all, "NuGet push", nuget);
     assert_eq!(
         all.iter()
@@ -772,14 +830,14 @@ fn only_the_draft_and_publication_jobs_write_contents_and_registry_jobs_get_iden
                 && !deploys_pages(j)
                 && !calls_the_site(j))
             .count(),
-        2
+        staging.len() + usize::from(!staging.iter().any(|s| std::ptr::eq(*s, pushing)))
     );
     for job in &all {
         let mut allowed = Vec::new();
         if std::ptr::eq(job, drafting) || std::ptr::eq(job, publishing) {
             allowed.push("contents");
         }
-        if std::ptr::eq(job, staging) || std::ptr::eq(job, pushing) {
+        if staging.iter().any(|s| std::ptr::eq(job, *s)) || std::ptr::eq(job, pushing) {
             allowed.push("id-token");
         }
         if deploys_pages(job) || calls_the_site(job) {
@@ -1213,38 +1271,15 @@ fn release_workflow() -> Node {
 #[path = "support/release_replay.rs"]
 mod release_replay;
 
-fn npm_job(root: &Node) -> &Node {
-    let found: Vec<_> = jobs(root)
-        .into_iter()
-        .filter(|job| {
-            job.descendants()
-                .into_iter()
-                .filter(|n| n.key == "run")
-                .any(|n| {
-                    expanded_commands(n.value.as_deref().unwrap())
-                        .iter()
-                        .any(|w| stage(w))
-                })
-        })
-        .collect();
-    assert_eq!(
-        found.len(),
-        1,
-        "the release workflow has no unique npm staging job"
-    );
-    found[0]
-}
-
 // behavior-2: The release workflow packs the Playwright adapter with the version of the release and stages that packed file at npm
 #[test]
 fn the_release_stages_exactly_the_packed_file_and_bytes_at_the_tag_version() {
     let root = release_workflow();
-    npm_job(&root);
     let all = all_jobs();
-    let packing = role(&all, "npm packing", |words| {
-        shell::invokes(words, &["npm", "pack"])
-    });
-    let staging = role(&all, "npm staging", stage);
+    let packing_name = playwright_packing_job(&root).key.clone();
+    let staging_name = playwright_staging_job(&root).key.clone();
+    let packing = all.iter().find(|job| job.name == packing_name).unwrap();
+    let staging = all.iter().find(|job| job.name == staging_name).unwrap();
     assert!(
         packing.name == staging.name || depends_on(&all, staging, packing),
         "staging must depend on the job that packs its file"
@@ -1252,11 +1287,7 @@ fn the_release_stages_exactly_the_packed_file_and_bytes_at_the_tag_version() {
     let mut artifacts = Vec::new();
     for version in ["0.2.0-alpha.73", "0.3.1-alpha.5"] {
         let calls = release_replay::pack_and_stage(&root, version);
-        let packs: Vec<_> = calls.iter().filter(|c| c["verb"] == "pack").collect();
-        let stages: Vec<_> = calls
-            .iter()
-            .filter(|c| c["verb"] == "stage publish")
-            .collect();
+        let (packs, stages) = records_of_package(&calls, "@azimuth-sh/playwright");
         assert_eq!(packs.len(), 1, "{calls:#?}");
         assert_eq!(stages.len(), 1, "{calls:#?}");
         assert_eq!(packs[0]["manifest"]["name"], "@azimuth-sh/playwright");
@@ -1292,15 +1323,19 @@ fn only_the_tag_workflow_stages_at_npm_and_no_workflow_publishes_directly() {
         assert_no_npm_publish(&root);
     }
     let all = all_jobs();
-    let staging = role(&all, "npm staging", stage);
-    assert_eq!(staging.workflow, "publish.yml");
-    assert_eq!(
-        all.iter()
-            .flat_map(|job| &job.commands)
-            .filter(|words| stage(words))
-            .count(),
-        1
-    );
+    for staging in staging_roles(&all) {
+        assert_eq!(staging.workflow, "publish.yml");
+        assert_eq!(
+            staging
+                .commands
+                .iter()
+                .filter(|words| release_replay::names_stage(words))
+                .count(),
+            1,
+            "{} does not stage exactly once",
+            staging.name
+        );
+    }
 }
 
 fn npm_credential_name(name: &str) -> bool {
@@ -1427,13 +1462,14 @@ fn npm_credentials(root: &Node, job: &Node, base: &Path) -> Vec<String> {
 #[test]
 fn npm_staging_uses_the_job_identity_without_registry_credentials() {
     let root = release_workflow();
-    let job = npm_job(&root);
-    assert_eq!(
-        job.child("permissions")
-            .and_then(|n| n.child("id-token"))
-            .and_then(|n| n.value.as_deref()),
-        Some("write")
-    );
+    for job in npm_jobs(&root) {
+        assert_eq!(
+            job.child("permissions")
+                .and_then(|n| n.child("id-token"))
+                .and_then(|n| n.value.as_deref()),
+            Some("write")
+        );
+    }
     for job in jobs(&root) {
         let errors = npm_credentials(&root, job, &repository_root());
         assert!(errors.is_empty(), "{errors:#?}");
@@ -1475,10 +1511,9 @@ fn npm_credential_checks_cover_inheritance_and_config_files_without_banning_unre
 #[test]
 fn staging_and_draft_creation_precede_the_release_approval_environment() {
     let all = all_jobs();
-    for job in [
-        role(&all, "npm staging", stage),
-        role(&all, "draft release", draft),
-    ] {
+    let mut before_approval = staging_roles(&all);
+    before_approval.push(role(&all, "draft release", draft));
+    for job in before_approval {
         assert_ne!(
             job.environment.as_deref(),
             Some("release"),
@@ -1555,10 +1590,9 @@ fn assert_draft_attachments(
 fn the_nuget_job_waits_for_both_first_phases() {
     let all = all_jobs();
     let pushing = role(&all, "NuGet push", nuget);
-    for before in [
-        role(&all, "draft release", draft),
-        role(&all, "npm staging", stage),
-    ] {
+    let mut first_phases = staging_roles(&all);
+    first_phases.push(role(&all, "draft release", draft));
+    for before in first_phases {
         assert!(
             depends_on(&all, pushing, before),
             "{} can start before {}",
@@ -1797,13 +1831,14 @@ fn the_nuget_push_can_be_repeated_without_rejecting_an_existing_version() {
 #[test]
 fn npm_staging_uses_only_existing_trusted_external_actions() {
     let root = release_workflow();
-    let job = npm_job(&root);
-    for node in job.descendants().into_iter().filter(|n| n.key == "uses") {
-        let action = node.value.as_deref().unwrap_or_default();
-        assert!(
-            action.starts_with("actions/") || action.starts_with("NuGet/login@"),
-            "the npm job must use no local or untrusted action: {action}"
-        );
+    for job in npm_jobs(&root) {
+        for node in job.descendants().into_iter().filter(|n| n.key == "uses") {
+            let action = node.value.as_deref().unwrap_or_default();
+            assert!(
+                action.starts_with("actions/") || action.starts_with("NuGet/login@"),
+                "the npm job must use no local or untrusted action: {action}"
+            );
+        }
     }
 }
 
@@ -2170,33 +2205,54 @@ fn assert_latest_staging_tag(calls: &[serde_json::Value]) {
         .iter()
         .filter(|call| call["verb"] == "stage publish")
         .collect();
-    assert_eq!(stages.len(), 1, "{calls:#?}");
-    assert_eq!(
-        stages[0]["options"]["tag"],
-        serde_json::json!(["latest"]),
-        "the staging command must explicitly name --tag latest"
-    );
+    assert!(!stages.is_empty(), "{calls:#?}");
+    for stage in &stages {
+        assert_eq!(
+            stages.iter().filter(|other| other["job"] == stage["job"]).count(),
+            1,
+            "{calls:#?}"
+        );
+        assert_eq!(
+            stage["options"]["tag"],
+            serde_json::json!(["latest"]),
+            "the staging command must explicitly name --tag latest"
+        );
+    }
 }
 
 // behavior-2: The staging step names the tag `latest`
 #[test]
 fn the_release_explicitly_stages_the_prerelease_with_the_latest_tag() {
-    let calls = release_replay::pack_and_stage(&release_workflow(), "0.2.0-alpha.73");
+    let root = release_workflow();
+    let calls = release_replay::pack_and_stage(&root, "0.2.0-alpha.73");
     let packed: Vec<_> = calls.iter().filter(|call| call["verb"] == "pack").collect();
-    assert_eq!(packed.len(), 1);
-    assert_eq!(packed[0]["manifest"]["version"], "0.2.0-alpha.73");
+    assert!(!packed.is_empty());
+    for pack in &packed {
+        assert_eq!(pack["manifest"]["version"], "0.2.0-alpha.73");
+    }
+    for job in npm_jobs(&root) {
+        assert!(
+            calls.iter().any(|call| call["verb"] == "stage publish" && call["job"] == job.key),
+            "{} did not stage",
+            job.key
+        );
+    }
     assert_latest_staging_tag(&calls);
 }
 
 fn assert_staging_npm_installation(root: &Node, calls: &[serde_json::Value]) {
-    let job = npm_job(root);
+    for job in npm_jobs(root) {
+        assert_job_installs_its_npm_before_staging(job, calls);
+    }
+}
+
+fn assert_job_installs_its_npm_before_staging(job: &Node, calls: &[serde_json::Value]) {
     let stages: Vec<_> = calls
         .iter()
-        .filter(|call| call["verb"] == "stage publish")
+        .filter(|call| call["verb"] == "stage publish" && call["job"] == job.key)
         .collect();
     assert_eq!(stages.len(), 1, "{calls:#?}");
     let stage = stages[0];
-    assert_eq!(stage["job"], job.key);
     let stage_step = stage["step"].as_u64().unwrap();
     let install = calls
         .iter()
@@ -2466,11 +2522,7 @@ fn the_draft_job_refuses_an_existing_published_release() {
 fn staging_uses_the_printed_packed_filename_even_with_another_tarball_in_checkout() {
     let calls =
         release_replay::pack_and_stage_with_stray_tarball(&release_workflow(), "0.2.0-alpha.73");
-    let packs: Vec<_> = calls.iter().filter(|call| call["verb"] == "pack").collect();
-    let stages: Vec<_> = calls
-        .iter()
-        .filter(|call| call["verb"] == "stage publish")
-        .collect();
+    let (packs, stages) = records_of_package(&calls, "@azimuth-sh/playwright");
     assert_eq!(packs.len(), 1);
     assert_eq!(stages.len(), 1);
     assert_eq!(stages[0]["bytes"], packs[0]["bytes"]);
@@ -2547,11 +2599,15 @@ mod npm_installation;
 fn staging_npm_installation_stays_in_a_job_owned_folder() {
     let root = release_workflow();
     let calls = release_replay::pack_and_stage(&root, "0.2.0-alpha.73");
-    let installed = npm_installation::installation(&calls);
-    assert!(
-        installed["prefix"].is_string(),
-        "no owned installation folder was recorded"
-    );
+    for job in npm_jobs(&root) {
+        let own = calls_of_job(&calls, &job.key);
+        let installed = npm_installation::installation(&own);
+        assert!(
+            installed["prefix"].is_string(),
+            "no owned installation folder was recorded for {}",
+            job.key
+        );
+    }
 }
 
 // behavior-2: The job that stages installs its npm by running a script of the repository, and the workflow names no npm version itself
@@ -2564,32 +2620,34 @@ fn staging_installs_npm_from_the_repository_script_without_an_inline_version() {
 #[test]
 fn later_staging_steps_use_the_npm_installed_by_the_script() {
     let root = release_workflow();
-    npm_installation::install_step(npm_job(&root));
-    let calls = release_replay::pack_and_stage(&root, "0.2.0-alpha.73");
-    let installed = npm_installation::installation(&calls);
-    let installer = installed["step"].as_u64().unwrap();
-    assert!(npm_installation::invokes_script(
-        npm_job(&root).child("steps").unwrap().children[installer as usize]
-            .child("run")
-            .unwrap()
-            .value
-            .as_deref()
-            .unwrap()
-    ));
-    let later: Vec<_> = calls
-        .iter()
-        .filter(|call| {
-            call["job"] == npm_job(&root).key
-                && call["step"].as_u64().is_some_and(|step| step > installer)
-                && call["executable"].is_string()
-        })
-        .collect();
-    assert!(later.iter().any(|call| call["verb"] == "stage publish"));
-    for call in later {
-        assert_eq!(
-            call["executable"], installed["installed_executable"],
-            "a later step used another npm: {call:#}"
-        );
+    let all_calls = release_replay::pack_and_stage(&root, "0.2.0-alpha.73");
+    for job in npm_jobs(&root) {
+        npm_installation::install_step(job);
+        let calls = calls_of_job(&all_calls, &job.key);
+        let installed = npm_installation::installation(&calls);
+        let installer = installed["step"].as_u64().unwrap();
+        assert!(npm_installation::invokes_script(
+            job.child("steps").unwrap().children[installer as usize]
+                .child("run")
+                .unwrap()
+                .value
+                .as_deref()
+                .unwrap()
+        ));
+        let later: Vec<_> = calls
+            .iter()
+            .filter(|call| {
+                call["step"].as_u64().is_some_and(|step| step > installer)
+                    && call["executable"].is_string()
+            })
+            .collect();
+        assert!(later.iter().any(|call| call["verb"] == "stage publish"));
+        for call in later {
+            assert_eq!(
+                call["executable"], installed["installed_executable"],
+                "a later step used another npm: {call:#}"
+            );
+        }
     }
 }
 
@@ -3006,4 +3064,695 @@ fn a_manual_site_start_on_main_reaches_publication() {
         attempt.uploaded && attempt.deployed,
         "the manual main start did not reach site publication"
     );
+}
+
+// ---------------------------------------------------------------------------------------------
+// docs/increments/contexts-libraries-release.md: the two context libraries in the release.
+//
+// The design names no job, step or script, so each test finds its jobs by what they do. The jobs
+// that pack or stage are replayed with recorders for `dotnet`, `npm` and `gh` (see
+// `support/release_replay.rs`), and what they recorded is asserted.
+// ---------------------------------------------------------------------------------------------
+
+const CONTEXT_NUGET_FILE: &str = "Azimuth.Context";
+const CONTEXT_NPM: &str = "@azimuth-sh/context";
+const PLAYWRIGHT_NPM: &str = "@azimuth-sh/playwright";
+const LIBRARY_VERSIONS: [&str; 2] = ["0.2.0-alpha.73", "0.3.1-alpha.5"];
+
+/// The text of every `run` step of a job, with the text of each script of `release/` it calls.
+fn job_text(job: &Node) -> String {
+    job.descendants()
+        .into_iter()
+        .filter(|n| n.key == "run")
+        .flat_map(|n| run_step_sources(n.value.as_deref().unwrap_or_default()))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn job_by_name<'a>(root: &'a Node, name: &str) -> &'a Node {
+    jobs(root)
+        .into_iter()
+        .find(|job| job.key == name)
+        .unwrap_or_else(|| panic!("no job {name}"))
+}
+
+/// The one job that pushes to NuGet, which is also the job that names the approval.
+fn approval_job<'a>(root: &'a Node, all: &[Job]) -> &'a Node {
+    job_by_name(root, &role(all, "NuGet push", nuget).name)
+}
+
+fn index_of_step(job: &Node, matches: impl Fn(&[String]) -> bool) -> Option<usize> {
+    job.child("steps")?.children.iter().position(|step| {
+        step.child("run")
+            .and_then(|run| run.value.as_deref())
+            .is_some_and(|script| expanded_commands(script).iter().any(|words| matches(words)))
+    })
+}
+
+fn stage_jobs(root: &Node) -> Vec<&Node> {
+    jobs(root)
+        .into_iter()
+        .filter(|job| release_replay::stages_npm(job))
+        .collect()
+}
+
+fn manifest_in(bytes: &Value) -> Value {
+    let bytes: Vec<u8> = bytes
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|byte| byte.as_u64().unwrap() as u8)
+        .collect();
+    serde_json::from_slice::<Value>(&bytes).unwrap()["packed_manifest"].clone()
+}
+
+struct Staged {
+    job: String,
+    name: String,
+    version: String,
+    tags: Vec<String>,
+    bytes: Value,
+}
+
+fn staged_in(calls: &[Value]) -> Vec<Staged> {
+    calls
+        .iter()
+        .filter(|call| call["verb"] == "stage publish")
+        .map(|call| {
+            let manifest = manifest_in(&call["bytes"]);
+            Staged {
+                job: call["job"].as_str().unwrap().to_string(),
+                name: manifest["name"].as_str().unwrap().to_string(),
+                version: manifest["version"].as_str().unwrap().to_string(),
+                tags: call["options"]["tag"]
+                    .as_array()
+                    .map(|tags| tags.iter().map(|t| t.as_str().unwrap().to_string()).collect())
+                    .unwrap_or_default(),
+                bytes: call["bytes"].clone(),
+            }
+        })
+        .collect()
+}
+
+fn packed_in(calls: &[Value]) -> Vec<&Value> {
+    calls.iter().filter(|call| call["verb"] == "pack").collect()
+}
+
+fn the_package<'a>(packs: &[&'a Value], name: &str) -> &'a Value {
+    let found: Vec<_> = packs
+        .iter()
+        .filter(|call| call["manifest"]["name"] == name)
+        .collect();
+    assert_eq!(found.len(), 1, "no unique pack of {name}: {packs:#?}");
+    found[0]
+}
+
+fn nuget_file(version: &str) -> (String, String) {
+    (
+        format!("{CONTEXT_NUGET_FILE}.{version}.nupkg"),
+        format!("Azimuth.Xunit.{version}.nupkg"),
+    )
+}
+
+// behavior-contexts-libraries-release: The release workflow packs `Azimuth.Context` with the version of the release
+#[test]
+fn the_release_packs_the_dotnet_library_with_the_version_of_the_release() {
+    let root = release_workflow();
+    let packing: Vec<_> = jobs(&root)
+        .into_iter()
+        .flat_map(|job| {
+            job.descendants()
+                .into_iter()
+                .filter(|n| n.key == "run")
+                .flat_map(|n| expanded_commands(n.value.as_deref().unwrap_or_default()))
+                .filter(|words| {
+                    shell::invokes(words, &["dotnet", "pack"])
+                        && words.iter().any(|word| word.contains("Azimuth.Context"))
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert_eq!(packing.len(), 1, "no unique pack of Azimuth.Context: {packing:?}");
+    assert!(
+        packing[0]
+            .iter()
+            .any(|word| word.contains("Version=") && word.contains("GITHUB_REF_NAME#v")),
+        "the pack does not take the version from the tag: {:?}",
+        packing[0]
+    );
+    for version in LIBRARY_VERSIONS {
+        let replay = release_replay::replay_nuget(&root, version, &[]);
+        assert!(
+            replay.packed.contains(&nuget_file(version).0),
+            "{}: {:?}\n{}",
+            version,
+            replay.packed,
+            replay.diagnostic
+        );
+    }
+}
+
+// behavior-contexts-libraries-release: The release workflow packs `@azimuth-sh/context` with the version of the release
+#[test]
+fn the_release_packs_the_node_library_with_the_version_of_the_release() {
+    let root = release_workflow();
+    for version in LIBRARY_VERSIONS {
+        let calls = release_replay::replay_npm_jobs(&root, version);
+        let packs = packed_in(&calls);
+        let context = the_package(&packs, CONTEXT_NPM);
+        assert_eq!(context["manifest"]["version"], version, "{calls:#?}");
+    }
+}
+
+// behavior-contexts-libraries-release: The two libraries are packed in the first phase, before the approval is asked for
+#[test]
+fn the_libraries_are_packed_before_the_approval() {
+    let root = release_workflow();
+    let all = all_jobs();
+    let approval = approval_job(&root, &all);
+    let approval_name = approval.key.clone();
+    let mut packing_jobs = Vec::new();
+    for (path, packs) in [
+        ("libraries/dotnet/Azimuth.Context", release_replay::packs_dotnet as fn(&Node) -> bool),
+        ("libraries/node", release_replay::packs_npm as fn(&Node) -> bool),
+    ] {
+        let found: Vec<_> = jobs(&root)
+            .into_iter()
+            .filter(|job| packs(job) && job_text(job).contains(path))
+            .collect();
+        assert!(!found.is_empty(), "no job packs {path}");
+        packing_jobs.extend(found);
+    }
+    for job in packing_jobs {
+        let packer = all.iter().find(|j| j.name == job.key).unwrap();
+        assert_ne!(packer.name, approval_name, "{} packs in the job of the approval", job.key);
+        assert!(packer.environment.is_none(), "{} names an environment", job.key);
+        let approval_job = all.iter().find(|j| j.name == approval_name).unwrap();
+        assert!(
+            depends_on(&all, approval_job, packer),
+            "the approval does not wait for {}",
+            job.key
+        );
+    }
+}
+
+// behavior-contexts-libraries-release: The packed NuGet package is named `Azimuth.Context` and carries the version of the tag
+#[test]
+fn the_packed_nuget_package_of_the_library_is_named_and_versioned_by_the_tag() {
+    let root = release_workflow();
+    for version in LIBRARY_VERSIONS {
+        let replay = release_replay::replay_nuget(&root, version, &[]);
+        let (context, _) = nuget_file(version);
+        assert!(
+            replay.packed.contains(&context),
+            "{version}: {:?}\n{}",
+            replay.packed,
+            replay.diagnostic
+        );
+        assert_eq!(replay.status, 0, "{}", replay.diagnostic);
+        assert!(
+            replay.outcomes.contains(&format!("pushed {context}")),
+            "the packed file is not the one that is pushed: {:?}",
+            replay.outcomes
+        );
+    }
+}
+
+// behavior-contexts-libraries-release: The packed npm package is named `@azimuth-sh/context` and carries the version of the tag
+#[test]
+fn the_packed_npm_package_of_the_library_is_named_and_versioned_by_the_tag() {
+    let root = release_workflow();
+    let mut files = Vec::new();
+    for version in LIBRARY_VERSIONS {
+        let calls = release_replay::replay_npm_jobs(&root, version);
+        let packs = packed_in(&calls);
+        let context = the_package(&packs, CONTEXT_NPM);
+        assert_eq!(
+            Path::new(context["file"].as_str().unwrap()).file_name().unwrap(),
+            format!("azimuth-sh-context-{version}.tgz").as_str(),
+            "{calls:#?}"
+        );
+        let packed = manifest_in(&context["bytes"]);
+        assert_eq!((packed["name"].as_str(), packed["version"].as_str()), (Some(CONTEXT_NPM), Some(version)));
+        files.push(context["bytes"].clone());
+    }
+    assert_ne!(files[0], files[1], "the versions carry the same bytes");
+}
+
+// behavior-contexts-libraries-release: `Azimuth.Context` is pushed to NuGet in the same job and the same step as the .NET adapter
+#[test]
+fn the_library_is_pushed_in_the_step_of_the_adapter() {
+    let root = release_workflow();
+    let version = LIBRARY_VERSIONS[0];
+    let replay = release_replay::replay_nuget(&root, version, &[]);
+    assert_eq!(replay.status, 0, "{}", replay.diagnostic);
+    let (context, adapter) = nuget_file(version);
+    let covering = |file: &str| -> Vec<(String, String)> {
+        replay
+            .pushes
+            .iter()
+            .filter(|push| push.arguments.iter().any(|a| a.ends_with(file)))
+            .map(|push| (push.job.clone(), push.step.clone()))
+            .collect()
+    };
+    let with_context = covering(&context);
+    let with_adapter = covering(&adapter);
+    assert!(!with_context.is_empty(), "no push names {context}: {:?}", replay.outcomes);
+    assert!(!with_adapter.is_empty(), "no push names {adapter}: {:?}", replay.outcomes);
+    assert!(
+        with_context.iter().any(|place| with_adapter.contains(place)),
+        "the library and the adapter are pushed by different steps: {with_context:?} / {with_adapter:?}"
+    );
+}
+
+// behavior-contexts-libraries-release: A package of the first phase that is not the adapter is pushed as well: the push takes every packed NuGet package
+#[test]
+fn the_push_takes_every_packed_nuget_package() {
+    let root = release_workflow();
+    let replay = release_replay::replay_nuget(&root, LIBRARY_VERSIONS[0], &[]);
+    assert_eq!(replay.status, 0, "{}", replay.diagnostic);
+    assert!(replay.packed.len() >= 2, "{:?}", replay.packed);
+    for file in &replay.packed {
+        assert!(
+            replay.outcomes.contains(&format!("pushed {file}")),
+            "{file} is packed and not pushed: {:?}",
+            replay.outcomes
+        );
+    }
+}
+
+// behavior-contexts-libraries-release: The push of `Azimuth.Context` comes before the draft release is published
+#[test]
+fn the_library_is_pushed_before_the_draft_is_published() {
+    let root = release_workflow();
+    let all = all_jobs();
+    let job = approval_job(&root, &all);
+    let push = index_of_step(job, nuget).expect("the approval job has no push step");
+    let publication = index_of_step(job, publish_draft).expect("the approval job does not publish the draft");
+    assert!(push < publication, "the draft is published at step {publication}, the push is at {push}");
+    let replay = release_replay::replay_nuget(&root, LIBRARY_VERSIONS[0], &[]);
+    assert!(
+        replay.outcomes.contains(&format!("pushed {}", nuget_file(LIBRARY_VERSIONS[0]).0)),
+        "{:?}\n{}",
+        replay.outcomes,
+        replay.diagnostic
+    );
+}
+
+// behavior-contexts-libraries-release: No job after the approval is added for the library: the push and the publication of the draft stay in one job
+#[test]
+fn the_push_and_the_publication_stay_in_one_job_and_nothing_follows_the_approval_but_the_site() {
+    let root = release_workflow();
+    let all = all_jobs();
+    let pushing = role(&all, "NuGet push", nuget);
+    let publishing = role(&all, "publish draft", publish_draft);
+    assert!(std::ptr::eq(pushing, publishing), "{} pushes and {} publishes", pushing.name, publishing.name);
+    assert_eq!(
+        all.iter()
+            .filter(|job| job.workflow == "publish.yml" && job.environment.is_some())
+            .count(),
+        1,
+        "more than one job names an environment"
+    );
+    for job in all.iter().filter(|job| job.workflow == "publish.yml" && job.name != pushing.name) {
+        if depends_on(&all, job, pushing) {
+            let node = job_by_name(&root, &job.name);
+            assert!(
+                job.calls.as_deref() == Some(SITE_WORKFLOW)
+                    || (!release_replay::stages_npm(node)
+                        && !release_replay::packs_npm(node)
+                        && !release_replay::packs_dotnet(node)
+                        && !job.commands.iter().any(|words| nuget(words) || draft(words))),
+                "the job {} follows the approval and does release work",
+                job.name
+            );
+        }
+    }
+}
+
+// behavior-contexts-libraries-release: A push that is run again skips each version already present and pushes each missing package
+#[test]
+fn a_repeated_push_skips_what_is_present() {
+    let root = release_workflow();
+    let version = LIBRARY_VERSIONS[0];
+    let replay = release_replay::replay_nuget(&root, version, &[]);
+    assert_eq!(replay.status, 0, "{}", replay.diagnostic);
+    let (context, adapter) = nuget_file(version);
+    for file in [&context, &adapter] {
+        let pushes: Vec<_> = replay
+            .pushes
+            .iter()
+            .filter(|push| push.arguments.iter().any(|a| a.ends_with(file.as_str())))
+            .collect();
+        assert!(!pushes.is_empty(), "{file} is not pushed");
+        for push in pushes {
+            assert!(
+                push.arguments.iter().any(|a| a == "--skip-duplicate"),
+                "a push of {file} does not skip a version already present: {:?}",
+                push.arguments
+            );
+        }
+    }
+    // A feed that holds both: the run again succeeds and pushes nothing.
+    let again = release_replay::replay_nuget(&root, version, &[context.as_str(), adapter.as_str()]);
+    assert_eq!(again.status, 0, "{}", again.diagnostic);
+    assert!(again.outcomes.iter().all(|o| o.starts_with("skipped ")), "{:?}", again.outcomes);
+}
+
+// behavior-contexts-libraries-release: When NuGet refuses one package, the retry pushes only the package that is missing and skips the package already there
+#[test]
+fn the_retry_pushes_only_the_missing_package() {
+    let root = release_workflow();
+    let version = LIBRARY_VERSIONS[0];
+    let (context, adapter) = nuget_file(version);
+    for (present, missing) in [(&context, &adapter), (&adapter, &context)] {
+        let retry = release_replay::replay_nuget(&root, version, &[present.as_str()]);
+        assert_eq!(retry.status, 0, "{}", retry.diagnostic);
+        assert!(retry.outcomes.contains(&format!("skipped {present}")), "{:?}", retry.outcomes);
+        assert!(retry.outcomes.contains(&format!("pushed {missing}")), "{:?}", retry.outcomes);
+        assert!(!retry.outcomes.contains(&format!("pushed {present}")), "{:?}", retry.outcomes);
+    }
+}
+
+// behavior-contexts-libraries-release: The Playwright adapter is staged by one job and `@azimuth-sh/context` by another, and no job stages both
+#[test]
+fn each_npm_package_is_staged_by_a_job_of_its_own() {
+    let root = release_workflow();
+    let calls = release_replay::replay_npm_jobs(&root, LIBRARY_VERSIONS[0]);
+    let staged = staged_in(&calls);
+    let jobs_of = |name: &str| -> Vec<String> {
+        staged.iter().filter(|s| s.name == name).map(|s| s.job.clone()).collect()
+    };
+    let context = jobs_of(CONTEXT_NPM);
+    let playwright = jobs_of(PLAYWRIGHT_NPM);
+    assert_eq!(context.len(), 1, "{CONTEXT_NPM} is staged {} times", context.len());
+    assert_eq!(playwright.len(), 1, "{PLAYWRIGHT_NPM} is staged {} times", playwright.len());
+    assert_ne!(context, playwright, "one job stages both packages");
+    for job in staged.iter().map(|s| &s.job) {
+        assert_eq!(staged.iter().filter(|s| &s.job == job).count(), 1, "{job} stages more than one package");
+    }
+}
+
+// behavior-contexts-libraries-release: Neither npm staging job needs the other, so a run of the failed jobs repeats only the failed one
+#[test]
+fn neither_npm_staging_job_needs_the_other() {
+    let root = release_workflow();
+    let all = all_jobs();
+    let staging: Vec<&Job> = stage_jobs(&root)
+        .into_iter()
+        .map(|node| all.iter().find(|job| job.name == node.key).unwrap())
+        .collect();
+    assert!(staging.len() >= 2, "fewer than two jobs stage at npm");
+    for first in &staging {
+        for second in &staging {
+            if first.name != second.name {
+                assert!(
+                    !depends_on(&all, first, second),
+                    "{} needs {}, so it cannot be repeated alone",
+                    first.name,
+                    second.name
+                );
+            }
+        }
+    }
+}
+
+// behavior-contexts-libraries-release: Both npm staging jobs run in the first phase, before the approval is asked for
+#[test]
+fn both_npm_staging_jobs_run_before_the_approval() {
+    let root = release_workflow();
+    let all = all_jobs();
+    let approval = role(&all, "NuGet push", nuget);
+    let staging = stage_jobs(&root);
+    assert!(staging.len() >= 2, "fewer than two jobs stage at npm");
+    for node in staging {
+        let job = all.iter().find(|job| job.name == node.key).unwrap();
+        assert!(job.environment.is_none(), "{} names an environment", job.name);
+        assert!(depends_on(&all, approval, job), "the approval does not wait for {}", job.name);
+        assert!(!depends_on(&all, job, approval), "{} waits for the approval", job.name);
+    }
+}
+
+// behavior-contexts-libraries-release: Each package is staged from the file packed with the version of the release
+#[test]
+fn each_package_is_staged_from_the_file_packed_with_the_version() {
+    let root = release_workflow();
+    let mut staged_bytes = Vec::new();
+    for version in LIBRARY_VERSIONS {
+        let calls = release_replay::replay_npm_jobs(&root, version);
+        let packs = packed_in(&calls);
+        let staged = staged_in(&calls);
+        for name in [CONTEXT_NPM, PLAYWRIGHT_NPM] {
+            let pack = the_package(&packs, name);
+            let one: Vec<_> = staged.iter().filter(|s| s.name == name).collect();
+            assert_eq!(one.len(), 1, "{name} is staged {} times: {calls:#?}", one.len());
+            assert_eq!(one[0].version, version, "{name}");
+            assert_eq!(one[0].bytes, pack["bytes"], "{name} is staged from bytes that were not packed");
+        }
+        staged_bytes.push(
+            staged
+                .iter()
+                .filter(|s| s.name == CONTEXT_NPM)
+                .map(|s| s.bytes.clone())
+                .next()
+                .unwrap(),
+        );
+    }
+    assert_ne!(staged_bytes[0], staged_bytes[1]);
+}
+
+// behavior-contexts-libraries-release: Each package is staged with the tag `latest`, also while the version says alpha
+#[test]
+fn each_package_is_staged_with_latest_also_for_an_alpha() {
+    let root = release_workflow();
+    let calls = release_replay::replay_npm_jobs(&root, "0.2.0-alpha.73");
+    let staged = staged_in(&calls);
+    for name in [CONTEXT_NPM, PLAYWRIGHT_NPM] {
+        let one: Vec<_> = staged.iter().filter(|s| s.name == name).collect();
+        assert_eq!(one.len(), 1, "{name}: {calls:#?}");
+        assert_eq!(one[0].tags, vec!["latest"], "{name} is staged with {:?}", one[0].tags);
+    }
+}
+
+/// Every command of the release workflow and of the scripts of `release/` that stages.
+fn staging_commands() -> Vec<Vec<String>> {
+    let mut sources = vec![fs::read_to_string(repository_root().join(".github/workflows/publish.yml")).unwrap()];
+    for entry in fs::read_dir(repository_root().join("release")).unwrap().flatten() {
+        if entry.path().is_file() {
+            sources.push(fs::read_to_string(entry.path()).unwrap());
+        }
+    }
+    sources
+        .iter()
+        .flat_map(|text| shell::commands(text))
+        .filter(|words| release_replay::names_stage(words))
+        .collect()
+}
+
+// behavior-contexts-libraries-release: The staging step names `latest` for every npm package
+#[test]
+fn every_staging_command_names_latest() {
+    let commands = staging_commands();
+    assert!(!commands.is_empty(), "no command stages");
+    for words in commands {
+        assert!(
+            words.windows(2).any(|pair| pair[0] == "--tag" && pair[1] == "latest")
+                || words.iter().any(|word| word == "--tag=latest"),
+            "a staging command does not name latest: {words:?}"
+        );
+    }
+}
+
+fn names_direct_publication(words: &[String]) -> bool {
+    words
+        .windows(2)
+        .any(|pair| pair[1] == "publish" && pair[0] != "stage" && !pair[0].starts_with('-'))
+        && words.first().is_some_and(|first| first.contains("npm"))
+}
+
+// behavior-contexts-libraries-release: The workflow stages with `npm stage publish` and has no `npm publish` for either package
+#[test]
+fn both_packages_are_staged_and_neither_is_published_directly() {
+    let root = release_workflow();
+    assert_no_npm_publish(&root);
+    let mut sources = vec![fs::read_to_string(repository_root().join(".github/workflows/publish.yml")).unwrap()];
+    for entry in fs::read_dir(repository_root().join("release")).unwrap().flatten() {
+        if entry.path().is_file() {
+            sources.push(fs::read_to_string(entry.path()).unwrap());
+        }
+    }
+    for text in &sources {
+        for words in shell::commands(text) {
+            assert!(!names_direct_publication(&words), "a command publishes directly: {words:?}");
+        }
+    }
+    assert!(names_direct_publication(&["npm".into(), "publish".into(), "x.tgz".into()]));
+    assert!(!names_direct_publication(&["npm".into(), "stage".into(), "publish".into(), "x.tgz".into()]));
+    let staged = staged_in(&release_replay::replay_npm_jobs(&root, LIBRARY_VERSIONS[0]));
+    let names: std::collections::BTreeSet<_> = staged.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, [CONTEXT_NPM, PLAYWRIGHT_NPM].into_iter().collect());
+}
+
+// behavior-contexts-libraries-release: No job after the GitHub approval stages or publishes a package at npm
+#[test]
+fn no_job_after_the_approval_touches_npm() {
+    let root = release_workflow();
+    let all = all_jobs();
+    let approval = role(&all, "NuGet push", nuget);
+    for job in all.iter().filter(|job| job.workflow == "publish.yml") {
+        if job.name == approval.name || depends_on(&all, job, approval) {
+            let node = job_by_name(&root, &job.name);
+            assert!(!release_replay::stages_npm(node), "{} stages at npm after the approval", job.name);
+            assert!(
+                !job.commands.iter().any(|words| {
+                    words.first().is_some_and(|first| first.contains("npm"))
+                        || release_replay::names_stage(words)
+                        || names_direct_publication(words)
+                }),
+                "{} runs npm after the approval",
+                job.name
+            );
+        }
+    }
+}
+
+// behavior-contexts-libraries-release: The workflow holds no stored registry key for either package
+#[test]
+fn the_workflow_holds_no_stored_registry_key() {
+    let root = release_workflow();
+    for job in jobs(&root) {
+        let errors = npm_credentials(&root, job, &repository_root());
+        assert!(errors.is_empty(), "{errors:#?}");
+    }
+    let (_, text, _) = workflows().into_iter().find(|(name, _, _)| name == "publish.yml").unwrap();
+    for line in text.lines().map(|line| line.to_uppercase()) {
+        assert!(
+            !(line.contains("SECRETS.") && (line.contains("NPM") || line.contains("TOKEN"))),
+            "the workflow reads a stored key: {line}"
+        );
+    }
+}
+
+// behavior-contexts-libraries-release: Only the npm staging jobs ask for the registry identity at npm, and it only stages
+#[test]
+fn only_the_npm_staging_jobs_ask_for_the_identity_at_npm_and_only_stage() {
+    let root = release_workflow();
+    let all = all_jobs();
+    let pushing = role(&all, "NuGet push", nuget);
+    let staging: Vec<&str> = stage_jobs(&root).into_iter().map(|job| job.key.as_str()).collect();
+    assert!(staging.len() >= 2, "fewer than two jobs stage at npm");
+    for job in jobs(&root) {
+        let identity = job
+            .child("permissions")
+            .and_then(|block| block.child("id-token"))
+            .and_then(|right| right.value.as_deref())
+            == Some("write");
+        if staging.contains(&job.key.as_str()) {
+            assert!(identity, "the staging job {} cannot ask for the identity", job.key);
+            assert!(
+                !job_text(job).lines().any(|line| names_direct_publication(
+                    &shell::commands(line).into_iter().flatten().collect::<Vec<_>>()
+                )),
+                "{} publishes",
+                job.key
+            );
+        } else if job.key != pushing.name
+            && !all.iter().any(|j| j.name == job.key && calls_the_site(j))
+        {
+            assert!(!identity, "{} asks for an identity and does not stage", job.key);
+        }
+    }
+}
+
+// behavior-contexts-libraries-release: No workflow, job or script moves a pushed tag
+#[test]
+fn nothing_moves_a_pushed_tag() {
+    for words in [
+        vec!["git", "tag", "-f", "v1"],
+        vec!["git", "tag", "--force", "v1", "HEAD"],
+        vec!["git", "push", "--force", "origin", "v1"],
+        vec!["git", "push", "origin", "+refs/tags/v1"],
+        vec!["git", "update-ref", "refs/tags/v1", "HEAD"],
+    ] {
+        let words: Vec<String> = words.into_iter().map(String::from).collect();
+        assert!(moves_a_tag(&words), "the detector misses {words:?}");
+    }
+    assert!(!moves_a_tag(&["git".into(), "tag".into(), "v1".into()]));
+    for text in every_release_text() {
+        for words in shell::commands(&text) {
+            assert!(!moves_a_tag(&words), "a command moves a tag: {words:?}");
+        }
+    }
+}
+
+// behavior-contexts-libraries-release: No workflow or script deletes a tag to run a release again
+#[test]
+fn nothing_deletes_a_tag() {
+    for words in [
+        vec!["git", "tag", "-d", "v1"],
+        vec!["git", "tag", "--delete", "v1"],
+        vec!["git", "push", "--delete", "origin", "v1"],
+        vec!["git", "push", "origin", ":refs/tags/v1"],
+        vec!["gh", "release", "delete", "v1", "--cleanup-tag"],
+        vec!["gh", "api", "-X", "DELETE", "repos/o/r/git/refs/tags/v1"],
+    ] {
+        let words: Vec<String> = words.into_iter().map(String::from).collect();
+        assert!(deletes_a_tag(&words), "the detector misses {words:?}");
+    }
+    assert!(!deletes_a_tag(&["gh".into(), "release".into(), "delete".into(), "v1".into()]));
+    for text in every_release_text() {
+        for words in shell::commands(&text) {
+            assert!(!deletes_a_tag(&words), "a command deletes a tag: {words:?}");
+        }
+    }
+}
+
+/// Every workflow and every script of `release/`, as text.
+fn every_release_text() -> Vec<String> {
+    let mut texts: Vec<String> = workflows().into_iter().map(|(_, text, _)| text).collect();
+    for entry in fs::read_dir(repository_root().join("release")).unwrap().flatten() {
+        if entry.path().is_file() {
+            texts.push(fs::read_to_string(entry.path()).unwrap());
+        }
+    }
+    texts
+}
+
+fn moves_a_tag(words: &[String]) -> bool {
+    let has = |flags: &[&str]| words.iter().any(|word| flags.contains(&word.as_str()));
+    (shell::invokes(words, &["git", "tag"]) && has(&["-f", "--force"]))
+        || (shell::invokes(words, &["git", "push"])
+            && (has(&["-f", "--force", "--force-with-lease"])
+                || words.iter().any(|word| word.starts_with("+") || word.starts_with("--force-with-lease="))))
+        || (shell::invokes(words, &["git", "update-ref"]) && words.iter().any(|word| word.contains("refs/tags/")))
+        || (shell::invokes(words, &["gh", "api"])
+            && words.iter().any(|word| word.contains("git/refs/tags"))
+            && (has(&["PATCH", "PUT"])))
+}
+
+fn deletes_a_tag(words: &[String]) -> bool {
+    let has = |flags: &[&str]| words.iter().any(|word| flags.contains(&word.as_str()));
+    (shell::invokes(words, &["git", "tag"]) && has(&["-d", "--delete"]))
+        || (shell::invokes(words, &["git", "push"])
+            && (has(&["-d", "--delete"]) || words.iter().skip(2).any(|word| word.starts_with(':'))))
+        || (shell::invokes(words, &["gh", "release", "delete"]) && has(&["--cleanup-tag"]))
+        || (shell::invokes(words, &["gh", "api"])
+            && words.iter().any(|word| word.contains("git/refs/tags"))
+            && has(&["DELETE"]))
+}
+
+/// Not a row: the retry tests below run `release/stage-npm.sh`, so each staging job must call it.
+#[test]
+fn each_npm_staging_job_calls_the_retry_script() {
+    let root = release_workflow();
+    let staging = stage_jobs(&root);
+    assert!(staging.len() >= 2, "fewer than two jobs stage at npm");
+    for job in staging {
+        let calls = job
+            .descendants()
+            .into_iter()
+            .filter(|n| n.key == "run")
+            .any(|n| n.value.as_deref().unwrap_or_default().contains(release_replay::STAGE_SCRIPT));
+        assert!(calls, "{} does not call {}", job.key, release_replay::STAGE_SCRIPT);
+    }
 }

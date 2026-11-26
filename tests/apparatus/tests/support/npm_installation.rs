@@ -89,7 +89,7 @@ pub(super) fn installation(calls: &[Value]) -> &Value {
 pub(super) fn script_replay(wrong: Option<&str>) -> release_replay::ToolReplay {
     source();
     let root = release_workflow();
-    let job = npm_job(&root);
+    let job = npm_jobs(&root)[0];
     install_step(job);
     let mut last = None;
     for step in &job.child("steps").unwrap().children {
@@ -164,28 +164,30 @@ pub(super) fn successful_script() -> (String, release_replay::ToolReplay) {
 
 pub(super) fn assert_workflow_script(root: &Node) {
     let (version, _) = successful_script();
-    let job = npm_job(root);
-    install_step(job);
-    let calls = release_replay::pack_and_stage(root, "0.2.0-alpha.73");
-    let install = installation(&calls);
-    let installer = install["step"].as_u64().unwrap() as usize;
-    assert!(
-        job.child("steps").unwrap().children[installer]
-            .child("run")
-            .and_then(|node| node.value.as_deref())
-            .is_some_and(invokes_script),
-        "the actual npm installation does not run in the script step"
-    );
-    let staging = calls
-        .iter()
-        .find(|call| call["verb"] == "stage publish")
-        .unwrap()["step"]
-        .as_u64()
-        .unwrap() as usize;
-    assert!(
-        installer < staging,
-        "the install script must run before the staging step"
-    );
+    let all_calls = release_replay::pack_and_stage(root, "0.2.0-alpha.73");
+    for job in npm_jobs(root) {
+        install_step(job);
+        let calls = calls_of_job(&all_calls, &job.key);
+        let install = installation(&calls);
+        let installer = install["step"].as_u64().unwrap() as usize;
+        assert!(
+            job.child("steps").unwrap().children[installer]
+                .child("run")
+                .and_then(|node| node.value.as_deref())
+                .is_some_and(invokes_script),
+            "the actual npm installation does not run in the script step"
+        );
+        let staging = calls
+            .iter()
+            .find(|call| call["verb"] == "stage publish")
+            .unwrap()["step"]
+            .as_u64()
+            .unwrap() as usize;
+        assert!(
+            installer < staging,
+            "the install script must run before the staging step"
+        );
+    }
     for node in root
         .descendants()
         .into_iter()

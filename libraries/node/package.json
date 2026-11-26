@@ -2,11 +2,20 @@
   "name": "@azimuth-sh/context",
   "version": "0.0.0",
   "description": "Applies the values of an Azimuth launch to a Node component and gives the component's report.",
+  "license": "Apache-2.0",
+  "homepage": "https://azimuth.sh",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/azimuth-sh/azimuth.git",
+    "directory": "libraries/node"
+  },
+  "author": "Azimuth",
   "type": "module",
   "main": "./index.js",
   "exports": "./index.js",
   "files": [
-    "index.js"
+    "index.js",
+    "README.md"
   ],
   "engines": {
     "node": ">=18"
