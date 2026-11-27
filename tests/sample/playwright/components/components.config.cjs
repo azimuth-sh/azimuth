@@ -1,6 +1,6 @@
 'use strict';
 // The configuration of a suite whose components run in their own processes. COMPONENT_SERVERS is a
-// JSON list of {name, port, url, host, report, mode}: an entry gives `url` when the description has
+// JSON list of {name, port, url, host, report, mode, kill_runner}: an entry gives `url` when the description has
 // one and only `port` otherwise, and no `name` when the description has none. After the first
 // evaluation of this file COMPONENT_SERVERS_LATER, when set, replaces the list.
 const fs = require('node:fs');
@@ -22,7 +22,14 @@ module.exports = {
   timeout: 60000,
   globalSetup: './setup.cjs',
   globalTeardown: './teardown.cjs',
-  webServer: described.map(component => ({
+  webServer: described.map(component => component.kill_runner ? ({
+    // Ends the runner while the servers start, before its global setup.
+    command: `node -e "process.kill(Number(process.env.RUNNER_PID), 'SIGKILL')"`,
+    wait: { stdout: /never printed/ },
+    env: { RUNNER_PID: String(process.pid) },
+    timeout: 20000,
+    reuseExistingServer: false,
+  }) : ({
     ...(component.name ? { name: component.name } : {}),
     command: 'node component-server.cjs',
     ...(component.url ? { url: component.url } : component.port ? { port: component.port } : { wait: { stdout: /COMPONENT_READY (?<free_port>\d+)/ } }),
