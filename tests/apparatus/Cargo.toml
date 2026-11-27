@@ -32,6 +32,11 @@ path = "tests/playwright_adapter.rs"
 required-features = ["playwright"]
 
 [[test]]
+name = "playwright_reads"
+path = "tests/playwright_reads.rs"
+required-features = ["playwright"]
+
+[[test]]
 name = "dotnet_adapter"
 path = "tests/dotnet_adapter.rs"
 required-features = ["dotnet"]
