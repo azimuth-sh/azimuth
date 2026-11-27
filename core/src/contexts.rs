@@ -9,7 +9,6 @@ use crate::project::{Component, Project, Suite};
 
 const ANSWERED_BEFORE_START: &str = "something else answers there";
 const NEVER_REACHED: &str = "the context never reached the component";
-const PHASES: [&str; 2] = ["start", "stop"];
 
 /// A condition as a line of text names it: its stated keys with their normalized values.
 pub fn condition_text(condition: &Condition) -> String {
@@ -62,19 +61,36 @@ fn check_component(component: &Component, keys: &[&Key], condition: &Condition, 
     if let Some(error) = &entry.error {
         return Err(if error == ANSWERED_BEFORE_START { format!("{name}, an address already answering: {error}") } else { unreadable(error.clone()) });
     }
-    for phase in PHASES {
-        let reads: Vec<_> = entry.reads.iter().filter(|read| read.phase == phase).collect();
-        if reads.is_empty() {
-            return Err(unreadable(format!("it has no `{phase}` read")));
+    let is_host = |phase: &str| phase == "built" || phase == "disposing";
+    let hosted = entry.reads.iter().any(|read| is_host(&read.phase));
+    let separate = entry.reads.iter().any(|read| !is_host(&read.phase));
+    if hosted && separate {
+        return Err(unreadable("it has reads of a host and of a separate process".to_string()));
+    }
+    let count = |phase: &str| entry.reads.iter().filter(|read| read.phase == phase).count();
+    if hosted {
+        let (built, disposing) = (count("built"), count("disposing"));
+        if built == 0 || disposing == 0 {
+            return Err(unreadable(format!("it has {built} `built` and {disposing} `disposing` reads, and a host needs both")));
         }
-        for read in reads {
-            match &read.result {
-                Err(error) => return Err(unreadable(format!("the `{phase}` read failed: {error}"))),
-                Ok(report) => check_report(component, keys, condition, report).map_err(|why| match why {
-                    Fault::Unreadable(why) => unreadable(format!("the `{phase}` read: {why}")),
-                    Fault::Detail(detail) => detail,
-                })?,
+        if disposing != built {
+            return Err(unreadable(format!("it has {built} `built` reads and {disposing} `disposing` reads, and a host needs as many of the second as of the first")));
+        }
+    } else {
+        for phase in ["start", "stop"] {
+            if count(phase) == 0 {
+                return Err(unreadable(format!("it has no `{phase}` read")));
             }
+        }
+    }
+    for read in &entry.reads {
+        let phase = &read.phase;
+        match &read.result {
+            Err(error) => return Err(unreadable(format!("the `{phase}` read failed: {error}"))),
+            Ok(report) => check_report(component, keys, condition, report).map_err(|why| match why {
+                Fault::Unreadable(why) => unreadable(format!("the `{phase}` read: {why}")),
+                Fault::Detail(detail) => detail,
+            })?,
         }
     }
     Ok(())

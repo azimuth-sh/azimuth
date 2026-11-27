@@ -85,13 +85,15 @@ jobs:
           persist-credentials: false
       - name: Pack the .NET adapter
         run: dotnet pack adapters/xunit --configuration Release -p:Version="${GITHUB_REF_NAME#v}" --output package
+      - name: Pack the .NET context library
+        run: dotnet pack libraries/dotnet/Azimuth.Context --configuration Release -p:Version="${GITHUB_REF_NAME#v}" --output package
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: package
           path: package/*.nupkg
           if-no-files-found: error
 
-  npm:
+  npm-playwright:
     needs: [check, tests, build, package]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -110,7 +112,28 @@ jobs:
           npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version
           packed="$(npm pack --pack-destination ../..)"
           cd ../..
-          npm stage publish "$packed" --access public --tag latest
+          sh release/stage-npm.sh @azimuth-sh/playwright "${GITHUB_REF_NAME#v}" "$packed"
+
+  npm-context:
+    needs: [check, tests, build, package]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the staging npm
+        run: sh release/install-npm.sh "$RUNNER_TEMP/azimuth-npm"
+      - name: Pack the Node context library and stage that file
+        run: |
+          cd libraries/node
+          npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version
+          packed="$(npm pack --pack-destination ../..)"
+          cd ../..
+          sh release/stage-npm.sh @azimuth-sh/context "${GITHUB_REF_NAME#v}" "$packed"
 
   draft:
     needs: [check, tests, build, package]
@@ -152,7 +175,7 @@ jobs:
           fi
 
   release:
-    needs: [draft, npm]
+    needs: [draft, npm-playwright, npm-context]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: release
@@ -168,8 +191,8 @@ jobs:
         id: login
         with:
           user: ${{ vars.NUGET_USER }}
-      # --skip-duplicate makes a second run of this job harmless.
-      - name: Push the package
+      # --skip-duplicate makes a second run of this job harmless, and a retry pushes only the package that is missing.
+      - name: Push the packages
         env:
           NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
         run: dotnet nuget push package/*.nupkg --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate

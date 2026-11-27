@@ -429,7 +429,7 @@ fn the_reports_of_a_launch_appear_in_each_of_its_check_results() {
     repo.run_json(&[], 0);
     let first = result_body(&repo, INSTANT_CHECK);
     let second = result_body(&repo, REVIEW_CHECK);
-    assert!(!first["components"].as_array().map_or(true, |list| list.is_empty()), "{first:#}");
+    assert!(first["components"].as_array().is_some_and(|list| !list.is_empty()), "{first:#}");
     assert_eq!(first["components"], second["components"]);
     assert_eq!(first["condition"], second["condition"]);
 }
