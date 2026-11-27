@@ -13,6 +13,7 @@
 //! The Node context library uses `// behavior-contexts-library-node:` for its accepted list.
 //! Contexts in process use `// behavior-contexts-in-process:` for their accepted list.
 //! The libraries in the release use `// behavior-contexts-libraries-release:` for their accepted list.
+//! Launches through Playwright use `// behavior-contexts-launches-through-playwright:` for theirs.
 //! Rows of prose need no annotation, and an annotation naming one is an error.
 
 use std::collections::BTreeSet;
@@ -52,6 +53,9 @@ fn every_behavior_of_the_increment_has_a_test() {
                     || line
                         .trim_start()
                         .starts_with("// behavior-contexts-libraries-release:")
+                    || line
+                        .trim_start()
+                        .starts_with("// behavior-contexts-launches-through-playwright:")
                 {
                     let mut next = index + 1;
                     while next < lines.len()
@@ -92,7 +96,10 @@ fn every_behavior_of_the_increment_has_a_test() {
                                 .starts_with("// behavior-contexts-in-process:")
                             || lines[next]
                                 .trim_start()
-                                .starts_with("// behavior-contexts-libraries-release:"))
+                                .starts_with("// behavior-contexts-libraries-release:")
+                            || lines[next]
+                                .trim_start()
+                                .starts_with("// behavior-contexts-launches-through-playwright:"))
                     {
                         next += 1;
                     }
@@ -120,6 +127,14 @@ fn every_behavior_of_the_increment_has_a_test() {
                     );
                 }
                 if let Some(behavior) = line
+                    .trim_start()
+                    .strip_prefix("// behavior-contexts-launches-through-playwright: ")
+                {
+                    named.insert((
+                        "increments/contexts-launches-through-playwright.md".to_string(),
+                        behavior.trim_end().to_string(),
+                    ));
+                } else if let Some(behavior) = line
                     .trim_start()
                     .strip_prefix("// behavior-contexts-libraries-release: ")
                 {
