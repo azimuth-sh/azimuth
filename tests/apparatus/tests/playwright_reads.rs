@@ -77,6 +77,10 @@ fn listed(names: &[(&str, &str)]) -> Vec<(String, String)> {
 }
 
 fn launch(entries: Vec<Value>, later: Option<Vec<Value>>, components: &[(&str, &str)], condition: &Value, env: &[(&str, &str)]) -> Launched {
+    launch_config("components.config.cjs", entries, later, components, condition, env)
+}
+
+fn launch_config(config: &str, entries: Vec<Value>, later: Option<Vec<Value>>, components: &[(&str, &str)], condition: &Value, env: &[(&str, &str)]) -> Launched {
     let mut repo = host::sample();
     let journal_path = repo.beside("components-journal.jsonl");
     let evaluations = repo.beside("evaluations.txt");
@@ -107,7 +111,7 @@ fn launch(entries: Vec<Value>, later: Option<Vec<Value>>, components: &[(&str, &
     adapter
         .env_clear()
         .envs(command.get_envs().filter_map(|(name, value)| value.map(|value| (name, value))))
-        .args(["--no", PACKAGE, "--", "--config", "components.config.cjs"])
+        .args(["--no", PACKAGE, "--", "--config", config])
         .current_dir(repo.path(SUITE));
     let started = Instant::now();
     let output = run_with_time_limit(adapter, Duration::from_secs(120), Some(&request.to_string()));
@@ -903,4 +907,110 @@ fn the_adapter_adds_no_key_the_condition_does_not_state() {
             assert_eq!(read["report"]["applied"].as_object().unwrap().keys().collect::<Vec<_>>(), ["payouts.instant"], "{read:#}");
         }
     }
+}
+
+// ---- A config that is not CommonJS, an entry with no address, a start read not made ----
+
+const START_NOT_MADE: &str = "the start read was not made";
+
+/// The suite configured in TypeScript, which the runner compiles to CommonJS.
+fn typescript_config() -> &'static Launched {
+    static LAUNCHED: OnceLock<Launched> = OnceLock::new();
+    LAUNCHED.get_or_init(|| {
+        let ports = free_ports(2);
+        launch_config("components.typescript.config.ts", vec![at_url(API, ports[0], API_PLACE), at_url(WEBSITE, ports[1], WEBSITE_PLACE)], None, &both_listed(), &idle(), &[])
+    })
+}
+
+/// The suite configured as an ES module, with a component listed.
+fn module_config() -> &'static Launched {
+    static LAUNCHED: OnceLock<Launched> = OnceLock::new();
+    LAUNCHED.get_or_init(|| {
+        let ports = free_ports(1);
+        launch_config("components.module.config.mjs", vec![at_url(API, ports[0], API_PLACE)], None, &[(API, API_PLACE)], &idle(), &[])
+    })
+}
+
+/// A second entry ends the runner while the servers start, before the suite's global setup.
+fn runner_ends_before_its_setup() -> &'static Launched {
+    static LAUNCHED: OnceLock<Launched> = OnceLock::new();
+    LAUNCHED.get_or_init(|| {
+        let ports = free_ports(1);
+        launch(vec![at_url(API, ports[0], API_PLACE), json!({ "kill_runner": true })], None, &[(API, API_PLACE)], &idle(), &[])
+    })
+}
+
+// behavior-contexts-launches-through-playwright: The adapter wraps a config that the runner loads as CommonJS
+#[test]
+fn a_commonjs_config_is_wrapped() {
+    let launched = ordinary();
+    let report = launched.report();
+    for name in [API, WEBSITE] {
+        let reads = launched.server_reads(name);
+        assert_eq!(reads.len(), 2, "{name}: {:#?}", launched.journal);
+        assert!(reads[0].0 < launched.first("suite", "setup") && launched.last_of("suite", "teardown") < reads[1].0, "{name}: {:#?}", launched.journal);
+        assert_eq!(reads_in(&entry_of(&report, name)).len(), 2, "{report:#}");
+    }
+}
+
+// behavior-contexts-launches-through-playwright: The adapter wraps a TypeScript config that the runner compiles to CommonJS
+#[test]
+fn a_typescript_config_is_wrapped() {
+    let launched = typescript_config();
+    let report = launched.report();
+    for name in [API, WEBSITE] {
+        let reads = launched.server_reads(name);
+        assert_eq!(reads.len(), 2, "{name}: {:#?}\n{}", launched.journal, launched.text());
+        assert!(reads[0].0 < launched.first("suite", "setup") && launched.last_of("suite", "teardown") < reads[1].0, "{name}: {:#?}", launched.journal);
+        let entry = entry_of(&report, name);
+        assert!(read_in_phase(&entry, "start")["report"].is_object() && read_in_phase(&entry, "stop")["report"].is_object(), "{report:#}");
+    }
+    assert_eq!(launched.lines("suite", "setup").len(), 1, "{:#?}", launched.journal);
+    assert_eq!(launched.lines("suite", "teardown").len(), 1, "{:#?}", launched.journal);
+}
+
+// behavior-contexts-launches-through-playwright: When the request lists a component, a config that the runner loads as an ES module ends the launch with a failure that says so
+#[test]
+fn an_es_module_config_with_a_component_ends_with_a_failure_that_says_so() {
+    let launched = module_config();
+    assert_ne!(launched.output.status, 0, "{}", launched.text());
+    let said = launched.text().to_lowercase();
+    assert!(said.contains("module"), "the failure does not say the config is an ES module:\n{said}");
+    assert!(!launched.output.stdout.contains("adapter-report-1"), "{}", launched.output.stdout);
+}
+
+// behavior-contexts-launches-through-playwright: The Checks of a launch whose config loads as an ES module get no result
+#[test]
+fn an_es_module_config_with_a_component_gives_no_result() {
+    let launched = module_config();
+    assert_ne!(launched.output.status, 0, "{}", launched.text());
+    assert!(!launched.output.stdout.contains("adapter-report-1"), "the adapter wrote a report:\n{}", launched.output.stdout);
+}
+
+// behavior-contexts-launches-through-playwright: A component whose entry gives neither `url` nor `port` has a missing address
+#[test]
+fn an_entry_with_neither_url_nor_port_has_a_missing_address() {
+    let report = learned_after_start().report();
+    let api = entry_of(&report, API);
+    assert_eq!(api["error"], NO_ADDRESS, "{api:#}");
+    assert!(reads_in(&api).is_empty(), "{api:#}");
+}
+
+// behavior-contexts-launches-through-playwright: A start read that was never made is a read with phase `start` and `error: "the start read was not made"`
+#[test]
+fn a_start_read_that_was_not_made_is_a_read_with_that_error() {
+    let launched = runner_ends_before_its_setup();
+    let report = launched.report();
+    let api = entry_of(&report, API);
+    assert_eq!(read_in_phase(&api, "start")["error"], START_NOT_MADE, "{api:#}");
+}
+
+// behavior-contexts-launches-through-playwright: A start read is not made when the runner ended before its global setup
+#[test]
+fn a_start_read_is_not_made_when_the_runner_ended_before_its_global_setup() {
+    let launched = runner_ends_before_its_setup();
+    let report = launched.report();
+    assert!(launched.lines("suite", "setup").is_empty(), "the runner got as far as the suite's setup: {:#?}", launched.journal);
+    assert!(launched.server_reads(API).is_empty(), "{:#?}", launched.journal);
+    assert_eq!(read_in_phase(&entry_of(&report, API), "start")["error"], START_NOT_MADE, "{report:#}");
 }

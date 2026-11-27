@@ -2,7 +2,7 @@
 
 A row is of one of two kinds. A row of behavior is one observable fact, and a test shows it. A row of prose says what a text tells its reader; its section begins with the words "Rows of prose", and no test reads the words of the text for it. This list has no rows of prose. The second cell is copied exactly from `docs/design.md`. A plain test fails when a quoted sentence is no longer in that file. A behavior with no sentence to quote is not built. This list is built after the list of launches on the sample (`contexts-launches.md`), because it makes the Playwright adapter do for a launch what that list requires of every adapter, and it is the second runner that tests those fields. It is built after the list of launch records (`contexts-launch-records.md`), so that a launch through Playwright ends in the result that list records.
 
-Status of this list: read and accepted by a person on 2026-11-27.
+Status of this list: read and accepted by a person on 2026-11-27. On 2026-11-27 the person agreed to seven added rows for three new sentences of the design.
 
 ## Where the adapter takes what it needs
 
@@ -73,6 +73,10 @@ Status of this list: read and accepted by a person on 2026-11-27.
 | The start read comes before the suite's own global setup | the start read comes before the suite's own global setup |
 | The stop read comes after the suite's own global teardown | and the stop read after its own global teardown |
 | A failing global setup of the suite still gets the stop read | A failing global setup of the suite still gets the stop read. |
+| The adapter wraps a config that the runner loads as CommonJS | The adapter wraps a config that the runner loads as CommonJS, which includes a TypeScript config that the runner compiles to CommonJS. |
+| The adapter wraps a TypeScript config that the runner compiles to CommonJS | The adapter wraps a config that the runner loads as CommonJS, which includes a TypeScript config that the runner compiles to CommonJS. |
+| When the request lists a component, a config that the runner loads as an ES module ends the launch with a failure that says so | When the request lists a component, a config that the runner loads as an ES module ends the launch with a failure that says so, and the Checks get no result. |
+| The Checks of a launch whose config loads as an ES module get no result | When the request lists a component, a config that the runner loads as an ES module ends the launch with a failure that says so, and the Checks get no result. |
 
 ## A missing address, a failed read, a missing second read
 
@@ -83,6 +87,9 @@ Status of this list: read and accepted by a person on 2026-11-27.
 | A stop read that was never made is a read with phase `stop` and `error: "the stop read was not made"` | is a read with phase `stop` and `error: "the stop read was not made"`. |
 | A stop read is not made when the runner ended before its teardown | A stop read that was never made, because the runner ended before its teardown |
 | A missing address, a failed read and a missing second read are not left out of the report | A missing address, failed read or missing second read is carried as a cause, not left out. |
+| A component whose entry gives neither `url` nor `port` has a missing address | So has a component whose entry gives neither `url` nor `port`. |
+| A start read that was never made is a read with phase `start` and `error: "the start read was not made"` | is a read with phase `start` and `error: "the start read was not made"`. |
+| A start read is not made when the runner ended before its global setup | A start read that was never made, because the runner ended before its global setup |
 
 ## `AZIMUTH_CONTEXT` through the adapter
 
