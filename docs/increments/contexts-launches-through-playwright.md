@@ -19,6 +19,9 @@ Status of this list: a draft, not yet read by a person.
 | The adapter says why it refused such a config | A config in which two entries have the name of one component is refused: the adapter runs nothing, says why, and the Checks get no result. |
 | The Checks of a launch with such a config get no result | A config in which two entries have the name of one component is refused: the adapter runs nothing, says why, and the Checks get no result. |
 | An address that the runner configuration does not name is not looked at | Each adapter finds only the addresses its own runner's configuration names |
+| An address must be the same at every evaluation of the config | An address must be the same at every evaluation of the config. |
+| The adapter evaluates the resolved config twice, each time in a fresh process | The adapter evaluates the resolved config twice, each time in a fresh process, and a config that gives a component a different address the second time is refused in the same way. |
+| A config that gives a component a different address the second time is refused, and the adapter runs nothing | The adapter evaluates the resolved config twice, each time in a fresh process, and a config that gives a component a different address the second time is refused in the same way. |
 
 ## The look before the start
 
